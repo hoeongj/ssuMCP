@@ -1,0 +1,1872 @@
+<!--
+  PII-scrubbed copy of the iframe-deep grades page served by the SAP
+  WebDynpro component ZCMB3W0017 (학생 성적조회), captured 2026-05-16
+  (Task 16 PR 16c spike).
+
+  Response shape: a WebDynpro full-update XML wrapper that carries
+  the re-rendered page HTML inside its content-update payload. Unlike
+  ZCMW2102 (시간표), ZCMB3W0017's first GET response is **already**
+  wrapped — the connector must call WebDynproResponseUnwrapper before
+  parsing. (시간표는 첫 GET 이 raw HTML, WDA7 prev POST 응답만 wrapper.)
+  This comment intentionally avoids the literal CDATA markers in text
+  so the unwrapper's indexOf-based scan finds only the real payload.
+
+  What was kept verbatim:
+    - Every structural attribute the parser keys off:
+      tbody[id$="-contentTBody"], <tr rt="2"> header / <tr rt="1"> data
+      rows, <td role="gridcell" cc="N"> with cc=0 select column and
+      cc=1..13 for 14 grade columns, <div class="lsSTEmptyRow"> for
+      empty cells, <span class*="lsTextView"> for text content.
+    - 학기별 성적 표 anchor (tbody id="WD65-contentTBody") + 6 학기 row.
+    - 학적부 통계 group: <label> + <input value=""> pairs keyed by
+      label.for ↔ input.id (WD0147/WD014B/WD014F/WD0154/WD0158/WD015C).
+    - 증명용 통계 group: same pattern, WD0168/WD016C/WD0171/WD0176/
+      WD017A/WD017E.
+    - 학기별 세부 표 (tbody id="WD0201-contentTBody") — header row only,
+      no data rows. By design: ZCMB3W0017's default 학기 dropdown is
+      not pre-loaded; the user must click 학년도/학기 + 조회 to populate
+      the detail rows. PR 16c first cut therefore returns 학기별 GPA
+      history + 학적부/증명 누적 통계 only. 학기별 세부 (과목별 상세)
+      is a follow-up via button-press POST iterate.
+    - sap-wd-secure-id input (CSRF). The captured value is ephemeral
+      and already expired (SAP session aborted before save).
+    - WD ID prefix is dynamic; the parser anchors only on stable
+      *suffixes* like "-contentTBody" or stable label *texts* like
+      "학적부신청학점".
+
+  What was changed (PII scrubbed):
+    - 학기별 표 cell values: 신청학점/취득학점/P·F학점 → 18.0/3.0
+      generic, 평점평균 → 3.50 (P/F 학기는 0.00 유지), 평점계 → 63.00,
+      산술평균 → 85.00, 학기별석차/전체석차 → 50/100 / 60/100 generic.
+      Row count (6 학기) and 학년도/학기 라벨은 유지 (PII 식별성 낮음).
+    - 학적부 누적: 신청·취득 75.0, 평점계 262.50, 평점평균 3.50,
+      산술평균 85.00, P·F 12.0.
+    - 증명용 누적: 신청·취득 72.0, 평점계 252.00, 평점평균 3.50,
+      산술평균 85.00, P·F 12.0.
+    - 응답 본문에는 학번/이름이 박혀있지 않음 (spike 결과 0 hit) — 별도
+      placeholder 치환 불필요. portal-success.html 의 wrapper 정책과
+      동일.
+
+  학기 라벨 (1학기, 2학기, 여름학기, 겨울학기) 은 SAP 가 한국어
+  텍스트로 그대로 박음. spec §3.5 의 초기 추정 (091/092 enum) 폐기.
+-->
+<updates>
+<full-update windowid="sapwd_main_window">
+<content-update id="sapwd_main_window_root_">
+<![CDATA[<TABLE id="WD10" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD10-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="0" cellpadding="0" id="WD11" class="urFontStd&#x20;urHtmlTableReset&#x20;lsControl--fullwidth" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD11-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD13" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<DIV id="WD16" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling" role="presentation">
+<span id="WD17" ct="FL" lsdata="{}" class="&#x20;lsControl--wrapping&#x20;" role="presentation">
+<span class="lsFlowLayoutItem&#x20;lsFlowLayoutItem--wrapping" id="WD18">
+<table border="0" cellpadding="0" cellspacing="0" id="WD19" ct="TY" lsdata="{1:'PLAIN',7:false,22:2}" lsevents="{Expand:[{ResponseData:'delta',EnqueueCardinality:'single'},{}],Collapse:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" class="lsPanel&#x20;lsTray&#x20;lsTray--expanded&#x20;lsControl--fullwidth&#x20;">
+<tbody>
+<tr>
+<td valign="top" class="lsTray--header-content&#x20;lsTray--header-notitle">
+<div id="WD19-header" class="lsTray--header&#x20;lsTray--header-container">
+<div id="WD19-title" class="lsTray--title-content" tabindex="0" ti="0" role="button" aria-label="" aria-disabled="false" aria-expanded="true" aria-hidden="true">
+<span id="WD19-toggle" class="lsTray--toggle&#x20;lsTray--toggle-expanded">
+</span>
+</div>
+<div class="lsTray--header-buttons">
+<span id="WD19-exp" class="lsTray--button&#x20;lsTray--button-toggle&#x20;lsTray--button-expanded" tabindex="0" ti="0" role="button" aria-label="컨텐트&#x20;접기" title="컨텐트&#x20;접기">
+</span>
+</div>
+</div>
+</td>
+</tr>
+<tbody id="WD19-tbd">
+<tr>
+<td valign="top" id="WD19-tbdc" class="lsTray--design-plain&#x20;lsTray--content&#x20;lsTray--hascontentpadding&#x20;lsResponsivePadding">
+<table title="" cellspacing="0" cellpadding="0" id="WD1B" class="urFontStd&#x20;urHtmlTableReset" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD1B-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD1D" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD1B-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD20" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD1B-row-2">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD23" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD1B-row-3">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD26" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<DIV id="WD27" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling" role="presentation">
+<table title="" cellspacing="1" cellpadding="1" id="WD28" class="urFontStd&#x20;urHtmlTableReset" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD28-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD2A" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD28-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD2D" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD28-row-2">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD30" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD28-row-3">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD33" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD28-row-4">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD36" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+</table>
+</DIV>
+</td>
+</tr>
+<tr id="WD1B-row-4">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD39" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</span>
+</span>
+</DIV>
+</td>
+</tr>
+<tr id="WD11-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD3C" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<table border="0" cellpadding="0" cellspacing="0" id="WD3D" ct="TY" lsdata="{0:'안내사항',1:'PLAIN',7:false,22:2}" lsevents="{Expand:[{ResponseData:'delta',EnqueueCardinality:'single'},{}],Collapse:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" class="lsPanel&#x20;lsTray&#x20;lsTray--expanded&#x20;lsControl--fullwidth&#x20;">
+<tbody>
+<tr>
+<td valign="top" class="lsTray--header-content">
+<div id="WD3D-header" class="lsTray--header&#x20;lsTray--header-container">
+<div id="WD3D-heading" class="lsPanel--heading" role="heading" aria-level="2">안내사항</div>
+<div id="WD3D-title" class="lsTray--title-content" tabindex="0" ti="0" role="button" aria-label="안내사항" aria-disabled="false" aria-expanded="true">
+<span id="WD3D-toggle" class="lsTray--toggle&#x20;lsTray--toggle-expanded">
+</span>
+<div id="WD3D-hdtxt" class="lsTray--title-txt&#x20;lsResponsivePaddingLeft&#x20;lsTray--title-collapsible&#x20;lsTray--title-collapsible">
+<span id="WD3E" ct="CP" lsdata="{1:'안내사항',6:false}" class="&#x20;&#x20;lsCaption--embedded">안내사항</span>
+</div>
+</div>
+<div class="lsTray--header-buttons">
+<span id="WD3D-exp" class="lsTray--button&#x20;lsTray--button-toggle&#x20;lsTray--button-expanded" tabindex="0" ti="0" role="button" aria-label="컨텐트&#x20;접기" title="컨텐트&#x20;접기">
+</span>
+</div>
+</div>
+</td>
+</tr>
+<tbody id="WD3D-tbd">
+<tr>
+<td valign="top" id="WD3D-tbdc" class="lsTray--design-plain&#x20;lsTray--content&#x20;lsTray--hascontentpadding&#x20;lsResponsivePadding">
+<table title="" cellspacing="0" cellpadding="0" id="WD3F" class="urFontStd&#x20;urHtmlTableReset" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD3F-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD41" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD42-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD42" ct="TV" lsdata="{3:'EMPHASIZED'}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--design-emphasized&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2026학년도&#x20;1학기&#x20;성적입력기간&#x20;&#x3a;&#x20;2026.06.09&#x20;&#x7e;&#x20;2026.06.29</span>
+</span>
+</td>
+</tr>
+<tr id="WD3F-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD44" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;lsControl--fullwidth&#x20;urCellBgPlain&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+<tr id="WD3F-row-2">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD47" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD48-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD48" ct="TV" lsdata="{5:'NEGATIVE'}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;urTxtNeg&#x20;&#x20;lsTextView--wrap">&#x5b;2026학년도&#x20;재학생을&#x20;위한&#x20;폭력예방교육&#x5d;&#x20;미이수자&#x20;분들께서는<br>06월&#x20;08일&#x20;23시&#x20;59분까지&#x20;스마트캠퍼스&#x28;LMS&#x29;에서&#x20;폭력예방교육&#x20;이수를&#x20;완료하여&#x20;주시기&#x20;바랍니다.<br>이수&#x20;완료&#x20;후&#x20;06월&#x20;09일&#x20;오전&#x20;10시&#x20;00분부터&#x20;성적조회가&#x20;가능합니다.<br>&#x28;&#x20;06월&#x20;09일&#x20;이후에&#x20;폭력예방교육을&#x20;이수한&#x20;경우에는,<br>이수&#x20;완료일자의&#x20;익일&#x20;오전&#x20;10시&#x20;00분부터&#x20;성적조회가&#x20;가능합니다.&#x20;&#x29;<br>&#x28;문의&#x20;인권팀&#x20;820-0842&#x29;</span>
+</span>
+</td>
+</tr>
+<tr id="WD3F-row-3">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD4A" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr id="WD11-row-2">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD4D" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<div id="WD4E" ct="HD" lsdata="{}" class="lsHorizontalDivider--rule-medium&#x20;lsHorizontalDivider--ruledisplay-aria&#x20;lsHorizontalDivider--ruledisplay-line&#x20;urNoUserSelect&#x20;" role="separator">
+</div>
+</td>
+</tr>
+<tr id="WD11-row-3">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD50" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<TABLE id="WD51" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0" data-sap-ls-style="height:20px;">
+<tbody>
+<tr>
+<td id="WD51-cnt" valign="top" class="lsScrollContainer__outer">
+<div id="WD52-r" class="lsMatrixLayout-root">
+<table cellspacing="0" cellpadding="0" id="WD52" ct="ML" lsdata="{0:'WD52',7:'LINE'}" class="urMatrixLayout&#x20;urHtmlTableReset&#x20;lsMatrixLayout--nomargins" role="presentation" border="0">
+<tbody class="urLinStd">
+<tr>
+<td ct="MLC" lsdata="{}" id="WD54" valign="middle" align="left" class="lsContainerCell&#x20;&#x20;urLayoutRPad&#x20;lsContainerCell--wrap&#x20;lsContainerCell--bordercollapse">
+<span id="WD55-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD57',3:'학위과정',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD55" bHasTabStop="false" for="WD57" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD55-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학위과정</span>
+</label>
+</span>
+</td>
+<td ct="MLC" lsdata="{}" id="WD56" valign="middle" align="left" class="lsContainerCell&#x20;&#x20;urLayoutRPad&#x20;lsContainerCell--wrap&#x20;lsContainerCell--bordercollapse">
+<span id="WD57-r" class="lsField&#x20;lsField--standalone&#x20;lsField--explicitwidth&#x20;lsField--hasellipsis&#x20;lsField--hashelp&#x20;lsField--list&#x20;lsField--interactiontarget">
+<input id="WD57" ct="CB" lsdata="{0:'6.6em',3:'WD58',4:'UG',5:'학사과정',29:'WD55'}" lsevents="{Select:[{ResponseData:'delta',ClientAction:'submit'},{}]}" type="text" autocomplete="off" tabindex="0" ti="0" class="lsField__input" readonly value="학사과정" role="listbox" aria-roledescription="드롭다운&#x20;리스트&#x20;상자" aria-labelledby="WD55" data-sap-ls-style="width:6.6em;">
+<span id="WD57-btn" class="lsField__help" tabindex="-1" ti="-1" aria-hidden="true">
+</span>
+</span>
+</td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-4">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD60" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<TABLE id="WD61" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD61-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="1" cellpadding="0" id="WD62" class="urFontStd&#x20;urHtmlTableReset&#x20;lsControl--fullwidth" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD62-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD64" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<table cellpadding="0" cellspacing="0" border="0" id="WD65" ct="ST" lsdata="{0:'학기별&#x5c;x20성적',2:6,3:13,4:1,5:6,6:13,7:13,8:1,18:'SINGLE',19:'SERVER_WEB_SMART',21:1,23:false,28:'SPACEBAR',31:'lsCondensed',37:2}" lsevents="{RowSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],CellSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],HeaderCellSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],HeaderActionMenuAccess:[{ResponseData:'delta',ClientAction:'submit'},{}],CellExpand:[{ResponseData:'delta',ClientAction:'submit'},{}],CellCollapse:[{ResponseData:'delta',ClientAction:'submit'},{}],CellIconSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],CellContextMenu:[{ResponseData:'delta',ClientAction:'submit'},{}],VerticalScroll:[{ResponseData:'delta',ClientAction:'submit'},{}],HorizontalScroll:[{ResponseData:'delta',ClientAction:'submit'},{}],ColumnResize:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" role="grid" aria-rowcount="7" aria-colcount="14" aria-labelledby="&#x20;WD65-ariatitle" tabindex="0" ti="0" data-header="true" class="urST&#x20;urST3WhlBrd&#x20;urST5SelColUiSingle&#x20;lsSapTable--backgroundColor" data-sap-ls-style="width:100%;text-align:left;">
+<thead id="WD65-thead">
+<tr role="presentation">
+<th role="presentation">
+<span tabindex="0" ti="0" tp="START_INSIDE" role="none">
+</span>
+</th>
+</tr>
+<tr role="presentation">
+<th role="heading" aria-level="2" id="WD65-ariatitle" class="urST3Tit&#x20;urST4LbTitBg" colspan="2">
+<span id="WD66" ct="CP" lsdata="{0:'A&#x5c;x20&#x5c;x2b&#x5c;x20B',1:'학기별&#x5c;x20성적',2:'https&#x5c;x3a&#x5c;x2f&#x5c;x2fecc.ssu.ac.kr&#x5c;x3a8443&#x5c;x2fsap&#x5c;x2fpublic&#x5c;x2fbc&#x5c;x2fur&#x5c;x2fnw5&#x5c;x2fthemes&#x5c;x2f&#x5c;x7ecache&#x5c;x2d20230801062755&#x5c;x2fBase&#x5c;x2fbaseLib&#x5c;x2fsap_fiori_3&#x5c;x2fsvg&#x5c;x2flibs&#x5c;x2fSAPGUI&#x5c;x2dicons.svg&#x5c;x23s_b_abpl',6:false}" title="A&#x20;&#x2b;&#x20;B" class="&#x20;&#x20;lsCaption--embedded">
+<svg id="WD66-img" title="A&#x20;&#x2b;&#x20;B" focusable="false" aria-hidden="true" preserveaspectratio="none" viewbox="0&#x20;0&#x20;100&#x20;100" class="lsSvgAppIcon&#x20;urSvgAppIconVAlign&#x20;urSvgAppIconColorBase&#x20;urSvgAppIconMetric&#x20;urNoUserSelect">
+<use xlink:href="https&#x3a;&#x2f;&#x2f;ecc.ssu.ac.kr&#x3a;8443&#x2f;sap&#x2f;public&#x2f;bc&#x2f;ur&#x2f;nw5&#x2f;themes&#x2f;&#x7e;cache-20230801062755&#x2f;Base&#x2f;baseLib&#x2f;sap_fiori_3&#x2f;svg&#x2f;libs&#x2f;SAPGUI-icons.svg&#x23;s_b_abpl">
+</use>
+</svg>&nbsp;학기별&#x20;성적</span>
+</th>
+</tr>
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urSTSStd" id="WD65-content" data-sap-ls-style="width:100%;height:100%;">
+<table cellpadding="0" cellspacing="0" border="0" role="presentation" class="urST3BdBrd&#x20;urST3BdF&#x20;urFontStd" tableBasedColumnWidhts="X" data-sap-ls-style="height:100%;width:100%;">
+<colgroup>
+<col class="urST5SelColumn&#x20;lsCondensed" selectionColumn="X">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:7%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:7%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:7%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:8%;">
+<col data-sap-ls-style="width:7%;">
+<col data-sap-ls-style="width:8%;">
+<tbody id="WD65-contentTBody">
+<tr rt="2" role="row" aria-selected="false">
+<th id="WD6A" subct="HC" lsdata="{2:'SELECTIONCOLUMN'}" t="" role="columnheader" aria-labelledby="ARIA_ST_SCOL" lsMatrixRowIndex="-2147483648" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricSelCol&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="text-align:left;white-space:normal;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;urST3Cl&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<div ctv="C" NeedsBeginningInnerPadding="true" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:normal;text-overflow:clip;">&nbsp;</div>
+</div>
+</th>
+<th id="WD6C" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD6D" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD6C-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD6D" ct="CP" lsdata="{1:'학년도',6:false}" class="&#x20;&#x20;lsCaption--embedded">학년도</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD6C-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD6E" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD6F" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD6E-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD6F" ct="CP" lsdata="{1:'학기',6:false}" class="&#x20;&#x20;lsCaption--embedded">학기</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD6E-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD70" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD71" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD70-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD71" ct="CP" lsdata="{1:'신청학점',6:false}" class="&#x20;&#x20;lsCaption--embedded">신청학점</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD70-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD72" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD73" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD72-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD73" ct="CP" lsdata="{1:'취득학점',6:false}" class="&#x20;&#x20;lsCaption--embedded">취득학점</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD72-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD74" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD75" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD74-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD75" ct="CP" lsdata="{1:'P&#x5c;x2fF학점',6:false}" class="&#x20;&#x20;lsCaption--embedded">P&#x2f;F학점</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD74-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD76" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD77" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD76-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD77" ct="CP" lsdata="{1:'평점평균',6:false}" class="&#x20;&#x20;lsCaption--embedded">평점평균</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD76-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD78" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD79" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD78-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD79" ct="CP" lsdata="{1:'평점계',6:false}" class="&#x20;&#x20;lsCaption--embedded">평점계</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD78-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD7A" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD7B" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7A-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7B" ct="CP" lsdata="{1:'산술평균',6:false}" class="&#x20;&#x20;lsCaption--embedded">산술평균</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD7A-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD7C" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD7D" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7C-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7D" ct="CP" lsdata="{1:'학기별석차',6:false}" class="&#x20;&#x20;lsCaption--embedded">학기별석차</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD7C-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD7E" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD7F" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7E-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD7F" ct="CP" lsdata="{1:'전체석차',6:false}" class="&#x20;&#x20;lsCaption--embedded">전체석차</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD7E-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD80" subct="HC" lsdata="{7:'학사경고여부'}" t="학사경고여부" role="columnheader" lsMatrixRowIndex="-2147483648" title="학사경고여부" touchResize="X" captionId="WD81" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" t="학사경고여부" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD80-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD81" ct="CP" lsdata="{0:'학사경고여부',1:'학사경고여부',6:false}" title="학사경고여부" class="&#x20;&#x20;lsCaption--embedded">학사경고여부</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD80-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD82" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" touchResize="X" captionId="WD83" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD82-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD83" ct="CP" lsdata="{1:'상담여부',6:false}" class="&#x20;&#x20;lsCaption--embedded">상담여부</span>
+</span>
+</div>
+</td>
+<td width="1" role="presentation" aria-hidden="true" data-sap-ls-style="height:100%;">
+<div id="WD82-CRESIZE" acf="CRESIZE" class="urNoUserSelect" data-sap-ls-style="position:relative;height:100%;width:1px;">
+<div iDDThreshold="6" class="urSTTHResize&#x20;urSTTHResizeNoPad">&nbsp;</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD84" subct="HC" lsdata="{}" t="" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD85" resizable="X" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTblF&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" width="100&#x25;" class="urFontRel&#x20;urST3Cl" data-sap-ls-style="white-space:nowrap;">
+<div ctv="C" NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urST3Cl&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD84-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD85" ct="CP" lsdata="{1:'유급',6:false}" class="&#x20;&#x20;lsCaption--embedded">유급</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+</tr>
+<tr rr="1" class="lsCondensed&#x20;urST5SelColUiSingle" sst="1" rt="1" role="row" aria-selected="true" aria-rowindex="2">
+<td id="WD95" subct="SC" lsdata="{0:true}" role="gridcell" aria-selected="true" acf="CSEL" cc="0" ut="2" sst="1" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter&#x20;lsSTTDScSelBgColor">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowSelIcon&#x20;urST4LbSelIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WD95-ariatutor">행을 선택했습니다. 행을 선택 해제하려면 Ctrl+스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WD96" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD97-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD97" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2025</span>
+</span>
+</td>
+<td id="WD98" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD99-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD99" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">겨울학기</span>
+</span>
+</td>
+<td id="WD9A" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD9B-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD9B" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">6.0</span>
+</span>
+</td>
+<td id="WD9C" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD9D-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD9D" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">6.0</span>
+</span>
+</td>
+<td id="WD9E" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD9F-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD9F" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">6.0</span>
+</span>
+</td>
+<td id="WDA0" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDA1-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDA1" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0.00</span>
+</span>
+</td>
+<td id="WDA2" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDA3-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDA3" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0.00</span>
+</span>
+</td>
+<td id="WDA4" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDA5-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDA5" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0.00</span>
+</span>
+</td>
+<td id="WDA6" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDA7-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDA7" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0&#x2f;0</span>
+</span>
+</td>
+<td id="WDA8" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDA9-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDA9" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0&#x2f;0</span>
+</span>
+</td>
+<td id="WDAA" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDAC" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDAE" subct="STC" lsdata="{1:true,2:'EDIT'}" ctv="C" role="gridcell" aria-selected="true" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST4Sel2Ro&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+<tr rr="2" class="lsCondensed&#x20;urST5SelColUiSingle" sst="0" rt="1" role="row" aria-selected="false" aria-rowindex="3">
+<td id="WDB1" subct="SC" lsdata="{}" role="gridcell" aria-selected="false" acf="CSEL" cc="0" ut="2" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowUnSelIcon&#x20;urST4LbUnselIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WDB1-ariatutor">행을 선택하려면 스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WDB2" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDB3-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDB3" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2025</span>
+</span>
+</td>
+<td id="WDB4" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDB5-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDB5" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">2학기</span>
+</span>
+</td>
+<td id="WDB6" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDB7-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDB7" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WDB8" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDB9-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDB9" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WDBA" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDBB-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDBB" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.0</span>
+</span>
+</td>
+<td id="WDBC" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDBD-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDBD" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.50</span>
+</span>
+</td>
+<td id="WDBE" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDBF-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDBF" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">63.00</span>
+</span>
+</td>
+<td id="WDC0" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDC1-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDC1" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">85.00</span>
+</span>
+</td>
+<td id="WDC2" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDC3-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDC3" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">50&#x2f;100</span>
+</span>
+</td>
+<td id="WDC4" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDC5-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDC5" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">60&#x2f;100</span>
+</span>
+</td>
+<td id="WDC6" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDC8" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDCA" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+<tr rr="3" class="lsCondensed&#x20;urST5SelColUiSingle" sst="0" rt="1" role="row" aria-selected="false" aria-rowindex="4">
+<td id="WDCD" subct="SC" lsdata="{}" role="gridcell" aria-selected="false" acf="CSEL" cc="0" ut="2" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowUnSelIcon&#x20;urST4LbUnselIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WDCD-ariatutor">행을 선택하려면 스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WDCE" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDCF-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDCF" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2025</span>
+</span>
+</td>
+<td id="WDD0" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDD1-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDD1" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">여름학기</span>
+</span>
+</td>
+<td id="WDD2" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDD3-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDD3" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">5.0</span>
+</span>
+</td>
+<td id="WDD4" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDD5-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDD5" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">5.0</span>
+</span>
+</td>
+<td id="WDD6" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDD7-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDD7" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.0</span>
+</span>
+</td>
+<td id="WDD8" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDD9-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDD9" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.50</span>
+</span>
+</td>
+<td id="WDDA" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDDB-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDDB" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">10.50</span>
+</span>
+</td>
+<td id="WDDC" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDDD-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDDD" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">85.00</span>
+</span>
+</td>
+<td id="WDDE" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDDF-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDDF" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0&#x2f;0</span>
+</span>
+</td>
+<td id="WDE0" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDE1-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDE1" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">0&#x2f;0</span>
+</span>
+</td>
+<td id="WDE2" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDE4" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WDE6" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+<tr rr="4" class="lsCondensed&#x20;urST5SelColUiSingle" sst="0" rt="1" role="row" aria-selected="false" aria-rowindex="5">
+<td id="WDE9" subct="SC" lsdata="{}" role="gridcell" aria-selected="false" acf="CSEL" cc="0" ut="2" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowUnSelIcon&#x20;urST4LbUnselIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WDE9-ariatutor">행을 선택하려면 스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WDEA" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDEB-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDEB" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2025</span>
+</span>
+</td>
+<td id="WDEC" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDED-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDED" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">1학기</span>
+</span>
+</td>
+<td id="WDEE" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDEF-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDEF" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WDF0" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDF1-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDF1" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WDF2" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDF3-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDF3" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.0</span>
+</span>
+</td>
+<td id="WDF4" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDF5-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDF5" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.50</span>
+</span>
+</td>
+<td id="WDF6" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDF7-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDF7" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">63.00</span>
+</span>
+</td>
+<td id="WDF8" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDF9-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDF9" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">85.00</span>
+</span>
+</td>
+<td id="WDFA" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDFB-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDFB" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">50&#x2f;100</span>
+</span>
+</td>
+<td id="WDFC" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WDFD-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WDFD" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">60&#x2f;100</span>
+</span>
+</td>
+<td id="WDFE" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD0100" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD0102" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+<tr rr="5" class="lsCondensed&#x20;urST5SelColUiSingle" sst="0" rt="1" role="row" aria-selected="false" aria-rowindex="6">
+<td id="WD0105" subct="SC" lsdata="{}" role="gridcell" aria-selected="false" acf="CSEL" cc="0" ut="2" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowUnSelIcon&#x20;urST4LbUnselIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WD0105-ariatutor">행을 선택하려면 스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WD0106" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0107-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0107" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2022</span>
+</span>
+</td>
+<td id="WD0108" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0109-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0109" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">2학기</span>
+</span>
+</td>
+<td id="WD010A" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD010B-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD010B" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WD010C" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD010D-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD010D" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WD010E" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD010F-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD010F" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.0</span>
+</span>
+</td>
+<td id="WD0110" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0111-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0111" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.50</span>
+</span>
+</td>
+<td id="WD0112" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0113-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0113" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">63.00</span>
+</span>
+</td>
+<td id="WD0114" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0115-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0115" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">85.00</span>
+</span>
+</td>
+<td id="WD0116" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0117-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0117" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">50&#x2f;100</span>
+</span>
+</td>
+<td id="WD0118" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0119-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0119" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">60&#x2f;100</span>
+</span>
+</td>
+<td id="WD011A" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD011C" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD011E" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+<tr rr="6" class="lsCondensed&#x20;urST5SelColUiSingle" sst="0" rt="1" role="row" aria-selected="false" aria-rowindex="7">
+<td id="WD0121" subct="SC" lsdata="{}" role="gridcell" aria-selected="false" acf="CSEL" cc="0" ut="2" class="urSTSC&#x20;urST3TDSc&#x20;urNoUserSelect&#x20;urST5SCStdOuter">
+<div tabindex="0" ti="0" role="none" class="urBorderBox&#x20;lsSapTable--expandWidth&#x20;lsSTCellHeight100&#x20;urSTSCOuterDiv&#x20;urSTRowUnSelIcon&#x20;urST4LbUnselIcon&#x20;urST5SCStdInner">
+<div tabindex="-1" ti="-1" class="urST5SCMetricInner">&nbsp;</div>
+<span class="lsSapTable--pseudoHidden" id="WD0121-ariatutor">행을 선택하려면 스페이스바를 누르십시오.</span>
+</div>
+<div class="urST5SCStdBottom">
+</div>
+<div class="urST5SCMetricInner&#x20;lsSapTable--padding1px">
+</div>
+</td>
+<td id="WD0122" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="1" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0123-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0123" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">2022</span>
+</span>
+</td>
+<td id="WD0124" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="2" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0125-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0125" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--wrap">1학기</span>
+</span>
+</td>
+<td id="WD0126" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="3" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0127-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0127" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WD0128" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="4" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0129-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0129" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">18.0</span>
+</span>
+</td>
+<td id="WD012A" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="5" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD012B-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD012B" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.0</span>
+</span>
+</td>
+<td id="WD012C" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="6" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD012D-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD012D" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">3.50</span>
+</span>
+</td>
+<td id="WD012E" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="7" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD012F-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD012F" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">63.00</span>
+</span>
+</td>
+<td id="WD0130" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="8" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0131-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0131" ct="TV" lsdata="{8:'RIGHT',12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">85.00</span>
+</span>
+</td>
+<td id="WD0132" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="9" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0133-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0133" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">50&#x2f;100</span>
+</span>
+</td>
+<td id="WD0134" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="10" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<span id="WD0135-r" class="lsTextView--root&#x20;lsControl--valign" role="presentation">
+<span id="WD0135" ct="TV" lsdata="{12:true}" tabindex="-1" ti="-1" class="lsTextView&#x20;lsTextNoWrapping&#x20;lsTextView--usedInTable&#x20;lsTextView--design-standard&#x20;&#x20;lsTextView--color&#x20;&#x20;lsTextView--nowrap">60&#x2f;100</span>
+</span>
+</td>
+<td id="WD0136" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="11" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD0138" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="12" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+<td id="WD013A" subct="STC" lsdata="{2:'EDIT'}" ctv="C" role="gridcell" aria-readonly="true" acf="CSEL" ut="3" cc="13" align="center" class="urSTC&#x20;urST3TD&#x20;urCursorClickable&#x20;urSTTDRo2&#x20;urST3Cl" data-sap-ls-style="white-space:normal;vertical-align:top;">
+<div class="lsSTEmptyRow" role="text" aria-label="비어&#x20;있음" data-sap-ls-style="margin-left:3px;">&nbsp;</div>
+</td>
+</tr>
+</table>
+<div data-sap-ls-style="white-space:nowrap;border:none;height:0px;padding-left:14px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+<img data-sap-ls-style="visibility:hidden;height:0px;width:21px;">
+</div>
+<span tabindex="0" ti="0" tp="END_INSIDE" role="none">
+</span>
+<span tabindex="0" ti="0" acf="TABLE_END" tp="END" role="none">
+</span>
+<div id="WD65-hiddenData" data-sap-ls-style="position:absolute;top:-10000;height:0px;width:0px;overflow:hidden;font-size:1px;">
+<div id="WD65-colorStdHover" class="urST5stdHoverColor">
+</div>
+<div id="WD65-colorDDHover" class="urST5ddHoverColor">
+</div>
+</div>
+</td>
+<td class="urST4SCBSpc&#x20;urBorderBox&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom" data-sap-ls-style="border-left:none;height:1px;">
+<div id="WD65-scrollV" ct="SCB" lsdata="{0:1,1:1,2:1,3:6,6:'WD65',7:true,8:'ROW',10:6}" acf="rt" class="urBorderBox&#x20;lsScrollbar&#x20;lsScrollbar--expandSize&#x20;lsControl--noscroll&#x20;lsScrollbar--vertical" scd="VERTICAL">
+<table cellpadding="0" cellspacing="0" role="presentation" class="urSCB&#x20;urBorderBox&#x20;urSCBDimWidth&#x20;lsScrollbar--expandHeight" sdir="v">
+<tr class="lsScrollbar__container--previous">
+<td class="urSCBBdr&#x20;urBorderBox&#x20;urSCBDimHeight&#x20;urSCBDimWidth&#x20;lsScrollbar__buttoncontainer">
+<div id="WD65-scrollV-Prev" acf="Prev" class="urBorderBox&#x20;urSCBBtn&#x20;lsScrollbar__button&#x20;urSCBUpDsbl&#x20;lsScrollbar__button--disabled&#x20;lsScrollbar__button--previous">&nbsp;</div>
+</td>
+</tr>
+<tr class="lsScrollbar__container--track">
+<td id="WD65-scrollV-bar" acf="PNext" class="urSCBBdy&#x20;lsScrollbar__track&#x20;urBorderBox&#x20;lsScrollbar__bar&#x20;urSCBDimWidth&#x20;lsScrollbar--expandHeight&#x20;lsScrollbar--relative" valign="top" align="left">
+<div class="lsScrollbar--expandSize&#x20;lsScrollbar--absolute&#x20;lsScrollbar--noOverflow">
+<div acf="PPrev" id="WD65-scrollV-spc" iPxItemSize="21" iPxItemSpanCorrection="21" role="presentation" class="urSCBBdy&#x20;lsScrollbar--expandWidth&#x20;lsElement--invisible">
+</div>
+<div id="WD65-scrollV-hdl" acf="Hndl" iDDThreshold="1" class="urSCBBdr&#x20;lsScrollbar__thumb&#x20;urBorderBox&#x20;lsScrollbar__handle--noMarginPadding&#x20;urSCBVHdl&#x20;lsScrollbar--expandWidth&#x20;lsElement--invisible" data-sap-ls-style="height:1%;min-height:8px;">
+<div iDDThreshold="1" class="urSCBBtn&#x20;urBorderBox&#x20;lsScrollbar--expandSize" data-sap-ls-style="min-height:6px;">
+</div>
+</div>
+</div>
+</td>
+</tr>
+<tr class="lsScrollbar__container--next">
+<td class="urSCBBdr&#x20;urBorderBox&#x20;urSCBDimHeight&#x20;urSCBDimWidth&#x20;lsScrollbar__buttoncontainer">
+<div id="WD65-scrollV-Nxt" acf="Nxt" class="urBorderBox&#x20;urSCBBtn&#x20;lsScrollbar__button&#x20;urSCBDwnDsbl&#x20;lsScrollbar__button--disabled&#x20;lsScrollbar__button--next">&nbsp;</div>
+</td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-5">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD013D" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<div id="WD013E" ct="HD" lsdata="{}" class="lsHorizontalDivider--rule-medium&#x20;lsHorizontalDivider--ruledisplay-aria&#x20;lsHorizontalDivider--ruledisplay-line&#x20;urNoUserSelect&#x20;" role="separator">
+</div>
+</td>
+</tr>
+<tr id="WD11-row-6">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0140" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<TABLE id="WD0141" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD0141-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="1" cellpadding="0" id="WD0142" class="urFontStd&#x20;urHtmlTableReset&#x20;lsControl--fullwidth" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD0142-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0144" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0145-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0147',3:'학적부신청학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0145" bHasTabStop="false" for="WD0147" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0145-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부신청학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0146" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0147-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0147" ct="I" lsdata="{0:'75.0',2:'BDC',31:'WD0145'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="75.0" role="textbox" aria-labelledby="WD0145" autocomplete="off" autocorrect="off" name="WD0147" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0148" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0149-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD014B',3:'학적부취득학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0149" bHasTabStop="false" for="WD014B" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0149-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부취득학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD014A" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD014B-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD014B" ct="I" lsdata="{0:'75.0',2:'BDC',31:'WD0149'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="75.0" role="textbox" aria-labelledby="WD0149" autocomplete="off" autocorrect="off" name="WD014B" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD014C" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD014D-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD014F',3:'학적부평점계',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD014D" bHasTabStop="false" for="WD014F" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD014D-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부평점계</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD014E" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD014F-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD014F" ct="I" lsdata="{0:'262.50',2:'BDC',31:'WD014D'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="262.50" role="textbox" aria-labelledby="WD014D" autocomplete="off" autocorrect="off" name="WD014F" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+</tr>
+<tr id="WD0142-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0151" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0152-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0154',3:'학적부평점평균',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0152" bHasTabStop="false" for="WD0154" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0152-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부평점평균</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0153" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0154-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0154" ct="I" lsdata="{0:'3.50',2:'BDC',31:'WD0152'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="3.50" role="textbox" aria-labelledby="WD0152" autocomplete="off" autocorrect="off" name="WD0154" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0155" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0156-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0158',3:'학적부산술평균',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0156" bHasTabStop="false" for="WD0158" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0156-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부산술평균</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0157" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0158-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0158" ct="I" lsdata="{0:'85.00',2:'BDC',31:'WD0156'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="85.00" role="textbox" aria-labelledby="WD0156" autocomplete="off" autocorrect="off" name="WD0158" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0159" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD015A-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD015C',3:'학적부P&#x5c;x2fF학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD015A" bHasTabStop="false" for="WD015C" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD015A-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학적부P&#x2f;F학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD015B" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD015C-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD015C" ct="I" lsdata="{0:'12.0',2:'BDC',31:'WD015A'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="12.0" role="textbox" aria-labelledby="WD015A" autocomplete="off" autocorrect="off" name="WD015C" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-7">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD015E" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<div id="WD015F" ct="HD" lsdata="{}" class="lsHorizontalDivider--rule-medium&#x20;lsHorizontalDivider--ruledisplay-aria&#x20;lsHorizontalDivider--ruledisplay-line&#x20;urNoUserSelect&#x20;" role="separator">
+</div>
+</td>
+</tr>
+<tr id="WD11-row-8">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0161" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<TABLE id="WD0162" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD0162-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="1" cellpadding="0" id="WD0163" class="urFontStd&#x20;urHtmlTableReset&#x20;lsControl--fullwidth" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD0163-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0165" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0166-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0168',3:'증명신청학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0166" bHasTabStop="false" for="WD0168" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0166-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명신청학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0167" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0168-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0168" ct="I" lsdata="{0:'72.0',2:'BDC',31:'WD0166'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="72.0" role="textbox" aria-labelledby="WD0166" autocomplete="off" autocorrect="off" name="WD0168" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0169" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD016A-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD016C',3:'증명취득학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD016A" bHasTabStop="false" for="WD016C" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD016A-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명취득학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD016B" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD016C-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD016C" ct="I" lsdata="{0:'72.0',2:'BDC',31:'WD016A'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="72.0" role="textbox" aria-labelledby="WD016A" autocomplete="off" autocorrect="off" name="WD016C" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD016D" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD016E-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0170',3:'증명평점계',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD016E" bHasTabStop="false" for="WD0170" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD016E-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명평점계</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD016F" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0170-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0170" ct="I" lsdata="{0:'252.00',2:'BDC',31:'WD016E'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="252.00" role="textbox" aria-labelledby="WD016E" autocomplete="off" autocorrect="off" name="WD0170" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+</tr>
+<tr id="WD0163-row-1">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0172" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0173-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0175',3:'증명평점평균',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0173" bHasTabStop="false" for="WD0175" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0173-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명평점평균</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0174" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0175-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0175" ct="I" lsdata="{0:'3.50',2:'BDC',31:'WD0173'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="3.50" role="textbox" aria-labelledby="WD0173" autocomplete="off" autocorrect="off" name="WD0175" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0176" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0177-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0179',3:'증명산술평균',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0177" bHasTabStop="false" for="WD0179" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0177-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명산술평균</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0178" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD0179-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD0179" ct="I" lsdata="{0:'85.00',2:'BDC',31:'WD0177'}" type="text" size="14" maxlength="14" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="85.00" role="textbox" aria-labelledby="WD0177" autocomplete="off" autocorrect="off" name="WD0179" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD017A" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD017B-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD017D',3:'증명P&#x5c;x2fF학점',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD017B" bHasTabStop="false" for="WD017D" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD017B-text" class="lsLabel__text&#x20;lsLabel__text--overflow">증명P&#x2f;F학점</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD017C" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<span id="WD017D-r" class="lsField&#x20;lsField--standalone&#x20;lsField--hasellipsis&#x20;lsField--readonly&#x20;lsField--list&#x20;lsField--interactiontarget&#x20;lsField--forcedleft">
+<input id="WD017D" ct="I" lsdata="{0:'12.0',2:'BDC',31:'WD017B'}" type="text" size="11" maxlength="11" tabindex="0" ti="0" inputmode="decimal" class="lsField__input" readonly value="12.0" role="textbox" aria-labelledby="WD017B" autocomplete="off" autocorrect="off" name="WD017D" data-sap-ls-style="ime-mode:disabled;">
+</span>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-9">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD017F" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<div id="WD0180" ct="HD" lsdata="{}" class="lsHorizontalDivider--rule-medium&#x20;lsHorizontalDivider--ruledisplay-aria&#x20;lsHorizontalDivider--ruledisplay-line&#x20;urNoUserSelect&#x20;" role="separator">
+</div>
+</td>
+</tr>
+<tr id="WD11-row-10">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0182" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<TABLE id="WD0183" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD0183-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="0" cellpadding="0" id="WD0184" class="urFontStd&#x20;urHtmlTableReset" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD0184-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0186" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<div draggable="false" id="WD0187" ct="B" lsdata="{0:'조회&#x5c;x28새로고침&#x5c;x29'}" lsevents="{Press:[{ResponseData:'delta',ClientAction:'submit'},{}]}" role="button" tabindex="0" ti="0" class="lsButton&#x20;lsButton--base&#x20;urInlineMetricTop&#x20;urNoUserSelect&#x20;urBtnRadius&#x20;&#x20;lsButton--active&#x20;&#x20;lsButton--focusable&#x20;&#x20;lsButton--up&#x20;lsButton--design-standard&#x20;">
+<span id="WD0187-cnt" class="urNoUserSelect&#x20;lsButton--content&#x20;lsControl--centeraligned" role="presentation">
+<span class="lsButton__text&#x20;&#x20;lsControl--noWrapping" id="WD0187-caption">조회&#x28;새로고침&#x29;</span>
+</span>
+</div>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0188" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left" data-sap-ls-style="width:10px;">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD018A" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<DIV id="WD018D" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling" role="presentation">
+<table title="" cellspacing="1" cellpadding="0" id="WD018E" class="urFontStd&#x20;urHtmlTableReset" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD018E-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0190" class="lsContainerCell&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<span id="WD0191-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD0193',3:'학년도',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD0191" bHasTabStop="false" for="WD0193" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD0191-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학년도</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0192" class="lsContainerCell&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<span id="WD0193-r" class="lsField&#x20;lsField--standalone&#x20;lsField--explicitwidth&#x20;lsField--hasellipsis&#x20;lsField--hashelp&#x20;lsField--list&#x20;lsField--interactiontarget">
+<input id="WD0193" ct="CB" lsdata="{0:'9.9em',3:'WD0194',4:'2026',5:'2026학년도',29:'WD0191'}" lsevents="{Select:[{ResponseData:'delta',ClientAction:'submit'},{}]}" type="text" autocomplete="off" tabindex="0" ti="0" class="lsField__input" readonly value="2026학년도" role="listbox" aria-roledescription="드롭다운&#x20;리스트&#x20;상자" aria-labelledby="WD0191" data-sap-ls-style="width:9.9em;">
+<span id="WD0193-btn" class="lsField__help" tabindex="-1" ti="-1" aria-hidden="true">
+</span>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01E2" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left" data-sap-ls-style="width:10px;">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01E4" class="lsContainerCell&#x20;urCellBgFill1&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<span id="WD01E5-r" class="lsLabel--root">
+<label ct="L" lsdata="{1:'WD01E7',3:'학기',7:'100&#x5c;x25',13:'ENDOFLINE',15:true}" id="WD01E5" bHasTabStop="false" for="WD01E7" class="lsLabel&#x20;lsLabel--valign&#x20;lsControl--endaligned&#x20;&#x20;lsLabel--standalone&#x20;lsControl--fullwidth&#x20;lsLabel--wrapping&#x20;lsLabel--designbar-colon">
+<span id="WD01E5-text" class="lsLabel__text&#x20;lsLabel__text--overflow">학기</span>
+</label>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01E6" class="lsContainerCell&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<span id="WD01E7-r" class="lsField&#x20;lsField--standalone&#x20;lsField--explicitwidth&#x20;lsField--hasellipsis&#x20;lsField--hashelp&#x20;lsField--list&#x20;lsField--interactiontarget">
+<input id="WD01E7" ct="CB" lsdata="{0:'6.6em',3:'WD01E8',4:'090',5:'1학기',29:'WD01E5'}" lsevents="{Select:[{ResponseData:'delta',ClientAction:'submit'},{}]}" type="text" autocomplete="off" tabindex="0" ti="0" class="lsField__input" readonly value="1학기" role="listbox" aria-roledescription="드롭다운&#x20;리스트&#x20;상자" aria-labelledby="WD01E5" data-sap-ls-style="width:6.6em;">
+<span id="WD01E7-btn" class="lsField__help" tabindex="-1" ti="-1" aria-hidden="true">
+</span>
+</span>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01ED" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left" data-sap-ls-style="width:10px;">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01EF" class="lsContainerCell&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<div draggable="false" id="WD01F0" ct="B" lsdata="{0:'이전학기',2:'PREVIOUS'}" lsevents="{Press:[{ResponseData:'delta',ClientAction:'submit'},{}]}" role="button" tabindex="0" ti="0" class="lsButton&#x20;lsButton--base&#x20;urInlineMetricTop&#x20;urNoUserSelect&#x20;urBtnRadius&#x20;&#x20;lsButton--active&#x20;&#x20;lsButton--focusable&#x20;&#x20;lsButton--up&#x20;lsButton--design-previous">
+<span id="WD01F0-cnt" class="urNoUserSelect&#x20;lsButton--content&#x20;lsControl--centeraligned&#x20;lsButton--content-design" role="presentation">
+<span class="lsBtnDesignIcon&#x20;lsBtnDesignDspl&#x20;lsButton--design-icon&#x20;lsBtnPrevImg&#x20;lsMirrorRtl" tabindex="-1" ti="-1" id="WD01F0-btnDesign">
+</span>
+<span class="lsButton__text&#x20;&#x20;lsControl--noWrapping" id="WD01F0-caption">이전학기</span>
+</span>
+</div>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01F1" class="lsContainerCell&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="left">
+<div draggable="false" id="WD01F2" ct="B" lsdata="{0:'다음학기',2:'NEXT'}" lsevents="{Press:[{ResponseData:'delta',ClientAction:'submit'},{}]}" role="button" tabindex="0" ti="0" class="lsButton&#x20;lsButton--base&#x20;urInlineMetricTop&#x20;urNoUserSelect&#x20;urBtnRadius&#x20;&#x20;lsButton--active&#x20;&#x20;lsButton--focusable&#x20;&#x20;lsButton--up&#x20;lsButton--design-next">
+<span id="WD01F2-cnt" class="urNoUserSelect&#x20;lsButton--content&#x20;lsControl--centeraligned&#x20;lsButton--content-design" role="presentation">
+<span class="lsButton__text&#x20;&#x20;lsControl--noWrapping" id="WD01F2-caption">다음학기</span>
+<span class="lsBtnDesignIcon&#x20;lsBtnDesignDspl&#x20;lsButton--design-icon&#x20;lsBtnNextImg&#x20;lsMirrorRtl" tabindex="-1" ti="-1" id="WD01F2-btnDesign">
+</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</DIV>
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01F3" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01F5" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;sapLSGLTop&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01F7" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left" data-sap-ls-style="width:10px;">
+</td>
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01F9" class="lsContainerCell&#x20;urBorderBox&#x20;lsContainerCell--explicitHeight&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" align="right" data-sap-ls-style="height:30px;">
+<div draggable="false" id="WD01FA" ct="B" lsdata="{0:'이수구분별&#x5c;x20성적현황&#x5c;x20출력',4:'인쇄',10:true,12:'https&#x5c;x3a&#x5c;x2f&#x5c;x2fecc.ssu.ac.kr&#x5c;x3a8443&#x5c;x2fsap&#x5c;x2fpublic&#x5c;x2fbc&#x5c;x2fur&#x5c;x2fnw5&#x5c;x2fthemes&#x5c;x2f&#x5c;x7ecache&#x5c;x2d20230801062755&#x5c;x2fBase&#x5c;x2fbaseLib&#x5c;x2fsap_fiori_3&#x5c;x2fsvg&#x5c;x2flibs&#x5c;x2fSAPWeb&#x5c;x2dicons.svg&#x5c;x23Print&#x5c;x26metric&#x5c;x3ds'}" lsevents="{Press:[{ResponseData:'delta',ClientAction:'submit'},{}]}" role="button" title="인쇄" tabindex="0" ti="0" class="lsButton&#x20;lsButton--base&#x20;urInlineMetricTop&#x20;urNoUserSelect&#x20;urBtnRadius&#x20;&#x20;lsButton--active&#x20;&#x20;lsButton--focusable&#x20;&#x20;lsButton--up&#x20;lsButton--design-standard&#x20;">
+<span id="WD01FA-cnt" class="urNoUserSelect&#x20;lsButton--content&#x20;lsControl--centeraligned" role="presentation">
+<svg id="WD01FA-img" focusable="false" aria-hidden="true" preserveaspectratio="none" viewbox="0&#x20;0&#x20;100&#x20;100" class="lsSvgAppIcon&#x20;urSvgAppIconVAlign&#x20;urSvgAppIconColorBase&#x20;urSvgAppIconMetricSmall&#x20;urImgBtn&#x20;lsImgBtnFirst&#x20;lsButton__image">
+<use xlink:href="https&#x3a;&#x2f;&#x2f;ecc.ssu.ac.kr&#x3a;8443&#x2f;sap&#x2f;public&#x2f;bc&#x2f;ur&#x2f;nw5&#x2f;themes&#x2f;&#x7e;cache-20230801062755&#x2f;Base&#x2f;baseLib&#x2f;sap_fiori_3&#x2f;svg&#x2f;libs&#x2f;SAPWeb-icons.svg&#x23;Print&amp;metric&#x3d;s">
+</use>
+</svg>
+<span class="lsButton__text&#x20;&#x20;lsControl--noWrapping" id="WD01FA-caption">이수구분별&#x20;성적현황&#x20;출력</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-11">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD01FC" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left" colspan="10">
+<TABLE id="WD01FD" ct="SC" lsdata="{0:'NONE'}" class="lsHTMLContainer&#x20;lsScrollContainer--nonescrolling&#x20;lsControl--fullwidth" role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tbody>
+<tr>
+<td id="WD01FD-cnt" valign="top" class="lsScrollContainer__outer">
+<table title="" cellspacing="0" cellpadding="0" id="WD01FE" class="urFontStd&#x20;urHtmlTableReset&#x20;lsControl--fullwidth" ct="GL" lsdata="{4:'LINE'}" border="0" role="presentation">
+<tbody>
+<tr id="WD01FE-row-0">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0200" class="lsContainerCell&#x20;lsGLCTopVAlign&#x20;lsContainerCellVAlign--top&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="TOP" align="left">
+<table cellpadding="0" cellspacing="0" border="0" id="WD0201" ct="ST" lsdata="{0:'학기별&#x5c;x20세부&#x5c;x20성적',2:0,3:8,4:1,5:0,6:8,7:8,8:1,18:'SINGLE',19:'SERVER_WEB_SMART',23:false,28:'SPACEBAR',31:'lsCondensed',37:2}" lsevents="{RowSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],CellSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],HeaderCellSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],HeaderActionMenuAccess:[{ResponseData:'delta',ClientAction:'submit'},{}],CellExpand:[{ResponseData:'delta',ClientAction:'submit'},{}],CellCollapse:[{ResponseData:'delta',ClientAction:'submit'},{}],CellIconSelect:[{ResponseData:'delta',ClientAction:'submit'},{}],CellContextMenu:[{ResponseData:'delta',ClientAction:'submit'},{}],VerticalScroll:[{ResponseData:'delta',ClientAction:'submit'},{}],HorizontalScroll:[{ResponseData:'delta',ClientAction:'submit'},{}],ColumnResize:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" role="grid" aria-rowcount="1" aria-colcount="9" aria-labelledby="&#x20;WD0201-ariatitle" tabindex="0" ti="0" data-header="true" class="urST&#x20;urST3WhlBrd&#x20;urST5SelColUiSingle&#x20;lsSapTable--backgroundColor" data-sap-ls-style="width:100%;text-align:left;">
+<thead id="WD0201-thead">
+<tr role="presentation">
+<th role="presentation">
+<span tabindex="0" ti="0" tp="START_INSIDE" role="none">
+</span>
+</th>
+</tr>
+<tr role="presentation">
+<th role="heading" aria-level="2" id="WD0201-ariatitle" class="urST3Tit&#x20;urST4LbTitBg" colspan="1">
+<span id="WD0202" ct="CP" lsdata="{0:'세트&#x5c;x20A',1:'학기별&#x5c;x20세부&#x5c;x20성적',2:'https&#x5c;x3a&#x5c;x2f&#x5c;x2fecc.ssu.ac.kr&#x5c;x3a8443&#x5c;x2fsap&#x5c;x2fpublic&#x5c;x2fbc&#x5c;x2fur&#x5c;x2fnw5&#x5c;x2fthemes&#x5c;x2f&#x5c;x7ecache&#x5c;x2d20230801062755&#x5c;x2fBase&#x5c;x2fbaseLib&#x5c;x2fsap_fiori_3&#x5c;x2fsvg&#x5c;x2flibs&#x5c;x2fSAPGUI&#x5c;x2dicons.svg&#x5c;x23s_b_aboa',6:false}" title="세트&#x20;A" class="&#x20;&#x20;lsCaption--embedded">
+<svg id="WD0202-img" title="세트&#x20;A" focusable="false" aria-hidden="true" preserveaspectratio="none" viewbox="0&#x20;0&#x20;100&#x20;100" class="lsSvgAppIcon&#x20;urSvgAppIconVAlign&#x20;urSvgAppIconColorBase&#x20;urSvgAppIconMetric&#x20;urNoUserSelect">
+<use xlink:href="https&#x3a;&#x2f;&#x2f;ecc.ssu.ac.kr&#x3a;8443&#x2f;sap&#x2f;public&#x2f;bc&#x2f;ur&#x2f;nw5&#x2f;themes&#x2f;&#x7e;cache-20230801062755&#x2f;Base&#x2f;baseLib&#x2f;sap_fiori_3&#x2f;svg&#x2f;libs&#x2f;SAPGUI-icons.svg&#x23;s_b_aboa">
+</use>
+</svg>&nbsp;학기별&#x20;세부&#x20;성적</span>
+</th>
+</tr>
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urSTSStd" id="WD0201-content" data-sap-ls-style="width:100%;height:100%;">
+<table cellpadding="0" cellspacing="0" border="0" role="presentation" class="urST3BdBrd&#x20;urST3Bd&#x20;urFontStd" tableBasedColumnWidhts="X" data-sap-ls-style="height:100%;width:100%;">
+<colgroup>
+<col selectionColumn="X" data-sap-ls-style="width:0.01%;">
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+<tbody id="WD0201-contentTBody">
+<tr rt="2" role="row" aria-selected="false">
+<th id="WD0206" subct="HC" lsdata="{2:'SELECTIONCOLUMN'}" role="columnheader" aria-labelledby="ARIA_ST_SCOL" lsMatrixRowIndex="-2147483648" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricSelCol&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="text-align:left;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<div NeedsBeginningInnerPadding="true" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:normal;text-overflow:clip;">&nbsp;</div>
+</div>
+</th>
+<th id="WD0208" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD0209" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0208-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0209" ct="CP" lsdata="{1:'성적',6:false}" class="&#x20;&#x20;lsCaption--embedded">성적</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD020A" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD020B" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020A-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020B" ct="CP" lsdata="{1:'등급',6:false}" class="&#x20;&#x20;lsCaption--embedded">등급</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD020C" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD020D" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:left;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020C-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020D" ct="CP" lsdata="{1:'과목명',6:false}" class="&#x20;&#x20;lsCaption--embedded">과목명</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD020E" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD020F" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020E-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD020F" ct="CP" lsdata="{1:'상세성적',6:false}" class="&#x20;&#x20;lsCaption--embedded">상세성적</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD0210" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD0211" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0210-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0211" ct="CP" lsdata="{1:'과목학점',6:false}" class="&#x20;&#x20;lsCaption--embedded">과목학점</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD0212" subct="HC" lsdata="{7:'교수명'}" role="columnheader" lsMatrixRowIndex="-2147483648" title="교수명" captionId="WD0213" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0212-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0213" ct="CP" lsdata="{0:'교수명',1:'교수명',6:false}" title="교수명" class="&#x20;&#x20;lsCaption--embedded">교수명</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD0214" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD0215" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0214-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0215" ct="CP" lsdata="{1:'비고',6:false}" class="&#x20;&#x20;lsCaption--embedded">비고</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+<th id="WD0216" subct="HC" lsdata="{}" role="columnheader" lsMatrixRowIndex="-2147483648" captionId="WD0217" headerType="S" sst="4" class="urSTHC&#x20;urBorderBox&#x20;urST5HCMetricStd&#x20;lsSTHdrSepBrdTop&#x20;lsSTHdrSepBrdBottom&#x20;urST5HCColorLvl1&#x20;urST4LbHdrBg" data-sap-ls-style="font-size:1.0em;text-align:center;">
+<div class="urBorderBox&#x20;lsSTBSHCDIV&#x20;ls-sthcfocus&#x20;lsCondensed" data-sap-ls-style="height:100%;width:100%;overflow:hidden;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" class="urST5LbLightBrd&#x20;urST3HTbl&#x20;lsSTBSHCTBL" data-sap-ls-style="height:100%;">
+<tbody>
+<tr role="presentation">
+<td role="presentation" class="urFontRel" data-sap-ls-style="white-space:nowrap;">
+<div NeedsBeginningInnerPadding="true" align="center" tabindex="0" ti="0" role="none" class="ls-sthcfocus&#x20;&#x20;urST5HCMetricContent&#x20;urBorderBox&#x20;urST5HCMetricSelColToggleWidth" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0216-CONTENT" data-sap-ls-style="white-space:nowrap;">
+<span id="WD0217" ct="CP" lsdata="{1:'과목코드',6:false}" class="&#x20;&#x20;lsCaption--embedded">과목코드</span>
+</span>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</th>
+</tr>
+</table>
+<span tabindex="0" ti="0" tp="END_INSIDE" role="none">
+</span>
+<span tabindex="0" ti="0" acf="TABLE_END" tp="END" role="none">
+</span>
+<div id="WD0201-hiddenData" data-sap-ls-style="position:absolute;top:-10000;height:0px;width:0px;overflow:hidden;font-size:1px;">
+<div id="WD0201-colorStdHover" class="urST5stdHoverColor">
+</div>
+<div id="WD0201-colorDDHover" class="urST5ddHoverColor">
+</div>
+</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+</td>
+</tr>
+<tr id="WD11-row-12">
+<td ct="GLC" lsdata="{1:'STANDARD'}" id="WD0222" class="lsContainerCell&#x20;urLayoutDefault--grid&#x20;lsContainerCell--wrap" valign="BOTTOM" align="left">
+<span id="WD0223" ct="TV" lsdata="{4:'BLOCK',5:'NEGATIVE'}" data-emptytext="true" class="lsTextView--design-standard&#x20;lsTextView--emptytext">&#x20;비어 있음</span>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</TABLE>
+<div id="sapwd_main_window_root_-asso">
+<div id="_pageContentAsso_" ct="CO" lsdata="{}" class="">
+<div id="sapwd_main_window_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="ALL_POPUPS" ct="CO" lsdata="{}" class="">
+<div id="WDWL1_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL1_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL2_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL2_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL3_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL3_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL4_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL4_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL5_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL5_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL6_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL6_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL7_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL7_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL8_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL8_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL9_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL9_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL10_POP_CONT" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WDWL10_hiddenArea_" ct="CO" lsdata="{}" class="">
+</div>
+</div>
+<div id="_pageContentViewAssoc_" ct="CO" lsdata="{}" class="">
+<div id="WD0225" ct="CO" lsdata="{}" class="">
+<div id="WD14.ASSOC" ct="CO" lsdata="{}" class="">
+</div>
+<div id="WD58" ct="LIB_P" lsdata="{8:true,21:false}" class="lsListbox&#x20;lsListbox--hasitems&#x20;lsListbox--popup" tabindex="-1" ti="-1" role="listbox" aria-owns="WD59&#x20;WD5A&#x20;WD5B&#x20;WD5C&#x20;WD5D&#x20;WD5E&#x20;" aria-activedescendant="WD59">
+<span id="WD58-aria" title="" class="lsControl--invisible">
+<span id="WD59-ariaItemValues" title="" class="lsControl--invisible">박사과정</span>
+<span id="WD5A-ariaItemValues" title="" class="lsControl--invisible">석사과정</span>
+<span id="WD5B-ariaItemValues" title="" class="lsControl--invisible">석박과정</span>
+<span id="WD5C-ariaItemValues" title="" class="lsControl--invisible">연구과정</span>
+<span id="WD5D-ariaItemValues" title="" class="lsControl--invisible">학사과정</span>
+<span id="WD5E-ariaItemValues" title="" class="lsControl--invisible">특별과정</span>
+</span>
+<div id="WD58-scrl" class="lsListbox__items" tabindex="-1" ti="-1" data-sap-ls-style="height:10em;">
+<div id="WD58-first" title="" class="lsListbox__values&#x20;lsListbox__values--first">
+<div id="WD59" class="lsListbox__value" data-itemid="WD59" ct="LIB_I" lsdata="{}" data-itemindex="0" data-itemkey="DR" data-itemdisabled="" data-itemvalue1="박사과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="1" aria-labelledby="WD59-ariaItemValues">박사과정</div>
+<div id="WD5A" class="lsListbox__value" data-itemid="WD5A" ct="LIB_I" lsdata="{}" data-itemindex="1" data-itemkey="MA" data-itemdisabled="" data-itemvalue1="석사과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="2" aria-labelledby="WD5A-ariaItemValues">석사과정</div>
+<div id="WD5B" class="lsListbox__value" data-itemid="WD5B" ct="LIB_I" lsdata="{}" data-itemindex="2" data-itemkey="MP" data-itemdisabled="" data-itemvalue1="석박과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="3" aria-labelledby="WD5B-ariaItemValues">석박과정</div>
+<div id="WD5C" class="lsListbox__value" data-itemid="WD5C" ct="LIB_I" lsdata="{}" data-itemindex="3" data-itemkey="RE" data-itemdisabled="" data-itemvalue1="연구과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="4" aria-labelledby="WD5C-ariaItemValues">연구과정</div>
+<div id="WD5D" class="lsListbox__value" data-itemid="WD5D" ct="LIB_I" lsdata="{}" data-itemindex="4" data-itemkey="UG" data-itemdisabled="" data-itemvalue1="학사과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="5" aria-labelledby="WD5D-ariaItemValues">학사과정</div>
+<div id="WD5E" class="lsListbox__value" data-itemid="WD5E" ct="LIB_I" lsdata="{}" data-itemindex="5" data-itemkey="Z1" data-itemdisabled="" data-itemvalue1="특별과정" role="option" aria-selected="false" aria-setsize="6" aria-posinset="6" aria-labelledby="WD5E-ariaItemValues">특별과정</div>
+</div>
+</div>
+</div>
+<div id="WD018B.ASSOC" ct="CO" lsdata="{}" class="">
+<div id="WD0194" ct="LIB_P" lsdata="{8:true,21:false}" class="lsListbox&#x20;lsListbox--hasitems&#x20;lsListbox--popup" tabindex="-1" ti="-1" role="listbox" aria-owns="WD0195&#x20;WD0196&#x20;WD0197&#x20;WD0198&#x20;WD0199&#x20;WD019A&#x20;WD019B&#x20;WD019C&#x20;WD019D&#x20;WD019E&#x20;WD019F&#x20;WD01A0&#x20;WD01A1&#x20;WD01A2&#x20;WD01A3&#x20;WD01A4&#x20;WD01A5&#x20;WD01A6&#x20;WD01A7&#x20;WD01A8&#x20;WD01A9&#x20;WD01AA&#x20;WD01AB&#x20;WD01AC&#x20;WD01AD&#x20;WD01AE&#x20;WD01AF&#x20;WD01B0&#x20;WD01B1&#x20;WD01B2&#x20;WD01B3&#x20;WD01B4&#x20;WD01B5&#x20;WD01B6&#x20;WD01B7&#x20;WD01B8&#x20;WD01B9&#x20;WD01BA&#x20;WD01BB&#x20;WD01BC&#x20;WD01BD&#x20;WD01BE&#x20;WD01BF&#x20;WD01C0&#x20;WD01C1&#x20;WD01C2&#x20;WD01C3&#x20;WD01C4&#x20;WD01C5&#x20;WD01C6&#x20;WD01C7&#x20;WD01C8&#x20;WD01C9&#x20;WD01CA&#x20;WD01CB&#x20;WD01CC&#x20;WD01CD&#x20;WD01CE&#x20;WD01CF&#x20;WD01D0&#x20;WD01D1&#x20;WD01D2&#x20;WD01D3&#x20;WD01D4&#x20;WD01D5&#x20;WD01D6&#x20;WD01D7&#x20;WD01D8&#x20;WD01D9&#x20;WD01DA&#x20;WD01DB&#x20;WD01DC&#x20;WD01DD&#x20;WD01DE&#x20;WD01DF&#x20;WD01E0&#x20;WD01E1&#x20;" aria-activedescendant="WD0195">
+<span id="WD0194-aria" title="" class="lsControl--invisible">
+<span id="WD0195-ariaItemValues" title="" class="lsControl--invisible">1954학년도</span>
+<span id="WD0196-ariaItemValues" title="" class="lsControl--invisible">1955학년도</span>
+<span id="WD0197-ariaItemValues" title="" class="lsControl--invisible">1956학년도</span>
+<span id="WD0198-ariaItemValues" title="" class="lsControl--invisible">1957학년도</span>
+<span id="WD0199-ariaItemValues" title="" class="lsControl--invisible">1958학년도</span>
+<span id="WD019A-ariaItemValues" title="" class="lsControl--invisible">1959학년도</span>
+<span id="WD019B-ariaItemValues" title="" class="lsControl--invisible">1960학년도</span>
+<span id="WD019C-ariaItemValues" title="" class="lsControl--invisible">1961학년도</span>
+<span id="WD019D-ariaItemValues" title="" class="lsControl--invisible">1962학년도</span>
+<span id="WD019E-ariaItemValues" title="" class="lsControl--invisible">1963학년도</span>
+<span id="WD019F-ariaItemValues" title="" class="lsControl--invisible">1964학년도</span>
+<span id="WD01A0-ariaItemValues" title="" class="lsControl--invisible">1965학년도</span>
+<span id="WD01A1-ariaItemValues" title="" class="lsControl--invisible">1966학년도</span>
+<span id="WD01A2-ariaItemValues" title="" class="lsControl--invisible">1967학년도</span>
+<span id="WD01A3-ariaItemValues" title="" class="lsControl--invisible">1968학년도</span>
+<span id="WD01A4-ariaItemValues" title="" class="lsControl--invisible">1969학년도</span>
+<span id="WD01A5-ariaItemValues" title="" class="lsControl--invisible">1970학년도</span>
+<span id="WD01A6-ariaItemValues" title="" class="lsControl--invisible">1971학년도</span>
+<span id="WD01A7-ariaItemValues" title="" class="lsControl--invisible">1972학년도</span>
+<span id="WD01A8-ariaItemValues" title="" class="lsControl--invisible">1973학년도</span>
+<span id="WD01A9-ariaItemValues" title="" class="lsControl--invisible">1974학년도</span>
+<span id="WD01AA-ariaItemValues" title="" class="lsControl--invisible">1975학년도</span>
+<span id="WD01AB-ariaItemValues" title="" class="lsControl--invisible">1976학년도</span>
+<span id="WD01AC-ariaItemValues" title="" class="lsControl--invisible">1977학년도</span>
+<span id="WD01AD-ariaItemValues" title="" class="lsControl--invisible">1978학년도</span>
+<span id="WD01AE-ariaItemValues" title="" class="lsControl--invisible">1979학년도</span>
+<span id="WD01AF-ariaItemValues" title="" class="lsControl--invisible">1980학년도</span>
+<span id="WD01B0-ariaItemValues" title="" class="lsControl--invisible">1981학년도</span>
+<span id="WD01B1-ariaItemValues" title="" class="lsControl--invisible">1982학년도</span>
+<span id="WD01B2-ariaItemValues" title="" class="lsControl--invisible">1983학년도</span>
+<span id="WD01B3-ariaItemValues" title="" class="lsControl--invisible">1984학년도</span>
+<span id="WD01B4-ariaItemValues" title="" class="lsControl--invisible">1985학년도</span>
+<span id="WD01B5-ariaItemValues" title="" class="lsControl--invisible">1986학년도</span>
+<span id="WD01B6-ariaItemValues" title="" class="lsControl--invisible">1987학년도</span>
+<span id="WD01B7-ariaItemValues" title="" class="lsControl--invisible">1988학년도</span>
+<span id="WD01B8-ariaItemValues" title="" class="lsControl--invisible">1989학년도</span>
+<span id="WD01B9-ariaItemValues" title="" class="lsControl--invisible">1990학년도</span>
+<span id="WD01BA-ariaItemValues" title="" class="lsControl--invisible">1991학년도</span>
+<span id="WD01BB-ariaItemValues" title="" class="lsControl--invisible">1992학년도</span>
+<span id="WD01BC-ariaItemValues" title="" class="lsControl--invisible">1993학년도</span>
+<span id="WD01BD-ariaItemValues" title="" class="lsControl--invisible">1994학년도</span>
+<span id="WD01BE-ariaItemValues" title="" class="lsControl--invisible">1995학년도</span>
+<span id="WD01BF-ariaItemValues" title="" class="lsControl--invisible">1996학년도</span>
+<span id="WD01C0-ariaItemValues" title="" class="lsControl--invisible">1997학년도</span>
+<span id="WD01C1-ariaItemValues" title="" class="lsControl--invisible">1998학년도</span>
+<span id="WD01C2-ariaItemValues" title="" class="lsControl--invisible">1999학년도</span>
+<span id="WD01C3-ariaItemValues" title="" class="lsControl--invisible">2000학년도</span>
+<span id="WD01C4-ariaItemValues" title="" class="lsControl--invisible">2001학년도</span>
+<span id="WD01C5-ariaItemValues" title="" class="lsControl--invisible">2002학년도</span>
+<span id="WD01C6-ariaItemValues" title="" class="lsControl--invisible">2003학년도</span>
+<span id="WD01C7-ariaItemValues" title="" class="lsControl--invisible">2004학년도</span>
+<span id="WD01C8-ariaItemValues" title="" class="lsControl--invisible">2005학년도</span>
+<span id="WD01C9-ariaItemValues" title="" class="lsControl--invisible">2006학년도</span>
+<span id="WD01CA-ariaItemValues" title="" class="lsControl--invisible">2007학년도</span>
+<span id="WD01CB-ariaItemValues" title="" class="lsControl--invisible">2008학년도</span>
+<span id="WD01CC-ariaItemValues" title="" class="lsControl--invisible">2009학년도</span>
+<span id="WD01CD-ariaItemValues" title="" class="lsControl--invisible">2010학년도</span>
+<span id="WD01CE-ariaItemValues" title="" class="lsControl--invisible">2011학년도</span>
+<span id="WD01CF-ariaItemValues" title="" class="lsControl--invisible">2012학년도</span>
+<span id="WD01D0-ariaItemValues" title="" class="lsControl--invisible">2013학년도</span>
+<span id="WD01D1-ariaItemValues" title="" class="lsControl--invisible">2014학년도</span>
+<span id="WD01D2-ariaItemValues" title="" class="lsControl--invisible">2015학년도</span>
+<span id="WD01D3-ariaItemValues" title="" class="lsControl--invisible">2016학년도</span>
+<span id="WD01D4-ariaItemValues" title="" class="lsControl--invisible">2017학년도</span>
+<span id="WD01D5-ariaItemValues" title="" class="lsControl--invisible">2018학년도</span>
+<span id="WD01D6-ariaItemValues" title="" class="lsControl--invisible">2019학년도</span>
+<span id="WD01D7-ariaItemValues" title="" class="lsControl--invisible">2020학년도</span>
+<span id="WD01D8-ariaItemValues" title="" class="lsControl--invisible">2021학년도</span>
+<span id="WD01D9-ariaItemValues" title="" class="lsControl--invisible">2022학년도</span>
+<span id="WD01DA-ariaItemValues" title="" class="lsControl--invisible">2023학년도</span>
+<span id="WD01DB-ariaItemValues" title="" class="lsControl--invisible">2024학년도</span>
+<span id="WD01DC-ariaItemValues" title="" class="lsControl--invisible">2025학년도</span>
+<span id="WD01DD-ariaItemValues" title="" class="lsControl--invisible">2026학년도</span>
+<span id="WD01DE-ariaItemValues" title="" class="lsControl--invisible">2027학년도</span>
+<span id="WD01DF-ariaItemValues" title="" class="lsControl--invisible">2028학년도</span>
+<span id="WD01E0-ariaItemValues" title="" class="lsControl--invisible">2029학년도</span>
+<span id="WD01E1-ariaItemValues" title="" class="lsControl--invisible">2030학년도</span>
+</span>
+<div id="WD0194-scrl" class="lsListbox__items" tabindex="-1" ti="-1" data-sap-ls-style="height:10em;overflow-y:auto;">
+<div id="WD0194-first" title="" class="lsListbox__values&#x20;lsListbox__values--first">
+<div id="WD0195" class="lsListbox__value" data-itemid="WD0195" ct="LIB_I" lsdata="{}" data-itemindex="0" data-itemkey="1954" data-itemdisabled="" data-itemvalue1="1954학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="1" aria-labelledby="WD0195-ariaItemValues">1954학년도</div>
+<div id="WD0196" class="lsListbox__value" data-itemid="WD0196" ct="LIB_I" lsdata="{}" data-itemindex="1" data-itemkey="1955" data-itemdisabled="" data-itemvalue1="1955학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="2" aria-labelledby="WD0196-ariaItemValues">1955학년도</div>
+<div id="WD0197" class="lsListbox__value" data-itemid="WD0197" ct="LIB_I" lsdata="{}" data-itemindex="2" data-itemkey="1956" data-itemdisabled="" data-itemvalue1="1956학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="3" aria-labelledby="WD0197-ariaItemValues">1956학년도</div>
+<div id="WD0198" class="lsListbox__value" data-itemid="WD0198" ct="LIB_I" lsdata="{}" data-itemindex="3" data-itemkey="1957" data-itemdisabled="" data-itemvalue1="1957학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="4" aria-labelledby="WD0198-ariaItemValues">1957학년도</div>
+<div id="WD0199" class="lsListbox__value" data-itemid="WD0199" ct="LIB_I" lsdata="{}" data-itemindex="4" data-itemkey="1958" data-itemdisabled="" data-itemvalue1="1958학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="5" aria-labelledby="WD0199-ariaItemValues">1958학년도</div>
+<div id="WD019A" class="lsListbox__value" data-itemid="WD019A" ct="LIB_I" lsdata="{}" data-itemindex="5" data-itemkey="1959" data-itemdisabled="" data-itemvalue1="1959학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="6" aria-labelledby="WD019A-ariaItemValues">1959학년도</div>
+<div id="WD019B" class="lsListbox__value" data-itemid="WD019B" ct="LIB_I" lsdata="{}" data-itemindex="6" data-itemkey="1960" data-itemdisabled="" data-itemvalue1="1960학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="7" aria-labelledby="WD019B-ariaItemValues">1960학년도</div>
+<div id="WD019C" class="lsListbox__value" data-itemid="WD019C" ct="LIB_I" lsdata="{}" data-itemindex="7" data-itemkey="1961" data-itemdisabled="" data-itemvalue1="1961학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="8" aria-labelledby="WD019C-ariaItemValues">1961학년도</div>
+<div id="WD019D" class="lsListbox__value" data-itemid="WD019D" ct="LIB_I" lsdata="{}" data-itemindex="8" data-itemkey="1962" data-itemdisabled="" data-itemvalue1="1962학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="9" aria-labelledby="WD019D-ariaItemValues">1962학년도</div>
+<div id="WD019E" class="lsListbox__value" data-itemid="WD019E" ct="LIB_I" lsdata="{}" data-itemindex="9" data-itemkey="1963" data-itemdisabled="" data-itemvalue1="1963학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="10" aria-labelledby="WD019E-ariaItemValues">1963학년도</div>
+<div id="WD019F" class="lsListbox__value" data-itemid="WD019F" ct="LIB_I" lsdata="{}" data-itemindex="10" data-itemkey="1964" data-itemdisabled="" data-itemvalue1="1964학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="11" aria-labelledby="WD019F-ariaItemValues">1964학년도</div>
+<div id="WD01A0" class="lsListbox__value" data-itemid="WD01A0" ct="LIB_I" lsdata="{}" data-itemindex="11" data-itemkey="1965" data-itemdisabled="" data-itemvalue1="1965학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="12" aria-labelledby="WD01A0-ariaItemValues">1965학년도</div>
+<div id="WD01A1" class="lsListbox__value" data-itemid="WD01A1" ct="LIB_I" lsdata="{}" data-itemindex="12" data-itemkey="1966" data-itemdisabled="" data-itemvalue1="1966학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="13" aria-labelledby="WD01A1-ariaItemValues">1966학년도</div>
+<div id="WD01A2" class="lsListbox__value" data-itemid="WD01A2" ct="LIB_I" lsdata="{}" data-itemindex="13" data-itemkey="1967" data-itemdisabled="" data-itemvalue1="1967학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="14" aria-labelledby="WD01A2-ariaItemValues">1967학년도</div>
+<div id="WD01A3" class="lsListbox__value" data-itemid="WD01A3" ct="LIB_I" lsdata="{}" data-itemindex="14" data-itemkey="1968" data-itemdisabled="" data-itemvalue1="1968학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="15" aria-labelledby="WD01A3-ariaItemValues">1968학년도</div>
+<div id="WD01A4" class="lsListbox__value" data-itemid="WD01A4" ct="LIB_I" lsdata="{}" data-itemindex="15" data-itemkey="1969" data-itemdisabled="" data-itemvalue1="1969학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="16" aria-labelledby="WD01A4-ariaItemValues">1969학년도</div>
+<div id="WD01A5" class="lsListbox__value" data-itemid="WD01A5" ct="LIB_I" lsdata="{}" data-itemindex="16" data-itemkey="1970" data-itemdisabled="" data-itemvalue1="1970학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="17" aria-labelledby="WD01A5-ariaItemValues">1970학년도</div>
+<div id="WD01A6" class="lsListbox__value" data-itemid="WD01A6" ct="LIB_I" lsdata="{}" data-itemindex="17" data-itemkey="1971" data-itemdisabled="" data-itemvalue1="1971학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="18" aria-labelledby="WD01A6-ariaItemValues">1971학년도</div>
+<div id="WD01A7" class="lsListbox__value" data-itemid="WD01A7" ct="LIB_I" lsdata="{}" data-itemindex="18" data-itemkey="1972" data-itemdisabled="" data-itemvalue1="1972학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="19" aria-labelledby="WD01A7-ariaItemValues">1972학년도</div>
+<div id="WD01A8" class="lsListbox__value" data-itemid="WD01A8" ct="LIB_I" lsdata="{}" data-itemindex="19" data-itemkey="1973" data-itemdisabled="" data-itemvalue1="1973학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="20" aria-labelledby="WD01A8-ariaItemValues">1973학년도</div>
+<div id="WD01A9" class="lsListbox__value" data-itemid="WD01A9" ct="LIB_I" lsdata="{}" data-itemindex="20" data-itemkey="1974" data-itemdisabled="" data-itemvalue1="1974학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="21" aria-labelledby="WD01A9-ariaItemValues">1974학년도</div>
+<div id="WD01AA" class="lsListbox__value" data-itemid="WD01AA" ct="LIB_I" lsdata="{}" data-itemindex="21" data-itemkey="1975" data-itemdisabled="" data-itemvalue1="1975학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="22" aria-labelledby="WD01AA-ariaItemValues">1975학년도</div>
+<div id="WD01AB" class="lsListbox__value" data-itemid="WD01AB" ct="LIB_I" lsdata="{}" data-itemindex="22" data-itemkey="1976" data-itemdisabled="" data-itemvalue1="1976학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="23" aria-labelledby="WD01AB-ariaItemValues">1976학년도</div>
+<div id="WD01AC" class="lsListbox__value" data-itemid="WD01AC" ct="LIB_I" lsdata="{}" data-itemindex="23" data-itemkey="1977" data-itemdisabled="" data-itemvalue1="1977학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="24" aria-labelledby="WD01AC-ariaItemValues">1977학년도</div>
+<div id="WD01AD" class="lsListbox__value" data-itemid="WD01AD" ct="LIB_I" lsdata="{}" data-itemindex="24" data-itemkey="1978" data-itemdisabled="" data-itemvalue1="1978학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="25" aria-labelledby="WD01AD-ariaItemValues">1978학년도</div>
+<div id="WD01AE" class="lsListbox__value" data-itemid="WD01AE" ct="LIB_I" lsdata="{}" data-itemindex="25" data-itemkey="1979" data-itemdisabled="" data-itemvalue1="1979학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="26" aria-labelledby="WD01AE-ariaItemValues">1979학년도</div>
+<div id="WD01AF" class="lsListbox__value" data-itemid="WD01AF" ct="LIB_I" lsdata="{}" data-itemindex="26" data-itemkey="1980" data-itemdisabled="" data-itemvalue1="1980학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="27" aria-labelledby="WD01AF-ariaItemValues">1980학년도</div>
+<div id="WD01B0" class="lsListbox__value" data-itemid="WD01B0" ct="LIB_I" lsdata="{}" data-itemindex="27" data-itemkey="1981" data-itemdisabled="" data-itemvalue1="1981학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="28" aria-labelledby="WD01B0-ariaItemValues">1981학년도</div>
+<div id="WD01B1" class="lsListbox__value" data-itemid="WD01B1" ct="LIB_I" lsdata="{}" data-itemindex="28" data-itemkey="1982" data-itemdisabled="" data-itemvalue1="1982학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="29" aria-labelledby="WD01B1-ariaItemValues">1982학년도</div>
+<div id="WD01B2" class="lsListbox__value" data-itemid="WD01B2" ct="LIB_I" lsdata="{}" data-itemindex="29" data-itemkey="1983" data-itemdisabled="" data-itemvalue1="1983학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="30" aria-labelledby="WD01B2-ariaItemValues">1983학년도</div>
+<div id="WD01B3" class="lsListbox__value" data-itemid="WD01B3" ct="LIB_I" lsdata="{}" data-itemindex="30" data-itemkey="1984" data-itemdisabled="" data-itemvalue1="1984학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="31" aria-labelledby="WD01B3-ariaItemValues">1984학년도</div>
+<div id="WD01B4" class="lsListbox__value" data-itemid="WD01B4" ct="LIB_I" lsdata="{}" data-itemindex="31" data-itemkey="1985" data-itemdisabled="" data-itemvalue1="1985학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="32" aria-labelledby="WD01B4-ariaItemValues">1985학년도</div>
+<div id="WD01B5" class="lsListbox__value" data-itemid="WD01B5" ct="LIB_I" lsdata="{}" data-itemindex="32" data-itemkey="1986" data-itemdisabled="" data-itemvalue1="1986학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="33" aria-labelledby="WD01B5-ariaItemValues">1986학년도</div>
+<div id="WD01B6" class="lsListbox__value" data-itemid="WD01B6" ct="LIB_I" lsdata="{}" data-itemindex="33" data-itemkey="1987" data-itemdisabled="" data-itemvalue1="1987학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="34" aria-labelledby="WD01B6-ariaItemValues">1987학년도</div>
+<div id="WD01B7" class="lsListbox__value" data-itemid="WD01B7" ct="LIB_I" lsdata="{}" data-itemindex="34" data-itemkey="1988" data-itemdisabled="" data-itemvalue1="1988학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="35" aria-labelledby="WD01B7-ariaItemValues">1988학년도</div>
+<div id="WD01B8" class="lsListbox__value" data-itemid="WD01B8" ct="LIB_I" lsdata="{}" data-itemindex="35" data-itemkey="1989" data-itemdisabled="" data-itemvalue1="1989학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="36" aria-labelledby="WD01B8-ariaItemValues">1989학년도</div>
+<div id="WD01B9" class="lsListbox__value" data-itemid="WD01B9" ct="LIB_I" lsdata="{}" data-itemindex="36" data-itemkey="1990" data-itemdisabled="" data-itemvalue1="1990학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="37" aria-labelledby="WD01B9-ariaItemValues">1990학년도</div>
+<div id="WD01BA" class="lsListbox__value" data-itemid="WD01BA" ct="LIB_I" lsdata="{}" data-itemindex="37" data-itemkey="1991" data-itemdisabled="" data-itemvalue1="1991학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="38" aria-labelledby="WD01BA-ariaItemValues">1991학년도</div>
+<div id="WD01BB" class="lsListbox__value" data-itemid="WD01BB" ct="LIB_I" lsdata="{}" data-itemindex="38" data-itemkey="1992" data-itemdisabled="" data-itemvalue1="1992학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="39" aria-labelledby="WD01BB-ariaItemValues">1992학년도</div>
+<div id="WD01BC" class="lsListbox__value" data-itemid="WD01BC" ct="LIB_I" lsdata="{}" data-itemindex="39" data-itemkey="1993" data-itemdisabled="" data-itemvalue1="1993학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="40" aria-labelledby="WD01BC-ariaItemValues">1993학년도</div>
+<div id="WD01BD" class="lsListbox__value" data-itemid="WD01BD" ct="LIB_I" lsdata="{}" data-itemindex="40" data-itemkey="1994" data-itemdisabled="" data-itemvalue1="1994학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="41" aria-labelledby="WD01BD-ariaItemValues">1994학년도</div>
+<div id="WD01BE" class="lsListbox__value" data-itemid="WD01BE" ct="LIB_I" lsdata="{}" data-itemindex="41" data-itemkey="1995" data-itemdisabled="" data-itemvalue1="1995학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="42" aria-labelledby="WD01BE-ariaItemValues">1995학년도</div>
+<div id="WD01BF" class="lsListbox__value" data-itemid="WD01BF" ct="LIB_I" lsdata="{}" data-itemindex="42" data-itemkey="1996" data-itemdisabled="" data-itemvalue1="1996학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="43" aria-labelledby="WD01BF-ariaItemValues">1996학년도</div>
+<div id="WD01C0" class="lsListbox__value" data-itemid="WD01C0" ct="LIB_I" lsdata="{}" data-itemindex="43" data-itemkey="1997" data-itemdisabled="" data-itemvalue1="1997학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="44" aria-labelledby="WD01C0-ariaItemValues">1997학년도</div>
+<div id="WD01C1" class="lsListbox__value" data-itemid="WD01C1" ct="LIB_I" lsdata="{}" data-itemindex="44" data-itemkey="1998" data-itemdisabled="" data-itemvalue1="1998학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="45" aria-labelledby="WD01C1-ariaItemValues">1998학년도</div>
+<div id="WD01C2" class="lsListbox__value" data-itemid="WD01C2" ct="LIB_I" lsdata="{}" data-itemindex="45" data-itemkey="1999" data-itemdisabled="" data-itemvalue1="1999학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="46" aria-labelledby="WD01C2-ariaItemValues">1999학년도</div>
+<div id="WD01C3" class="lsListbox__value" data-itemid="WD01C3" ct="LIB_I" lsdata="{}" data-itemindex="46" data-itemkey="2000" data-itemdisabled="" data-itemvalue1="2000학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="47" aria-labelledby="WD01C3-ariaItemValues">2000학년도</div>
+<div id="WD01C4" class="lsListbox__value" data-itemid="WD01C4" ct="LIB_I" lsdata="{}" data-itemindex="47" data-itemkey="2001" data-itemdisabled="" data-itemvalue1="2001학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="48" aria-labelledby="WD01C4-ariaItemValues">2001학년도</div>
+<div id="WD01C5" class="lsListbox__value" data-itemid="WD01C5" ct="LIB_I" lsdata="{}" data-itemindex="48" data-itemkey="2002" data-itemdisabled="" data-itemvalue1="2002학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="49" aria-labelledby="WD01C5-ariaItemValues">2002학년도</div>
+<div id="WD01C6" class="lsListbox__value" data-itemid="WD01C6" ct="LIB_I" lsdata="{}" data-itemindex="49" data-itemkey="2003" data-itemdisabled="" data-itemvalue1="2003학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="50" aria-labelledby="WD01C6-ariaItemValues">2003학년도</div>
+<div id="WD01C7" class="lsListbox__value" data-itemid="WD01C7" ct="LIB_I" lsdata="{}" data-itemindex="50" data-itemkey="2004" data-itemdisabled="" data-itemvalue1="2004학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="51" aria-labelledby="WD01C7-ariaItemValues">2004학년도</div>
+<div id="WD01C8" class="lsListbox__value" data-itemid="WD01C8" ct="LIB_I" lsdata="{}" data-itemindex="51" data-itemkey="2005" data-itemdisabled="" data-itemvalue1="2005학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="52" aria-labelledby="WD01C8-ariaItemValues">2005학년도</div>
+<div id="WD01C9" class="lsListbox__value" data-itemid="WD01C9" ct="LIB_I" lsdata="{}" data-itemindex="52" data-itemkey="2006" data-itemdisabled="" data-itemvalue1="2006학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="53" aria-labelledby="WD01C9-ariaItemValues">2006학년도</div>
+<div id="WD01CA" class="lsListbox__value" data-itemid="WD01CA" ct="LIB_I" lsdata="{}" data-itemindex="53" data-itemkey="2007" data-itemdisabled="" data-itemvalue1="2007학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="54" aria-labelledby="WD01CA-ariaItemValues">2007학년도</div>
+<div id="WD01CB" class="lsListbox__value" data-itemid="WD01CB" ct="LIB_I" lsdata="{}" data-itemindex="54" data-itemkey="2008" data-itemdisabled="" data-itemvalue1="2008학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="55" aria-labelledby="WD01CB-ariaItemValues">2008학년도</div>
+<div id="WD01CC" class="lsListbox__value" data-itemid="WD01CC" ct="LIB_I" lsdata="{}" data-itemindex="55" data-itemkey="2009" data-itemdisabled="" data-itemvalue1="2009학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="56" aria-labelledby="WD01CC-ariaItemValues">2009학년도</div>
+<div id="WD01CD" class="lsListbox__value" data-itemid="WD01CD" ct="LIB_I" lsdata="{}" data-itemindex="56" data-itemkey="2010" data-itemdisabled="" data-itemvalue1="2010학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="57" aria-labelledby="WD01CD-ariaItemValues">2010학년도</div>
+<div id="WD01CE" class="lsListbox__value" data-itemid="WD01CE" ct="LIB_I" lsdata="{}" data-itemindex="57" data-itemkey="2011" data-itemdisabled="" data-itemvalue1="2011학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="58" aria-labelledby="WD01CE-ariaItemValues">2011학년도</div>
+<div id="WD01CF" class="lsListbox__value" data-itemid="WD01CF" ct="LIB_I" lsdata="{}" data-itemindex="58" data-itemkey="2012" data-itemdisabled="" data-itemvalue1="2012학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="59" aria-labelledby="WD01CF-ariaItemValues">2012학년도</div>
+<div id="WD01D0" class="lsListbox__value" data-itemid="WD01D0" ct="LIB_I" lsdata="{}" data-itemindex="59" data-itemkey="2013" data-itemdisabled="" data-itemvalue1="2013학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="60" aria-labelledby="WD01D0-ariaItemValues">2013학년도</div>
+<div id="WD01D1" class="lsListbox__value" data-itemid="WD01D1" ct="LIB_I" lsdata="{}" data-itemindex="60" data-itemkey="2014" data-itemdisabled="" data-itemvalue1="2014학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="61" aria-labelledby="WD01D1-ariaItemValues">2014학년도</div>
+<div id="WD01D2" class="lsListbox__value" data-itemid="WD01D2" ct="LIB_I" lsdata="{}" data-itemindex="61" data-itemkey="2015" data-itemdisabled="" data-itemvalue1="2015학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="62" aria-labelledby="WD01D2-ariaItemValues">2015학년도</div>
+<div id="WD01D3" class="lsListbox__value" data-itemid="WD01D3" ct="LIB_I" lsdata="{}" data-itemindex="62" data-itemkey="2016" data-itemdisabled="" data-itemvalue1="2016학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="63" aria-labelledby="WD01D3-ariaItemValues">2016학년도</div>
+<div id="WD01D4" class="lsListbox__value" data-itemid="WD01D4" ct="LIB_I" lsdata="{}" data-itemindex="63" data-itemkey="2017" data-itemdisabled="" data-itemvalue1="2017학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="64" aria-labelledby="WD01D4-ariaItemValues">2017학년도</div>
+<div id="WD01D5" class="lsListbox__value" data-itemid="WD01D5" ct="LIB_I" lsdata="{}" data-itemindex="64" data-itemkey="2018" data-itemdisabled="" data-itemvalue1="2018학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="65" aria-labelledby="WD01D5-ariaItemValues">2018학년도</div>
+<div id="WD01D6" class="lsListbox__value" data-itemid="WD01D6" ct="LIB_I" lsdata="{}" data-itemindex="65" data-itemkey="2019" data-itemdisabled="" data-itemvalue1="2019학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="66" aria-labelledby="WD01D6-ariaItemValues">2019학년도</div>
+<div id="WD01D7" class="lsListbox__value" data-itemid="WD01D7" ct="LIB_I" lsdata="{}" data-itemindex="66" data-itemkey="2020" data-itemdisabled="" data-itemvalue1="2020학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="67" aria-labelledby="WD01D7-ariaItemValues">2020학년도</div>
+<div id="WD01D8" class="lsListbox__value" data-itemid="WD01D8" ct="LIB_I" lsdata="{}" data-itemindex="67" data-itemkey="2021" data-itemdisabled="" data-itemvalue1="2021학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="68" aria-labelledby="WD01D8-ariaItemValues">2021학년도</div>
+<div id="WD01D9" class="lsListbox__value" data-itemid="WD01D9" ct="LIB_I" lsdata="{}" data-itemindex="68" data-itemkey="2022" data-itemdisabled="" data-itemvalue1="2022학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="69" aria-labelledby="WD01D9-ariaItemValues">2022학년도</div>
+<div id="WD01DA" class="lsListbox__value" data-itemid="WD01DA" ct="LIB_I" lsdata="{}" data-itemindex="69" data-itemkey="2023" data-itemdisabled="" data-itemvalue1="2023학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="70" aria-labelledby="WD01DA-ariaItemValues">2023학년도</div>
+<div id="WD01DB" class="lsListbox__value" data-itemid="WD01DB" ct="LIB_I" lsdata="{}" data-itemindex="70" data-itemkey="2024" data-itemdisabled="" data-itemvalue1="2024학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="71" aria-labelledby="WD01DB-ariaItemValues">2024학년도</div>
+<div id="WD01DC" class="lsListbox__value" data-itemid="WD01DC" ct="LIB_I" lsdata="{}" data-itemindex="71" data-itemkey="2025" data-itemdisabled="" data-itemvalue1="2025학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="72" aria-labelledby="WD01DC-ariaItemValues">2025학년도</div>
+<div id="WD01DD" class="lsListbox__value" data-itemid="WD01DD" ct="LIB_I" lsdata="{}" data-itemindex="72" data-itemkey="2026" data-itemdisabled="" data-itemvalue1="2026학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="73" aria-labelledby="WD01DD-ariaItemValues">2026학년도</div>
+<div id="WD01DE" class="lsListbox__value" data-itemid="WD01DE" ct="LIB_I" lsdata="{}" data-itemindex="73" data-itemkey="2027" data-itemdisabled="" data-itemvalue1="2027학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="74" aria-labelledby="WD01DE-ariaItemValues">2027학년도</div>
+<div id="WD01DF" class="lsListbox__value" data-itemid="WD01DF" ct="LIB_I" lsdata="{}" data-itemindex="74" data-itemkey="2028" data-itemdisabled="" data-itemvalue1="2028학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="75" aria-labelledby="WD01DF-ariaItemValues">2028학년도</div>
+<div id="WD01E0" class="lsListbox__value" data-itemid="WD01E0" ct="LIB_I" lsdata="{}" data-itemindex="75" data-itemkey="2029" data-itemdisabled="" data-itemvalue1="2029학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="76" aria-labelledby="WD01E0-ariaItemValues">2029학년도</div>
+<div id="WD01E1" class="lsListbox__value" data-itemid="WD01E1" ct="LIB_I" lsdata="{}" data-itemindex="76" data-itemkey="2030" data-itemdisabled="" data-itemvalue1="2030학년도" role="option" aria-selected="false" aria-setsize="77" aria-posinset="77" aria-labelledby="WD01E1-ariaItemValues">2030학년도</div>
+</div>
+</div>
+</div>
+<div id="WD01E8" ct="LIB_P" lsdata="{8:true,21:false}" class="lsListbox&#x20;lsListbox--hasitems&#x20;lsListbox--popup" tabindex="-1" ti="-1" role="listbox" aria-owns="WD01E9&#x20;WD01EA&#x20;WD01EB&#x20;WD01EC&#x20;" aria-activedescendant="WD01E9">
+<span id="WD01E8-aria" title="" class="lsControl--invisible">
+<span id="WD01E9-ariaItemValues" title="" class="lsControl--invisible">1학기</span>
+<span id="WD01EA-ariaItemValues" title="" class="lsControl--invisible">여름학기</span>
+<span id="WD01EB-ariaItemValues" title="" class="lsControl--invisible">2학기</span>
+<span id="WD01EC-ariaItemValues" title="" class="lsControl--invisible">겨울학기</span>
+</span>
+<div id="WD01E8-scrl" class="lsListbox__items" tabindex="-1" ti="-1" data-sap-ls-style="height:10em;">
+<div id="WD01E8-first" title="" class="lsListbox__values&#x20;lsListbox__values--first">
+<div id="WD01E9" class="lsListbox__value" data-itemid="WD01E9" ct="LIB_I" lsdata="{}" data-itemindex="0" data-itemkey="090" data-itemdisabled="" data-itemvalue1="1학기" role="option" aria-selected="false" aria-setsize="4" aria-posinset="1" aria-labelledby="WD01E9-ariaItemValues">1학기</div>
+<div id="WD01EA" class="lsListbox__value" data-itemid="WD01EA" ct="LIB_I" lsdata="{}" data-itemindex="1" data-itemkey="091" data-itemdisabled="" data-itemvalue1="여름학기" role="option" aria-selected="false" aria-setsize="4" aria-posinset="2" aria-labelledby="WD01EA-ariaItemValues">여름학기</div>
+<div id="WD01EB" class="lsListbox__value" data-itemid="WD01EB" ct="LIB_I" lsdata="{}" data-itemindex="2" data-itemkey="092" data-itemdisabled="" data-itemvalue1="2학기" role="option" aria-selected="false" aria-setsize="4" aria-posinset="3" aria-labelledby="WD01EB-ariaItemValues">2학기</div>
+<div id="WD01EC" class="lsListbox__value" data-itemid="WD01EC" ct="LIB_I" lsdata="{}" data-itemindex="3" data-itemkey="093" data-itemdisabled="" data-itemvalue1="겨울학기" role="option" aria-selected="false" aria-setsize="4" aria-posinset="4" aria-labelledby="WD01EC-ariaItemValues">겨울학기</div>
+</div>
+</div>
+</div>
+</div>
+<span class="lsControl--invisible" id="sapwd_main_window_root__HOTKEYS" ct="HKC" lsdata="{}">
+<span ct="HK" lsdata="{0:'CTRL_F1',1:'sapwd_main_window_root_'}">
+</span>
+</span>
+</div>
+</div>
+<div id="_pageContentFormAssoc_" ct="CO" lsdata="{}" class="">
+<input id="_popup_url_" ct="I" lsdata="{0:'ZCMB3W0017&#x5c;x3fsap&#x5c;x2dlanguage&#x5c;x3dKO&#x5c;x26sap&#x5c;x2daccessibility&#x5c;x3d&#x5c;x26sap&#x5c;x2daccessibility&#x5c;x2dstd&#x5c;x3d&#x5c;x26sap&#x5c;x2dcache&#x5c;x2dbuster&#x5c;x3d52FDDD5C523695703AC22AC4137D722A&#x5c;x26sap&#x5c;x2dtheme&#x5c;x3dsap_fiori_3&#x5c;x26WDUIGUIDELINE&#x5c;x3dFIORI&#x5c;x26dvc&#x5c;x3dstandards&#x5c;x26version&#x5c;x3d20260110&#x5c;x2d125122&#x5c;x26sap&#x5c;x2dwd&#x5c;x2dloadOnDemand&#x5c;x3dfalse&#x5c;x26sap&#x5c;x2die&#x5c;x3dEDGE&#x5c;x26sap&#x5c;x2dbrowserhistory&#x5c;x3dDISABLED&#x5c;x26&#x5c;x257eLOADING_TEMPLATE&#x5c;x3dPOPUP_PAGE'}" type="hidden" name="_popup_url_" value="ZCMB3W0017&#x3f;sap-language&#x3d;KO&amp;sap-accessibility&#x3d;&amp;sap-accessibility-std&#x3d;&amp;sap-cache-buster&#x3d;52FDDD5C523695703AC22AC4137D722A&amp;sap-theme&#x3d;sap_fiori_3&amp;WDUIGUIDELINE&#x3d;FIORI&amp;dvc&#x3d;standards&amp;version&#x3d;20260110-125122&amp;sap-wd-loadOnDemand&#x3d;false&amp;sap-ie&#x3d;EDGE&amp;sap-browserhistory&#x3d;DISABLED&amp;&#x25;7eLOADING_TEMPLATE&#x3d;POPUP_PAGE">
+<input id="_main_window_id_" ct="I" lsdata="{0:'sapwd_main_window'}" type="hidden" name="_main_window_id_" value="sapwd_main_window">
+<input id="_environment_" ct="I" lsdata="{0:'2'}" type="hidden" name="_environment_" value="2">
+<input id="_external_session_" ct="I" lsdata="{0:'X'}" type="hidden" name="_external_session_" value="X">
+<form ct="FOR" id="sap.client.SsrClient.form" name="sap.client.SsrClient.form" action="&#x2f;sap&#x2f;bc&#x2f;webdynpro&#x2f;SAP&#x2f;ZCMB3W0017&#x3b;sap-ext-sid&#x3d;lUNYcshUpxKcAFPx4lkjBA--5XLL_7bGle09UBQwzEG6Yw--&#x3f;sap-contextid&#x3d;SID&#x25;3aANON&#x25;3ahana-prd-ap-1_SSP_00&#x25;3axbeph7n50Ofbh932fU0h7CnFijIw4YduKMq9lg4M-NEW" enctype="multipart&#x2f;form-data" class="lsForm" lsdata="{1:'DELTA'}" lsevents="{Request:[{ResponseData:'delta'},{}]}">
+<input id="sap-charset" ct="I" lsdata="{0:'utf&#x5c;x2d8'}" type="hidden" name="sap-charset" value="utf-8">
+<input id="sap-wd-secure-id" ct="I" lsdata="{0:'92AC1288589D3E4A398E724EED71D17A'}" type="hidden" name="sap-wd-secure-id" value="92AC1288589D3E4A398E724EED71D17A">
+<input id="fesrAppName" ct="I" lsdata="{0:'ZCMB3W0017'}" type="hidden" name="fesrAppName" value="ZCMB3W0017">
+<input id="fesrUseBeacon" ct="I" lsdata="{0:'true'}" type="hidden" name="fesrUseBeacon" value="true">
+</form>
+</div>
+<div id="sapwd_page_client_inspector" ct="CO" lsdata="{}" class="">
+<span id="WD01" ct="CI" lsdata="{0:'WHEN_CHANGED',1:'799',2:'995',3:'2195',4:'1235',5:'landscape',8:'sap_fiori_3',9:'sap_fiori_3',11:'33px',12:'32px',27:'Fiori_3,Touch',36:'DESKTOP',37:'FALSE',40:'',41:'https&#x5c;x3a&#x5c;x2f&#x5c;x2fecc.ssu.ac.kr&#x5c;x3a8443&#x5c;x2fsap&#x5c;x2fbc&#x5c;x2fwebdynpro&#x5c;x2fSAP&#x5c;x2fZCMB3W0017',42:'ssu.ac.kr',43:'',44:''}" lsevents="{Notify:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" class="lsControl--invisible">
+<span>
+<span id="WD01-ThemedTableRowHeight" class="urTableRowHeight">
+</span>
+<span id="WD01-ThemedFormLayoutRowHeight" class="urFormLayoutRowHeight">
+</span>
+</span>
+</span>
+<span id="WD02" ct="CI" lsdata="{0:'WHEN_CHANGED',1:'799',2:'995',3:'2195',4:'1235',5:'landscape',10:'lsCondensed',11:'25px',36:'DESKTOP',37:'TRUE'}" lsevents="{Notify:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" class="lsControl--invisible">
+<span class="lsCondensed">
+<span id="WD02-ThemedTableRowHeight" class="urTableRowHeight">
+</span>
+</span>
+</span>
+<span id="WD03" ct="CI" lsdata="{0:'WHEN_CHANGED'}" lsevents="{Notify:[{ResponseData:'delta',EnqueueCardinality:'single'},{}]}" class="lsControl--invisible">
+<span>
+</span>
+</span>
+</div>
+</div>
+</div>]]>
+</content-update>
+<initialize-ids>
+<![CDATA[<span id="UCF_InitializeIDs" data-sap-ls-style="display:none">["sap.client.SsrClient.form", "WD01", "WD02", "WD03"]</span>]]>
+</initialize-ids>
+<script-call>
+<![CDATA[application.exec("setAccessibility",{"standard":"ARIA1.1"});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("setPadding",{"windowId":"sapwd_main_window","padding":"X"});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("unlock",{});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("integrationAdjustHeight",{"pluginId":"integration"});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("integrationRegHelpCenterCallback",{"pluginId":"integration","applicationName":"ZCMB3W0017","configId":""});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("setTitle",{"title":"학생\x20성적조회"});]]>
+</script-call>
+<script-call>
+<![CDATA[application.exec("integrationSetCanvasTitle",{"canvasTitle":"학생\x20성적조회","pluginId":"integration"});]]>
+</script-call>
+</full-update>
+</updates>

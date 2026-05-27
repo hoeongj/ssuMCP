@@ -1,0 +1,3 @@
+# Production currently matches values.yaml. Keep this file for future
+# environment-specific overrides so ArgoCD can target values.yaml + values-prod.yaml.
+{}

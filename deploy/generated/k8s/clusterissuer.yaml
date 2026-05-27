@@ -1,0 +1,28 @@
+﻿# Let's Encrypt production ClusterIssuer. cert-manager uses this to
+# request and renew the certificate referenced from ingress.yaml.
+#
+# Replace the `email:` value with a real address before applying — Let's
+# Encrypt sends expiration notices and policy updates there. The address
+# is published in cert ACME registration metadata, so use one you don't
+# mind being public-ish.
+#
+# This file deliberately omits a staging issuer. Single-host ingresses
+# stay well within Let's Encrypt's prod rate limits, and skipping
+# staging cuts one CRD apply during initial setup. Add a staging
+# issuer (and switch the ingress annotation to it) only if iterating
+# on the issuer config itself.
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: akftjdwn@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

@@ -1,0 +1,360 @@
+{
+  "serverInfo": {
+    "name": "숭실대학교 MCP 서버 (ssuMCP)",
+    "version": "1.0.0",
+    "description": "숭실대학교 학생을 위한 캠퍼스 정보 MCP 서버. 학식·기숙사 식단·시설·도서관·공지사항 공개 조회 + u-SAINT 로그인 후 시간표·성적·채플·졸업요건·장학금 개인 조회."
+  },
+  "authentication": {
+    "required": false,
+    "note": "공개 도구(학식·시설·도서관·공지)는 인증 없이 바로 사용 가능. 개인 도구(시간표·성적 등)는 start_auth로 숭실대 계정 로그인 후 mcp_session_id를 전달."
+  },
+  "tools": [
+    {
+      "name": "get_today_meal",
+      "description": "오늘 숭실대학교 캠퍼스 식당 메뉴를 조회합니다. restaurant를 비워두면 전체 식당을 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "restaurant": {
+            "type": "string",
+            "description": "식당 이름 (선택). 학생식당, 숭실도담식당, 스낵코너, 푸드코트, THE KITCHEN, FACULTY LOUNGE"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_meal_by_date",
+      "description": "지정한 날짜의 숭실대학교 캠퍼스 식당 메뉴를 조회합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "조회 날짜 (yyyy-MM-dd 형식, 예: 2026-05-24)"
+          },
+          "restaurant": {
+            "type": "string",
+            "description": "식당 이름 (선택). 학생식당, 숭실도담식당, 스낵코너, 푸드코트, THE KITCHEN, FACULTY LOUNGE"
+          }
+        },
+        "required": ["date"]
+      }
+    },
+    {
+      "name": "get_dorm_weekly_meal",
+      "description": "레지던스홀 기숙사 이번 주 식단을 조회합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "search_campus_facilities",
+      "description": "숭실대학교 캠퍼스 내 시설(카페, 편의점, 복사실 등)을 검색합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "검색어 (선택). 비워두면 전체 시설 목록 반환"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_library_seat_status",
+      "description": "숭실대학교 중앙도서관 층별 좌석 현황을 조회합니다 (읽기 전용).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "floor": {
+            "type": "integer",
+            "description": "층 번호. -1(지하1층), 1~6(1~6층). 비워두면 전체 층"
+          }
+        }
+      }
+    },
+    {
+      "name": "search_library_book",
+      "description": "숭실대학교 중앙도서관 소장 도서를 검색합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "검색 키워드 (제목, 저자, ISBN 등)"
+          },
+          "page": {
+            "type": "integer",
+            "description": "페이지 번호 (기본 1)"
+          },
+          "size": {
+            "type": "integer",
+            "description": "페이지당 결과 수 (기본 10)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_recent_notices",
+      "description": "숭실대학교 공지사항 최신 목록을 조회합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "카테고리 필터 (선택). 학사, 장학, 국제교류, 외국인유학생, 채용, 비교과·행사, 교원채용, 교직, 봉사, 기타"
+          },
+          "page": {
+            "type": "integer",
+            "description": "페이지 번호 (기본 1)"
+          }
+        }
+      }
+    },
+    {
+      "name": "search_notices",
+      "description": "숭실대학교 공지사항을 키워드로 검색합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "검색 키워드 (최대 64자)"
+          },
+          "category": {
+            "type": "string",
+            "description": "카테고리 필터 (선택)"
+          },
+          "page": {
+            "type": "integer",
+            "description": "페이지 번호 (기본 1)"
+          }
+        },
+        "required": ["keyword"]
+      }
+    },
+    {
+      "name": "list_notice_categories",
+      "description": "숭실대학교 공지사항 카테고리 목록을 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_notice_detail",
+      "description": "공지 URL로 본문 전체 텍스트를 반환합니다. get_recent_notices나 search_notices 결과의 link 값을 전달하세요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "공지 URL (get_recent_notices/search_notices 결과의 link 값)"
+          }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "get_active_notices",
+      "description": "진행중(마감 전) 공지만 반환합니다. 현재 신청 가능한 공지를 확인할 때 유용합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "카테고리 필터 (선택)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_department_notices",
+      "description": "특정 학과/부서 공지만 반환합니다. 예: 컴퓨터학부, 장학팀, 소프트웨어학부.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "department": {
+            "type": "string",
+            "description": "학과/부서 이름. 예: 컴퓨터학부, 장학팀, 국제팀, 소프트웨어학부"
+          },
+          "page": {
+            "type": "integer",
+            "description": "페이지 번호 (기본 1)"
+          }
+        },
+        "required": ["department"]
+      }
+    },
+    {
+      "name": "get_auth_status",
+      "description": "현재 MCP 세션의 provider(SAINT, LMS, LIBRARY) 연결 상태를 확인합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string",
+            "description": "MCP 세션 ID (start_auth로 발급)"
+          }
+        }
+      }
+    },
+    {
+      "name": "start_auth",
+      "description": "지정 provider의 로그인 URL을 발급합니다. 개인 도구 사용 전 호출 필요. 반환된 loginUrl을 브라우저에서 열어 로그인하세요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["SAINT", "LMS", "LIBRARY"],
+            "description": "로그인할 provider. SAINT: 시간표·성적·채플·졸업·장학금, LMS: 과제, LIBRARY: 대출 현황"
+          },
+          "mcp_session_id": {
+            "type": "string",
+            "description": "기존 세션 ID (선택). 없으면 새 세션 발급"
+          }
+        },
+        "required": ["provider"]
+      }
+    },
+    {
+      "name": "logout_provider",
+      "description": "특정 provider 연결을 해제합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["SAINT", "LMS", "LIBRARY"]
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["provider", "mcp_session_id"]
+      }
+    },
+    {
+      "name": "logout_all",
+      "description": "MCP 세션 전체를 삭제합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_schedule",
+      "description": "u-SAINT 시간표를 조회합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string",
+            "description": "start_auth(SAINT)로 발급받은 세션 ID"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_grades",
+      "description": "u-SAINT 성적(누적 GPA + 학기별 과목)을 조회합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_chapel_info",
+      "description": "u-SAINT 채플 출석 현황을 조회합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "학년도 (선택, 예: 2026). 비워두면 현재 학기"
+          },
+          "semester": {
+            "type": "string",
+            "description": "학기 (선택). 1학기, 여름학기, 2학기, 겨울학기"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "check_graduation_requirements",
+      "description": "u-SAINT 졸업 요건 충족 여부 및 잔여 학점을 조회합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_scholarships",
+      "description": "u-SAINT 장학금 수혜 내역을 조회합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "학년도 (선택). 비워두면 전체 내역"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_assignments",
+      "description": "LMS 현재 학기 미제출 과제·퀴즈 목록을 조회합니다. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_library_loans",
+      "description": "도서관 대출 현황 및 반납 기한을 조회합니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    }
+  ],
+  "resources": [],
+  "prompts": []
+}

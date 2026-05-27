@@ -1,0 +1,55 @@
+<!--
+  PII-scrubbed minimal copy of the ZCMW2102 "이전학기" button-press
+  (WDA7, PREVIOUS) response (Task 16 multi-term nav PR).
+
+  Captured 2026-05-17 right after the user clicked 이전학기 once from
+  2025학년도 겨울학기. The response shape is the WebDynpro full-update
+  XML wrapper (same envelope as grades-prev-success.html), and the
+  body re-renders the 학년도/학기 dropdowns (now showing 2025/2학기)
+  plus the timetable table for that term. The parser keys on the
+  <label for>/<input id>/value triple for the dropdowns and on
+  tbody[id$="-contentTBody"] for the table.
+
+  Two data rows kept to exercise the lecture-cell shape.
+-->
+<updates><full-update windowid="sapwd_main_window"><content-update id="sapwd_main_window_root_"><![CDATA[<form id="sap.client.SsrClient.form" action="/sap/bc/webdynpro/SAP/ZCMW2102"><input id="sap-wd-secure-id" name="sap-wd-secure-id" type="hidden" value="ROTATED-CSRF-AFTER-PREV"/>
+<table>
+  <tr>
+    <td><label for="WD4A">학년도</label></td>
+    <td><input id="WD4A" type="text" value="2025학년도" /></td>
+    <td><label for="WD9E">학기</label></td>
+    <td><input id="WD9E" type="text" value="2학기" /></td>
+  </tr>
+</table>
+<table>
+  <tbody id="WDB5-contentTBody">
+    <tr rt="2" role="row">
+      <th id="WDCD" subct="HC" lsdata="{7:'시간'}" role="columnheader"><span ct="CP" lsdata="{0:'시간',1:'시간',6:false}">시간</span></th>
+      <th id="WDCF" subct="HC" lsdata="{7:'월요일'}" role="columnheader"><span ct="CP" lsdata="{0:'월요일',1:'월',6:false}">월</span></th>
+      <th id="WDD1" subct="HC" lsdata="{7:'화요일'}" role="columnheader"><span ct="CP" lsdata="{0:'화요일',1:'화',6:false}">화</span></th>
+      <th id="WDD3" subct="HC" lsdata="{7:'수요일'}" role="columnheader"><span ct="CP" lsdata="{0:'수요일',1:'수',6:false}">수</span></th>
+      <th id="WDD5" subct="HC" lsdata="{7:'목요일'}" role="columnheader"><span ct="CP" lsdata="{0:'목요일',1:'목',6:false}">목</span></th>
+      <th id="WDD7" subct="HC" lsdata="{7:'금요일'}" role="columnheader"><span ct="CP" lsdata="{0:'금요일',1:'금',6:false}">금</span></th>
+      <th id="WDD9" subct="HC" lsdata="{7:'토요일'}" role="columnheader"><span ct="CP" lsdata="{0:'토요일',1:'토',6:false}">토</span></th>
+    </tr>
+    <tr rr="1" rt="1" role="row">
+      <td role="gridcell" cc="0"><span ct="TV" class="lsTextView lsTextView--wrap">2 교시<br>(09:00-10:15)</span></td>
+      <td role="gridcell" cc="1"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="2"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="3"><span ct="TV" class="lsTextView lsTextView--wrap">데이터베이스<br>김교수<br>09:00-10:15<br>정보과학관 21202</span></td>
+      <td role="gridcell" cc="4"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="5"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="6"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+    </tr>
+    <tr rr="2" rt="1" role="row">
+      <td role="gridcell" cc="0"><span ct="TV" class="lsTextView lsTextView--wrap">5 교시<br>(13:30-14:45)</span></td>
+      <td role="gridcell" cc="1"><span ct="TV" class="lsTextView lsTextView--wrap">네트워크<br>이교수<br>13:30-14:45<br>정보과학관 21203</span></td>
+      <td role="gridcell" cc="2"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="3"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="4"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="5"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="6"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+    </tr>
+  </tbody>
+</table>
+</form>]]></content-update></full-update></updates>

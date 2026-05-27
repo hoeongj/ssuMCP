@@ -1,0 +1,38 @@
+# Build output
+build/
+.gradle/
+.kotlin/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+**/application-prod.yml
+!src/main/resources/application-prod.yml
+
+# External reference clones (not part of the server build)
+/ssufid/
+/rusaint/
+
+# Logs / dumps
+*.log
+*.dump
+*.sql.gz
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Export artifacts (large JSON)
+exports/
+meals.json
+weekly-meals-*.json

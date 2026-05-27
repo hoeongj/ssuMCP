@@ -1,0 +1,121 @@
+{
+  "success": true,
+  "code": "success.retrieved",
+  "message": "조회되었습니다.",
+  "data": {
+    "isFuzzy": false,
+    "totalCount": 755,
+    "offset": 0,
+    "max": 4,
+    "abc": null,
+    "list": [
+      {
+        "id": 5006619,
+        "biblioType": {
+          "id": 1,
+          "name": "단행본(동양서)"
+        },
+        "thumbnailUrl": "https://image.aladin.co.kr/product/31222/41/cover/k532831252_1.jpg",
+        "isbn": "9791168330702",
+        "issn": null,
+        "titleStatement": "파이썬 : 기초와 활용",
+        "author": "한정란",
+        "publication": "파주 : 21세기사, 2023",
+        "etcContent": "{\"PERSONAL_NAME\":\"한정란\",\"PAGE\":\"393 p.\",\"HEIGHT\":\"25 cm\"}",
+        "branchVolumes": [
+          {
+            "id": 1,
+            "name": "중앙도서관",
+            "isCr": false,
+            "volume": "005.133P9 한7362파",
+            "cState": "대출가능",
+            "cStateCode": "READY",
+            "isSubscribed": null,
+            "hasItem": true
+          }
+        ],
+        "erSources": [],
+        "resources": null,
+        "newResources": null,
+        "similars": [],
+        "dateReceived": "2023-06-08"
+      },
+      {
+        "id": 5000719,
+        "biblioType": {
+          "id": 1,
+          "name": "단행본(동양서)"
+        },
+        "thumbnailUrl": "https://image.aladin.co.kr/product/30773/95/cover/897050656x_1.jpg",
+        "isbn": "9788970506562",
+        "issn": null,
+        "titleStatement": "(두근두근) 파이썬",
+        "author": "천인국",
+        "publication": "파주 : 생능, 2023",
+        "branchVolumes": [
+          {
+            "id": 1,
+            "name": "중앙도서관",
+            "volume": "005.133P9 천6921파2",
+            "cState": "대출가능",
+            "cStateCode": "READY",
+            "hasItem": true
+          }
+        ],
+        "similars": [],
+        "dateReceived": "2023-03-09"
+      },
+      {
+        "id": 4986583,
+        "biblioType": {
+          "id": 1,
+          "name": "단행본(동양서)"
+        },
+        "thumbnailUrl": "https://image.aladin.co.kr/product/29687/37/cover/8970505555_2.jpg",
+        "isbn": "9788970505558",
+        "issn": null,
+        "titleStatement": "(새내기) 파이썬",
+        "author": "천인국",
+        "publication": "파주 :생능2022",
+        "branchVolumes": [
+          {
+            "id": 1,
+            "name": "중앙도서관",
+            "volume": "005.133P9 천6921파생",
+            "cState": "대출중",
+            "cStateCode": "LOAN",
+            "hasItem": true
+          }
+        ],
+        "similars": [],
+        "dateReceived": "2022-09-14"
+      },
+      {
+        "id": 4819704,
+        "biblioType": {
+          "id": 1,
+          "name": "단행본(동양서)"
+        },
+        "thumbnailUrl": "https://image.aladin.co.kr/product/18454/56/cover/8970509720_1.jpg",
+        "isbn": "9788970509723",
+        "issn": null,
+        "titleStatement": "(컴퓨팅 사고를 위한) 파이썬 =Computational thinking",
+        "author": "한선관",
+        "publication": "파주 :생능,2019(2020 2쇄)",
+        "branchVolumes": [
+          {
+            "id": 1,
+            "name": "중앙도서관",
+            "volume": "005.133P9 한5321파",
+            "cState": "대출가능",
+            "cStateCode": "READY",
+            "hasItem": true
+          }
+        ],
+        "similars": [],
+        "dateReceived": "2020-09-17"
+      }
+    ],
+    "facets": []
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "to_dos": [
+    {
+      "course_id": 10001,
+      "activities": {
+        "total_unsubmitted_assignments": 2,
+        "total_unsubmitted_quizzes": 0,
+        "total_unsubmitted_discussion_topics": 0
+      },
+      "todo_list": [
+        {
+          "component_type": "assignment",
+          "assignment_id": 20001,
+          "title": "과제 1",
+          "due_date": "2026-06-01T23:59:00"
+        },
+        {
+          "component_type": "assignment",
+          "assignment_id": 20002,
+          "title": "과제 2",
+          "due_date": null
+        }
+      ]
+    },
+    {
+      "course_id": 10002,
+      "activities": {
+        "total_unsubmitted_assignments": 0,
+        "total_unsubmitted_quizzes": 1,
+        "total_unsubmitted_discussion_topics": 0
+      },
+      "todo_list": [
+        {
+          "component_type": "quiz",
+          "assignment_id": 20003,
+          "title": "퀴즈 1",
+          "due_date": "2026-05-30T18:00:00"
+        }
+      ]
+    },
+    {
+      "course_id": 10003,
+      "activities": {
+        "total_unsubmitted_assignments": 0,
+        "total_unsubmitted_quizzes": 0,
+        "total_unsubmitted_discussion_topics": 0
+      },
+      "todo_list": []
+    }
+  ],
+  "total_unread_messages": 0,
+  "total_count": 3
+}

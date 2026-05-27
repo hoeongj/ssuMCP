@@ -1,0 +1,72 @@
+<!--
+  PII-scrubbed minimal copy of a ZCMB3W0017 "이전학기" button-press
+  (WD01F0, PREVIOUS) response (Task 16 PR 16c follow-up spike).
+
+  Captured 2026-05-16 right after the user clicked 이전학기 once from
+  the default first-load page. The response shape is a WebDynpro
+  full-update XML wrapper (same envelope as grades-success.html), but
+  the 학기별 세부 표 (the second tbody[id$="-contentTBody"] in
+  document order) is now **populated** with the previous term's
+  per-course rows. The real response also re-renders the top 학기별
+  GPA history table and the 학적부/증명 summaries unchanged; we keep
+  an EMPTY-rows placeholder for the history tbody so the parser's
+  "second tbody = detail" indexing still resolves correctly. The
+  connector ignores the history / summary blocks on prev hops.
+
+  What the parser keys off (kept verbatim):
+    - tbody[id$="-contentTBody"] (WD ID prefix is dynamic, suffix stable)
+    - tr[rt="2"] header row, tr[rt="1"] data rows
+    - td[role="gridcell"][cc="N"]: cc=0 select, cc=1..7 = 성적 / 등급 /
+      과목명 / 상세성적(학수번호) / 과목학점 / 교수명 / 비고
+    - <span class*="lsTextView--wrap"> text content
+    - <input id="sap-wd-secure-id"> (CSRF, rotates per POST)
+
+  Two data rows are kept to exercise both row shapes:
+    1. Letter-grade course (점수+등급+과목명+학수번호+학점+교수+비고)
+    2. P/F course (성적="P", 등급="P" — same generic strings on both)
+
+  Real responses carry 5~10 rows per term; row count is not load-bearing
+  for the parser, so two is enough to assert the column mapping and
+  the cc-attribute drift handling.
+
+  All concrete values (점수, 등급, 과목명, 학수번호, 교수명) are generic
+  placeholders. Student id / name never appear in this response shape.
+-->
+<updates><full-update windowid="sapwd_main_window"><content-update id="sapwd_main_window_root_"><![CDATA[<form id="sap.client.SsrClient.form" action="/sap/bc/webdynpro/SAP/ZCMB3W0017"><input id="sap-wd-secure-id" name="sap-wd-secure-id" type="hidden" value="ROTATED-CSRF-AFTER-PREV"/><table>
+<tbody id="WD65-contentTBody">
+<tr rt="2" role="row"><th>학년도</th></tr>
+</tbody>
+</table><table>
+<tbody id="WD0201-contentTBody">
+<tr rt="2" role="row" aria-selected="false">
+<th id="WD0206" subct="HC" lsdata="{2:'SELECTIONCOLUMN'}" role="columnheader" cc="0">&nbsp;</th>
+<th id="WD0208" subct="HC" lsdata="{}" role="columnheader"><span id="WD0209" ct="CP" lsdata="{1:'성적',6:false}">성적</span></th>
+<th id="WD020A" subct="HC" lsdata="{}" role="columnheader"><span id="WD020B" ct="CP" lsdata="{1:'등급',6:false}">등급</span></th>
+<th id="WD020C" subct="HC" lsdata="{}" role="columnheader"><span id="WD020D" ct="CP" lsdata="{1:'과목명',6:false}">과목명</span></th>
+<th id="WD020E" subct="HC" lsdata="{}" role="columnheader"><span id="WD020F" ct="CP" lsdata="{1:'상세성적',6:false}">상세성적</span></th>
+<th id="WD0210" subct="HC" lsdata="{}" role="columnheader"><span id="WD0211" ct="CP" lsdata="{1:'과목학점',6:false}">과목학점</span></th>
+<th id="WD0212" subct="HC" lsdata="{7:'교수명'}" role="columnheader"><span id="WD0213" ct="CP" lsdata="{0:'교수명',1:'교수명',6:false}">교수명</span></th>
+<th id="WD0214" subct="HC" lsdata="{}" role="columnheader"><span id="WD0215" ct="CP" lsdata="{1:'비고',6:false}">비고</span></th>
+</tr>
+<tr rr="1" rt="1" role="row" aria-selected="true" aria-rowindex="2">
+<td id="WD023B" subct="SC" role="gridcell" cc="0">&nbsp;</td>
+<td id="WD023C" role="gridcell" cc="1" align="center"><span id="WD023D" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">95</span></td>
+<td id="WD023E" role="gridcell" cc="2" align="center"><span id="WD023F" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">A0</span></td>
+<td id="WD0240" role="gridcell" cc="3"><span id="WD0241" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">과목A</span></td>
+<td id="WD0242" role="gridcell" cc="4" align="center"><span id="WD0243" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">21500001</span></td>
+<td id="WD0244" role="gridcell" cc="5" align="center"><span id="WD0245" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">3.0</span></td>
+<td id="WD0246" role="gridcell" cc="6" align="center"><span id="WD0247" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">김교수</span></td>
+<td id="WD0248" role="gridcell" cc="7" align="center"><div class="lsSTEmptyRow" role="text" aria-label="비어 있음">&nbsp;</div></td>
+</tr>
+<tr rr="2" rt="1" role="row" aria-selected="false" aria-rowindex="3">
+<td id="WD0249" subct="SC" role="gridcell" cc="0">&nbsp;</td>
+<td id="WD024A" role="gridcell" cc="1" align="center"><span id="WD024B" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">P</span></td>
+<td id="WD024C" role="gridcell" cc="2" align="center"><span id="WD024D" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">P</span></td>
+<td id="WD024E" role="gridcell" cc="3"><span id="WD024F" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">과목B</span></td>
+<td id="WD0250" role="gridcell" cc="4" align="center"><span id="WD0251" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">21500002</span></td>
+<td id="WD0252" role="gridcell" cc="5" align="center"><span id="WD0253" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">0.5</span></td>
+<td id="WD0254" role="gridcell" cc="6" align="center"><span id="WD0255" ct="TV" lsdata="{12:true}" class="lsTextView lsTextView--wrap">이교수</span></td>
+<td id="WD0256" role="gridcell" cc="7" align="center"><div class="lsSTEmptyRow" role="text" aria-label="비어 있음">&nbsp;</div></td>
+</tr>
+</tbody>
+</table></form>]]></content-update></full-update></updates>

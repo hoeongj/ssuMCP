@@ -1,0 +1,66 @@
+﻿# Traefik ingress for the production backend.
+#
+# Hostname is the duckdns subdomain configured in deploy/README.md §
+# "Domain". Replace `ssumcp.duckdns.org` with the real hostname if
+# different. cert-manager watches the tls.secretName below and creates
+# a Certificate via the Let's Encrypt prod ClusterIssuer.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ssuai-backend
+  namespace: ssuai-prod
+  labels:
+    app.kubernetes.io/name: ssuai-backend
+    app.kubernetes.io/part-of: ssuai
+  annotations:
+    # cert-manager: issue + renew the cert via the Let's Encrypt prod issuer.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Traefik (k3s default): redirect HTTP -> HTTPS, add HSTS.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: ssuai-prod-redirect-https@kubernetescrd,ssuai-prod-hsts@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - ssumcp.duckdns.org
+      secretName: ssumcp-duckdns-org-tls
+  rules:
+    - host: ssumcp.duckdns.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ssuai-backend
+                port:
+                  name: http
+---
+# Traefik middlewares used by the Ingress above. Defined in the same
+# namespace so the @kubernetescrd reference resolves cleanly.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: ssuai-prod
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: hsts
+  namespace: ssuai-prod
+spec:
+  headers:
+    stsSeconds: 31536000          # 1 year, per docs/security.md §8.
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "no-referrer"

@@ -1,0 +1,5 @@
+{
+  "success": false,
+  "code": "error.authentication.needLogin",
+  "message": "Please log in to use this service."
+}

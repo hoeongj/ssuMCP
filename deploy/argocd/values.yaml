@@ -1,0 +1,20 @@
+# Upstream chart: argo/argo-cd, pinned in deploy/argocd/README.md.
+# Keep this minimal: single-operator project, no Dex/SSO yet.
+global:
+  domain: argo-ssuai.duckdns.org
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
+
+server:
+  extraArgs:
+    - --insecure
+  ingress:
+    enabled: false
+
+configs:
+  params:
+    server.insecure: true

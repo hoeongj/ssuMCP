@@ -1,0 +1,113 @@
+namespace: ssuai-prod
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/hoeongj/ssumcp
+  tag: latest
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""
+
+env:
+  springProfilesActive: prod
+  frontendOrigin: https://ssuai.vercel.app
+  # Public HTTPS origin that SmartID can call back to. In prod this is the
+  # Vercel frontend origin, whose Next.js rewrite proxies /api/* to the
+  # backend so refresh/session cookies land as first-party browser cookies.
+  #
+  # SmartID 302s back to
+  # ${apiBaseUrl}/api/auth/saint/sso-callback with sToken/sIdno after the
+  # user logs in. SmartID needs an absolute URL — relative paths get
+  # interpreted against smartid.ssu.ac.kr itself and the callback never
+  # reaches us. SaintSsoCallbackController fails fast on startup if this
+  # env var is empty.
+  apiBaseUrl: https://ssuai.vercel.app
+  # MCP auth callbacks should go directly to the backend ingress. MCP clients
+  # already connect to this origin for SSE, and this avoids relying on the
+  # Vercel /api proxy for SmartID returns.
+  mcpApiBaseUrl: https://ssumcp.duckdns.org
+  javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+  connectorMeal: real
+  connectorDormMeal: real
+  connectorLibraryBook: real
+  connectorLibraryLoans: real
+  connectorLibrarySeat: real
+  connectorSaintSchedule: rusaint
+  connectorSaintGrades: rusaint
+  connectorLmsAssignments: real
+  connectorChat: llm
+  mistralTrainingOptOutConfirmed: "false"
+  llmMaxTokens: "400"
+  llmAvailabilityVerificationPasses: "0"
+  llmMaxProviderAttempts: "6"
+  llmMaxModelsPerProvider: "2"
+  llmMaxToolCalls: "2"
+
+secretRef:
+  enabled: true
+  name: ssuai-backend-secrets
+  optional: true
+
+secretTemplate:
+  enabled: false
+  stringData:
+    SSUAI_GEMINI_API_KEY: "<replace-me>"
+    SSUAI_GROQ_API_KEY: "<replace-me>"
+    SSUAI_CEREBRAS_API_KEY: "<replace-me>"
+    SSUAI_DEEPINFRA_API_KEY: "<replace-me>"
+    SSUAI_SAMBANOVA_API_KEY: "<replace-me>"
+    SSUAI_NSCALE_API_KEY: "<replace-me>"
+    SSUAI_FIREWORKS_API_KEY: "<replace-me>"
+    SSUAI_HUGGINGFACE_API_KEY: "<replace-me>"
+    SSUAI_MISTRAL_API_KEY: "<replace-me>"
+    SSUAI_OPENROUTER_API_KEY: "<replace-me>"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: traefik
+  host: ssumcp.duckdns.org
+  tlsSecretName: ssumcp-duckdns-org-tls
+  clusterIssuer: letsencrypt-prod
+  middlewares:
+    redirectHttps: redirect-https
+    hsts: hsts
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+probes:
+  readiness:
+    path: /actuator/health/readiness
+    initialDelaySeconds: 20
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  liveness:
+    path: /actuator/health/liveness
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+podSecurityContext:
+  terminationGracePeriodSeconds: 30
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL

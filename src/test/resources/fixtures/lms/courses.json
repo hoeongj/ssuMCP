@@ -1,0 +1,5 @@
+[
+  {"id": 10001, "term_id": 1, "name": "자료구조 (2150000001)", "professors": "홍길동", "enrolled_status": "active", "ended": false},
+  {"id": 10002, "term_id": 1, "name": "알고리즘 (2150000002)", "professors": "홍길동", "enrolled_status": "active", "ended": false},
+  {"id": 10003, "term_id": 1, "name": "운영체제 (2150000003)", "professors": "홍길동", "enrolled_status": "active", "ended": false}
+]

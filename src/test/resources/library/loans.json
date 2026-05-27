@@ -1,0 +1,40 @@
+{
+  "success": true,
+  "code": "success.retrieved",
+  "message": "조회되었습니다.",
+  "data": {
+    "totalCount": 2,
+    "list": [
+      {
+        "id": 1001,
+        "biblio": {
+          "titleStatement": "스프링 부트 핵심 가이드",
+          "author": "장정우",
+          "publisher": "위키북스",
+          "publishYear": "2026"
+        },
+        "barcode": "A1001",
+        "branch": { "name": "중앙도서관" },
+        "callNo": "005.133J38 장7362스",
+        "chargeDate": "2026-05-12 13:10:00",
+        "dueDate": "2026-05-26 23:59:59",
+        "overdueDays": 0,
+        "isRenewed": true
+      },
+      {
+        "id": 1002,
+        "biblio": {
+          "titleStatement": "클린 코드",
+          "author": "로버트 C. 마틴"
+        },
+        "barcode": "A1002",
+        "branch": { "name": "중앙도서관" },
+        "callNo": "005.1 마8879클",
+        "chargeDate": "2026-05-05",
+        "dueDate": "2026-05-19",
+        "overdueDays": 0,
+        "isRenewed": false
+      }
+    ]
+  }
+}
