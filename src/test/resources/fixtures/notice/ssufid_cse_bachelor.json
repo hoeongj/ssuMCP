@@ -1,0 +1,44 @@
+{
+  "title": "숭실대학교 컴퓨터학부 학사 공지사항",
+  "items": [
+    {
+      "id": "123",
+      "url": "https://cse.ssu.ac.kr/bbs/board.php?bo_table=notice&wr_id=123",
+      "author": "컴퓨터학부",
+      "title": "2026학년도 1학기 수강신청 안내",
+      "description": null,
+      "category": ["공지"],
+      "created_at": "2026-05-10T09:00:00+09:00",
+      "updated_at": null,
+      "thumbnail": null,
+      "content": "<p>수강신청 안내</p>",
+      "attachments": []
+    },
+    {
+      "id": "124",
+      "url": "https://cse.ssu.ac.kr/bbs/board.php?bo_table=notice&wr_id=124",
+      "author": "컴퓨터학부",
+      "title": "2026학년도 1학기 장학금 신청 안내 (최신)",
+      "description": null,
+      "category": ["장학"],
+      "created_at": "2026-05-12T10:00:00+09:00",
+      "updated_at": null,
+      "thumbnail": null,
+      "content": "<p>장학금 신청 안내</p>",
+      "attachments": []
+    },
+    {
+      "id": "122",
+      "url": "https://cse.ssu.ac.kr/bbs/board.php?bo_table=notice&wr_id=122",
+      "author": "컴퓨터학부",
+      "title": "2026학년도 예비군 훈련 안내 (이전 공지)",
+      "description": null,
+      "category": ["행사"],
+      "created_at": "2026-05-08T11:00:00+09:00",
+      "updated_at": null,
+      "thumbnail": null,
+      "content": "<p>예비군 안내</p>",
+      "attachments": []
+    }
+  ]
+}

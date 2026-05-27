@@ -1,0 +1,18 @@
+# Upstream chart: argo/argocd-image-updater.
+# Pin chart version in the install command; see deploy/argocd/README.md.
+config:
+  applicationsAPIKind: kubernetes
+  argocd:
+    grpcWeb: true
+    serverAddress: argocd-server.argocd.svc.cluster.local
+    insecure: true
+  gitCommitUser: argocd-image-updater
+  gitCommitMail: argocd-image-updater@users.noreply.github.com
+  gitCommitTemplate: "chore(image): bump {{ .AppName }} images"
+  logLevel: info
+
+extraArgs:
+  - --interval=2m
+
+rbac:
+  enabled: true

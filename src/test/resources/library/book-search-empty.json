@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "code": "success.retrieved",
+  "message": "조회되었습니다.",
+  "data": {
+    "isFuzzy": false,
+    "totalCount": 0,
+    "offset": 0,
+    "max": 10,
+    "abc": null,
+    "list": [],
+    "facets": []
+  }
+}

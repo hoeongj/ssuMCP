@@ -1,0 +1,28 @@
+# Build output — re-built inside the image, must never be copied in.
+build/
+.gradle/
+
+# Local IDE state
+.idea/
+*.iml
+.vscode/
+
+# Local export artifacts (large JSON files committed for inspection but
+# never needed inside the image).
+exports/
+meals.json
+weekly-meals-*.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Secrets — defence-in-depth even though none should exist in this dir.
+# If any of these files ever appear in this repository, do not bake them
+# into a public ghcr.io image.
+.env
+.env.*
+*.pem
+*.key
+secrets/

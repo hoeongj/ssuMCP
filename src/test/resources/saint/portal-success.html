@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>메인 - 숭실대학교 유세인트(u-SAINT)</title></head>
+<body>
+<!-- PII-scrubbed minimal copy of the saint /irj/portal frameset wrapper
+     (captured 2026-05-16). The live page is a SAP NetWeaver portal: the
+     full student-info card (학번 / 소속 / 과정·학기 / 학년·학기) lives
+     inside the lazily-navigated `<iframe id="contentAreaFrame">` and is
+     unreachable from a static server-side fetch. The wrapper itself only
+     carries the greeting span we use to recover the student's display
+     name — 학번 comes from sIdno (already validated by phase 1), and
+     소속 / 학적상태 stay null until Task 16's deeper u-SAINT data
+     tools fetch them. Placeholder name `홍길동` only; never insert a
+     real student id or name (docs/security.md §4). -->
+<header>
+  <div class="top_wrap">
+    <div class="top_box">
+      <span class="top_user">홍길동님 접속을 환영합니다.</span>
+    </div>
+  </div>
+</header>
+<div class="container">
+  <iframe frameborder="0" name="contentAreaFrame" id="contentAreaFrame"
+          class="contentIframe"
+          src="/com.sap.portal.pagebuilder/html/EmptyDocument.html"></iframe>
+</div>
+</body>
+</html>

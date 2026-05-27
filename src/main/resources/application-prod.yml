@@ -1,0 +1,71 @@
+# This file is committed to the repository (see backend/.gitignore exception).
+# Per docs/security.md §3, it MUST NOT contain secrets — only non-sensitive
+# baseline settings or `${ENV_VAR}` references. DB passwords, JWT keys,
+# session cookies, API tokens etc. belong in environment variables and are
+# read via ${ENV_VAR:default} in this file or supplied at deploy time.
+#
+# Required env vars in prod (each fails fast at startup if blank):
+#   SSUAI_FRONTEND_ORIGIN    — WebCorsProdConfig + SSO callback redirect target
+#   SSUAI_API_BASE_URL       — SmartID apiReturnUrl built in SaintSsoCallbackController
+#   SSUAI_JWT_SECRET         — HS256 key for ssuAI access/refresh JWTs (>= 32 bytes)
+#
+# Recommended env vars in prod (silent fallback to ephemeral per-restart values otherwise):
+#   SSUAI_CREDENTIAL_ENCRYPTION_KEY — AES-256 key for SaintSessionStore (Task 16);
+#                                     unset = stored SAINT sessions vanish on JVM restart,
+#                                     forcing every user to redo SSO.
+ssuai:
+  connector:
+    meal: real
+    dorm-meal: real
+    library-seat: ${SSUAI_CONNECTOR_LIBRARY_SEAT:real}
+    library-book: real
+    library-loans: ${SSUAI_CONNECTOR_LIBRARY_LOANS:real}
+    saint-schedule: ${SSUAI_CONNECTOR_SAINT_SCHEDULE:rusaint}
+    saint-grades: ${SSUAI_CONNECTOR_SAINT_GRADES:rusaint}
+    saint-chapel: ${SSUAI_CONNECTOR_SAINT_CHAPEL:rusaint}
+    saint-graduation: ${SSUAI_CONNECTOR_SAINT_GRADUATION:rusaint}
+    saint-scholarship: ${SSUAI_CONNECTOR_SAINT_SCHOLARSHIP:rusaint}
+    lms-assignments: ${SSUAI_CONNECTOR_LMS_ASSIGNMENTS:real}
+    chat: ${SSUAI_CONNECTOR_CHAT:mock}
+  # Production CORS allowlist — exactly one origin (the deployed Vercel
+  # project), wired into WebCorsProdConfig. The value is supplied at
+  # deploy time via the SSUAI_FRONTEND_ORIGIN env var (set on the
+  # ssuai-backend-config ConfigMap). Empty default makes the binding
+  # explicit; WebCorsProdConfig and SaintSsoCallbackController both fail
+  # fast with a clear message if it resolves to blank.
+  frontend:
+    origin: ${SSUAI_FRONTEND_ORIGIN:}
+  auth:
+    # Empty default forces SSUAI_API_BASE_URL to be set explicitly in prod.
+    # SaintSsoCallbackController uses this to build the SmartID apiReturnUrl.
+    api-base-url: ${SSUAI_API_BASE_URL:}
+    refresh-cookie:
+      # Prod is HTTPS-only — refresh cookie must be marked Secure.
+      secure: true
+      # Prod frontend (Vercel) and backend (duckdns) are on different
+      # sites, so the refresh cookie must travel cross-site on the
+      # `POST /api/auth/refresh` fetch from /auth/return. SameSite=Lax
+      # would let the cookie ride a top-level GET but blocks cross-site
+      # POST (browser drops the cookie → 401, "세션 갱신 실패"). Set
+      # None here; the cookie is already HttpOnly + Secure and our CORS
+      # allowlist (WebCorsProdConfig) pins the exact frontend origin,
+      # so widening SameSite does not open a fresh CSRF path.
+      same-site: None
+
+# JVM tuning: prefer setting JAVA_OPTS on the ConfigMap (e.g.
+# `-XX:+UseG1GC -XX:MaxRAMPercentage=75.0`) so it can be tweaked
+# without a rebuild. The Dockerfile applies JAVA_OPTS via ENTRYPOINT.
+
+server:
+  servlet:
+    session:
+      cookie:
+        # Vercel frontend + Oracle backend = cross-site; JSESSIONID must be
+        # SameSite=None so the browser sends it on fetch() with credentials:include.
+        # Same reasoning as refresh-cookie above.
+        same-site: none
+        secure: true
+
+springdoc:
+  swagger-ui:
+    enabled: false

@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>개인수업시간표조회 - 숭실대학교 유세인트(u-SAINT)</title></head>
+<body>
+<!-- PII-scrubbed minimal copy of the iframe-deep timetable page served by
+     the SAP WebDynpro component ZCMW2102 (개인수업시간표조회),
+     captured 2026-05-16 (Task 16 PR 16a spike), extended 2026-05-17 with
+     the 학년도/학기 dropdown anchors (multi-term nav PR).
+
+     What was kept verbatim: every structural attribute the parser keys
+     off — tbody[id$="-contentTBody"], <th> headerday lsdata mapping,
+     <tr rt="2"> for header row, <tr rt="1"> for data rows,
+     <td role="gridcell" cc="N"> with cc=0 for the period column and
+     cc=1..6 for 월~토, <div class="lsSTEmptyRow"> for blank slots,
+     <span class*="lsTextView--wrap"> for lecture cells (subject<br>
+     professor<br>time<br>room).
+
+     2026-05-17 addition: the 학년도/학기 dropdown <label for>/<input id>
+     pair. Parser reads the displayed (year, term) from this pair on
+     every response so the multi-term iterate can label each hop
+     correctly. WD4A / WD9E ids are dynamic across snapshots; the parser
+     keys on the label text ("학년도" / "학기") and the input's value
+     attribute. The 학기 input carries a Korean label ("1학기" /
+     "여름학기" / "2학기" / "겨울학기") which maps to the cycle integers
+     1..4 (Task 16 spec §3.4).
+
+     What was changed: every concrete subject name, professor name, and
+     room number was replaced with generic placeholders. Student id and
+     name never appear in the timetable response itself — those live on
+     the wrapper (already covered by portal-success.html).
+
+     Real WD ids (WDB5, WDCD, etc.) are kept because they're stable
+     enough across snapshots for parser anchors, but they are NOT
+     student-identifying. -->
+
+<!-- 학년도/학기 dropdowns. Real responses carry a long listbox popup
+     below these inputs (every academic year 1954~2030, plus the four
+     terms); the parser only needs the <label for>/<input id>/value
+     triple, so the popup is omitted here. -->
+<table>
+  <tr>
+    <td><label for="WD4A">학년도</label></td>
+    <td><input id="WD4A" type="text" value="2026학년도" /></td>
+    <td><label for="WD9E">학기</label></td>
+    <td><input id="WD9E" type="text" value="1학기" /></td>
+  </tr>
+</table>
+
+<table>
+  <tbody id="WDB5-contentTBody">
+    <tr rt="2" role="row" class="urST4RowActive">
+      <th id="WDCD" subct="HC" lsdata="{7:'시간'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'시간',1:'시간',6:false}">시간</span>
+      </th>
+      <th id="WDCF" subct="HC" lsdata="{7:'월요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'월요일',1:'월',6:false}">월</span>
+      </th>
+      <th id="WDD1" subct="HC" lsdata="{7:'화요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'화요일',1:'화',6:false}">화</span>
+      </th>
+      <th id="WDD3" subct="HC" lsdata="{7:'수요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'수요일',1:'수',6:false}">수</span>
+      </th>
+      <th id="WDD5" subct="HC" lsdata="{7:'목요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'목요일',1:'목',6:false}">목</span>
+      </th>
+      <th id="WDD7" subct="HC" lsdata="{7:'금요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'금요일',1:'금',6:false}">금</span>
+      </th>
+      <th id="WDD9" subct="HC" lsdata="{7:'토요일'}" role="columnheader">
+        <span ct="CP" lsdata="{0:'토요일',1:'토',6:false}">토</span>
+      </th>
+    </tr>
+
+    <!-- Period 1 row: everything empty (matches real capture). -->
+    <tr rr="1" rt="1" role="row" aria-rowindex="2">
+      <td id="WDE3" role="gridcell" ut="2" cc="0" align="center">
+        <span ct="TV" class="lsTextView lsTextView--wrap">1 교시<br>(08:00-08:50)</span>
+      </td>
+      <td role="gridcell" cc="1"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="2"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="3"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="4"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="5"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="6"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+    </tr>
+
+    <!-- Period 3 row: shows the lecture-cell shape on multiple days
+         with a M/W repeat pattern (격주 아님 — 같은 강의 주2회). -->
+    <tr rr="3" rt="1" role="row" aria-rowindex="4">
+      <td role="gridcell" cc="0">
+        <span ct="TV" class="lsTextView lsTextView--wrap">3 교시<br>(10:30-11:45)</span>
+      </td>
+      <td role="gridcell" cc="1">
+        <span ct="TV" class="lsTextView lsTextView--wrap">자료구조<br>김교수<br>10:30-11:45<br>정보과학관 30100 (강의실A)</span>
+      </td>
+      <td role="gridcell" cc="2">
+        <span ct="TV" class="lsTextView lsTextView--wrap">알고리즘<br>이교수<br>10:30-11:45<br>정보과학관 30200 (강의실B)</span>
+      </td>
+      <td role="gridcell" cc="3">
+        <span ct="TV" class="lsTextView lsTextView--wrap">자료구조<br>김교수<br>10:30-11:45<br>정보과학관 30100 (강의실A)</span>
+      </td>
+      <td role="gridcell" cc="4">
+        <span ct="TV" class="lsTextView lsTextView--wrap">알고리즘<br>이교수<br>10:30-11:45<br>정보과학관 30200 (강의실B)</span>
+      </td>
+      <td role="gridcell" cc="5"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="6"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+    </tr>
+
+    <!-- Period 5 row: shows mixed empty + short-time (50min chapel-style)
+         + standard lecture cells in the same row. -->
+    <tr rr="5" rt="1" role="row" aria-rowindex="6">
+      <td role="gridcell" cc="0">
+        <span ct="TV" class="lsTextView lsTextView--wrap">5 교시<br>(13:30-14:45)</span>
+      </td>
+      <td role="gridcell" cc="1">
+        <span ct="TV" class="lsTextView lsTextView--wrap">운영체제<br>박교수<br>13:30-14:45<br>정보과학관 30300 (강의실C)</span>
+      </td>
+      <td role="gridcell" cc="2">
+        <span ct="TV" class="lsTextView lsTextView--wrap">채플<br>최교수<br>13:30-14:20<br>한경직기념관 10000</span>
+      </td>
+      <td role="gridcell" cc="3">
+        <span ct="TV" class="lsTextView lsTextView--wrap">운영체제<br>박교수<br>13:30-14:45<br>정보과학관 30300 (강의실C)</span>
+      </td>
+      <td role="gridcell" cc="4"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="5"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+      <td role="gridcell" cc="6"><div class="lsSTEmptyRow" aria-label="비어 있음">&nbsp;</div></td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>

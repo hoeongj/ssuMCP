@@ -1,0 +1,15 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Values.ingress.middlewares.redirectHttps }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ssuai-backend.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- end }}

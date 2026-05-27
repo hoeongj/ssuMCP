@@ -1,0 +1,20 @@
+# Let's Encrypt production ClusterIssuer. cert-manager uses this to
+# request and renew the certificates referenced from Ingress resources.
+#
+# Replace the `email:` value with a real address before applying. Let's
+# Encrypt sends expiration notices and policy updates there.
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: REPLACE_WITH_OPERATOR_EMAIL@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

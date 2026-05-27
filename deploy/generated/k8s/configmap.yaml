@@ -1,0 +1,54 @@
+﻿apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssuai-backend-config
+  namespace: ssuai-prod
+  labels:
+    app.kubernetes.io/name: ssuai-backend
+    app.kubernetes.io/part-of: ssuai
+data:
+  # Activates application-prod.yml on top of application.yml.
+  SPRING_PROFILES_ACTIVE: "prod"
+
+  # Production CORS allowlist. Replace with the real Vercel project
+  # origin (no trailing slash). Read by WebCorsConfig under @Profile("prod").
+  SSUAI_FRONTEND_ORIGIN: "https://ssuai.vercel.app"
+
+  # SmartID callback origin. Vercel rewrites /api/* to the backend so auth
+  # cookies are set on the frontend origin.
+  SSUAI_API_BASE_URL: "https://ssuai.vercel.app"
+
+  # MCP auth callback URL base. MCP clients already connect to
+  # ssumcp.duckdns.org/mcp, so auth should return directly to k3s instead of
+  # depending on the Vercel /api proxy.
+  SSUAI_MCP_API_BASE_URL: "https://ssumcp.duckdns.org"
+
+  # JVM tuning. MaxRAMPercentage cooperates with the pod memory limit;
+  # G1GC is the JDK 21 default. Override here without rebuilding the image.
+  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+
+  # Connector flags — production should hit real Soongsil sites. These
+  # are also the defaults in application-prod.yml; the ConfigMap just
+  # makes them visible to operators inspecting the live pod env.
+  SSUAI_CONNECTOR_MEAL: "real"
+  SSUAI_CONNECTOR_DORM_MEAL: "real"
+  SSUAI_CONNECTOR_LIBRARY_BOOK: "real"
+  SSUAI_CONNECTOR_LIBRARY_LOANS: "real"
+  SSUAI_CONNECTOR_LIBRARY_SEAT: "real"
+  SSUAI_CONNECTOR_SAINT_SCHEDULE: "real"
+  SSUAI_CONNECTOR_SAINT_GRADES: "real"
+  SSUAI_CONNECTOR_LMS_ASSIGNMENTS: "real"
+
+  # LLM chat mode. Requires API keys in the Secret (see secret.example.yaml).
+  SSUAI_CONNECTOR_CHAT: "llm"
+
+  # The self-MCP client connects to the pod's own SSE endpoint.
+  # localhost:8080 works in-pod; override only if routing changes.
+  SSUAI_MCP_CLIENT_BASE_URL: "http://localhost:8080"
+
+  # LLM tuning knobs (safe defaults — bump if answers get cut off).
+  SSUAI_LLM_MAX_TOKENS: "400"
+  SSUAI_LLM_MAX_TOOL_CALLS: "2"
+  SSUAI_LLM_MAX_PROVIDER_ATTEMPTS: "6"
+  SSUAI_LLM_MAX_MODELS_PER_PROVIDER: "2"
+  SSUAI_LLM_AVAILABILITY_VERIFICATION_PASSES: "0"

@@ -1,0 +1,6 @@
+ssuMCP server chart rendered.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Values.namespace }}
+Backend host: {{ .Values.ingress.host }}
+Image: {{ .Values.image.repository }}:{{ .Values.image.tag }}

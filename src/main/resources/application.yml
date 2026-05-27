@@ -1,0 +1,312 @@
+spring:
+  application:
+    name: ssuai
+  profiles:
+    default: dev
+  # H2 in-memory database. Production should override via SSUAI_DB_URL
+  # (file mode or external Postgres once user count grows beyond MVP).
+  datasource:
+    url: ${SSUAI_DB_URL:jdbc:h2:mem:ssuai;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
+    driver-class-name: org.h2.Driver
+    username: ${SSUAI_DB_USERNAME:sa}
+    password: ${SSUAI_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: ${SSUAI_JPA_DDL_AUTO:update}
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  ai:
+    mcp:
+      server:
+        name: ssuai-mcp
+        version: 0.0.1
+        type: SYNC
+        protocol: STREAMABLE
+        instructions: >
+          숭실대학교 공식 MCP 서버(ssuMCP)입니다.
+          공개 도구: 학식(오늘·날짜별), 기숙사 식단, 도서관 좌석·도서 검색, 시설 검색, 공지사항 6종.
+          개인 도구(u-SAINT·LMS·도서관): 시간표, 성적, 채플, 졸업 요건, 장학금, 과제, 대출 현황.
+          개인 도구 사용 전 start_auth 로 해당 서비스에 로그인하세요.
+      client:
+        enabled: ${SSUAI_MCP_CLIENT_ENABLED:true}
+        name: ssuai-self-mcp-client
+        version: 0.0.1
+        type: SYNC
+        # Defer the Streamable HTTP handshake to the first chat request: the
+        # MCP server we connect to is in the same JVM, and its /mcp endpoint
+        # is only ready once Tomcat finishes binding the port — initializing
+        # the client during context refresh deadlocks against startup.
+        initialized: false
+        # We do not use Spring AI's ChatClient ToolCallback bridge; the chat
+        # path is OpenAI-compatible REST (ADR 0009) and discovers tools via
+        # mcpClient.listTools() lazily (ADR 0011). Leaving this on would
+        # also block startup trying to list tools over /mcp.
+        toolcallback:
+          enabled: false
+        request-timeout: 10s
+        streamable-http:
+          connections:
+            self:
+              url: ${SSUAI_MCP_CLIENT_BASE_URL:http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+ssuai:
+  connector:
+    meal: mock # mock | real
+    dorm-meal: mock # mock | real
+    library-seat: mock # mock | real
+    library-book: mock # mock | real
+    library-loans: mock # mock | real
+    saint-schedule: mock # mock | rusaint
+    saint-grades: mock # mock | rusaint
+    saint-chapel: mock # mock | rusaint
+    saint-graduation: mock # mock | rusaint
+    saint-scholarship: mock # mock | rusaint
+    lms-assignments: mock # mock | real
+    chat: ${SSUAI_CONNECTOR_CHAT:mock} # mock | llm
+    notice: mock # mock | real
+    department-notice: real # mock | real
+  library:
+    seat:
+      # Per-floor cache TTL. Short enough that students get fresh data
+      # before walking over, long enough that the library page is not
+      # hammered at chat-message frequency.
+      cache-ttl: 30s
+      base-url: ${SSUAI_LIBRARY_SEAT_BASE_URL:https://oasis.ssu.ac.kr}
+      referer: https://oasis.ssu.ac.kr/library-services/smuf/reading-rooms
+      timeout: 10s
+    book:
+      # Per-(query,page,size) cache TTL. Longer than seat (which is volatile);
+      # checkout state shifts on the order of minutes, not seconds.
+      cache-ttl: 60s
+      # Pyxis JSON search API base URL — anonymous GET, no auth header.
+      base-url: ${SSUAI_LIBRARY_BOOK_BASE_URL:https://oasis.ssu.ac.kr}
+      # Collection 2 = central library combined catalog (spike-confirmed).
+      collection-id: 2
+      timeout: 5s
+  saint:
+    # u-SAINT SSO endpoints. sToken/sIdno are one-shot tokens forwarded by
+    # SmartID; we never persist them. Override via env vars in non-default
+    # environments. Timeout is short — both phases are server-side hops to
+    # saint.ssu.ac.kr and should respond quickly or fail.
+    sso-url: ${SSUAI_SAINT_SSO_URL:https://saint.ssu.ac.kr/webSSO/sso.jsp}
+    portal-url: ${SSUAI_SAINT_PORTAL_URL:https://saint.ssu.ac.kr/irj/portal}
+    timeout: 10s
+    schedule:
+      # Per-student timetable cache TTL. Long enough to absorb burst chat
+      # queries ("내일 1교시"), short enough that drop/add reflects within an hour.
+      cache-ttl: 1h
+    session:
+      # Encrypted-at-rest store of post-SSO SAINT session material. The
+      # rusaint path stores serialized rusaint session JSON here; the legacy
+      # Java connector stored a raw Cookie header in the same slot.
+      ttl: 30m
+      max-sessions: 1000
+      # AES-256 key (>= 32 bytes, base64 recommended). Empty default →
+      # ephemeral random per JVM start (dev/test convenience; stored
+      # sessions become unreadable across restarts). Prod must set the
+      # SSUAI_CREDENTIAL_ENCRYPTION_KEY env var on the ConfigMap/secret.
+      encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+  lms:
+    gw-callback-url: ${SSUAI_LMS_GW_CALLBACK_URL:https://lms.ssu.ac.kr/xn-sso/gw-cb.php}
+    canvas-base-url: ${SSUAI_LMS_CANVAS_BASE_URL:https://canvas.ssu.ac.kr}
+    timeout: 10s
+    session:
+      ttl: 2h
+      max-sessions: 1000
+      encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+  auth:
+    # Public origin of THIS backend, used to build the SmartID
+    # apiReturnUrl in /api/auth/saint/sso-init. In prod this MUST be
+    # the HTTPS origin SmartID is whitelisted to redirect to.
+    api-base-url: ${SSUAI_API_BASE_URL:http://localhost:8080}
+    # MCP auth does not need the Vercel cookie domain. Point this directly
+    # to the backend origin in prod so SmartID returns to k3s, not Vercel.
+    mcp-api-base-url: ${SSUAI_MCP_API_BASE_URL:}
+    smartid-sso-url: ${SSUAI_SMARTID_SSO_URL:https://smartid.ssu.ac.kr/Symtra_sso/smln.asp}
+    refresh-cookie:
+      name: ssuai_refresh
+      path: /api/auth
+      same-site: Lax
+      # dev/test default = false (localhost is plain HTTP). Prod overrides
+      # to true in application-prod.yml so the cookie is HTTPS-only.
+      secure: ${SSUAI_AUTH_REFRESH_COOKIE_SECURE:false}
+  frontend:
+    # Origin of the ssuAI web app — used by (1) WebCorsProdConfig in prod
+    # and (2) the saint SSO callback to 302 the user back to /auth/return.
+    # In prod application-prod.yml force-empties this so the SSUAI_FRONTEND_ORIGIN
+    # env var becomes required and the empty case fails fast at startup.
+    origin: ${SSUAI_FRONTEND_ORIGIN:http://localhost:3000}
+  notice:
+    base-url: ${SSUAI_NOTICE_BASE_URL:https://scatch.ssu.ac.kr}
+    cache-ttl: 5m
+    timeout: 8s
+    max-page-size: 20
+  ssufid:
+    base-url: ${SSUAI_SSUFID_BASE_URL:https://ssufid.yourssu.com}
+  chat:
+    llm:
+      max-tokens: ${SSUAI_LLM_MAX_TOKENS:400}
+      temperature: 0.3
+      availability-verification-passes: ${SSUAI_LLM_AVAILABILITY_VERIFICATION_PASSES:0}
+      max-provider-attempts: ${SSUAI_LLM_MAX_PROVIDER_ATTEMPTS:6}
+      max-models-per-provider: ${SSUAI_LLM_MAX_MODELS_PER_PROVIDER:2}
+      max-tool-calls: ${SSUAI_LLM_MAX_TOOL_CALLS:2}
+      provider-order:
+        - gemini
+        - groq
+        - openrouter
+        - cerebras
+        - deepinfra
+        - sambanova
+        - nscale
+        - fireworks
+        - huggingface
+        - mistral
+      private-provider-order:
+        - groq
+        - cerebras
+        - deepinfra
+        - sambanova
+        - nscale
+        - fireworks
+        - huggingface
+        - mistral
+        - openrouter
+      gemini:
+        base-url: ${SSUAI_GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
+        api-key: ${SSUAI_GEMINI_API_KEY:}
+        public-models:
+          - gemini-2.5-flash-lite
+          - gemini-2.5-flash
+      groq:
+        base-url: ${SSUAI_GROQ_BASE_URL:https://api.groq.com/openai/v1}
+        api-key: ${SSUAI_GROQ_API_KEY:}
+        public-models:
+          - llama-3.3-70b-versatile
+          - openai/gpt-oss-120b
+        private-models:
+          - llama-3.3-70b-versatile
+          - openai/gpt-oss-120b
+      cerebras:
+        base-url: ${SSUAI_CEREBRAS_BASE_URL:https://api.cerebras.ai/v1}
+        api-key: ${SSUAI_CEREBRAS_API_KEY:}
+        public-models:
+          - gpt-oss-120b
+          - llama3.1-8b
+        private-models:
+          - gpt-oss-120b
+          - llama3.1-8b
+      deepinfra:
+        base-url: ${SSUAI_DEEPINFRA_BASE_URL:https://api.deepinfra.com/v1/openai}
+        api-key: ${SSUAI_DEEPINFRA_API_KEY:}
+        public-models:
+          - meta-llama/Llama-3.3-70B-Instruct
+          - openai/gpt-oss-120b
+        private-models:
+          - meta-llama/Llama-3.3-70B-Instruct
+          - openai/gpt-oss-120b
+      sambanova:
+        base-url: ${SSUAI_SAMBANOVA_BASE_URL:https://api.sambanova.ai/v1}
+        api-key: ${SSUAI_SAMBANOVA_API_KEY:}
+        public-models:
+          - Meta-Llama-3.3-70B-Instruct
+          - gpt-oss-120b
+        private-models:
+          - Meta-Llama-3.3-70B-Instruct
+          - gpt-oss-120b
+      nscale:
+        base-url: ${SSUAI_NSCALE_BASE_URL:https://inference.api.nscale.com/v1}
+        api-key: ${SSUAI_NSCALE_API_KEY:}
+        public-models:
+          - openai/gpt-oss-120b
+          - meta-llama/Llama-3.1-8B-Instruct
+        private-models:
+          - openai/gpt-oss-120b
+          - meta-llama/Llama-3.1-8B-Instruct
+      fireworks:
+        base-url: ${SSUAI_FIREWORKS_BASE_URL:https://api.fireworks.ai/inference/v1}
+        api-key: ${SSUAI_FIREWORKS_API_KEY:}
+        public-models:
+          - accounts/fireworks/models/gpt-oss-120b
+          - accounts/fireworks/models/llama-v3p3-70b-instruct
+        private-models:
+          - accounts/fireworks/models/gpt-oss-120b
+          - accounts/fireworks/models/llama-v3p3-70b-instruct
+      huggingface:
+        base-url: ${SSUAI_HUGGINGFACE_BASE_URL:https://router.huggingface.co/v1}
+        api-key: ${SSUAI_HUGGINGFACE_API_KEY:}
+        public-models:
+          - openai/gpt-oss-120b:fastest
+          - meta-llama/Llama-3.3-70B-Instruct:fastest
+        private-models:
+          - openai/gpt-oss-120b:fastest
+          - meta-llama/Llama-3.3-70B-Instruct:fastest
+      mistral:
+        base-url: ${SSUAI_MISTRAL_BASE_URL:https://api.mistral.ai/v1}
+        api-key: ${SSUAI_MISTRAL_API_KEY:}
+        training-opt-out-confirmed: ${SSUAI_MISTRAL_TRAINING_OPT_OUT_CONFIRMED:false}
+        public-models:
+          - mistral-small-latest
+          - devstral-small-latest
+        private-models:
+          - mistral-small-latest
+          - devstral-small-latest
+      openrouter:
+        base-url: ${SSUAI_OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+        api-key: ${SSUAI_OPENROUTER_API_KEY:}
+        http-referer: ${SSUAI_OPENROUTER_HTTP_REFERER:}
+        app-title: ${SSUAI_OPENROUTER_APP_TITLE:ssuAI}
+        public-require-zdr: false
+        private-require-zdr: true
+        public-data-collection: allow
+        private-data-collection: deny
+        max-price-prompt: 0
+        max-price-completion: 0
+        public-models:
+          - inclusionai/ring-2.6-1t:free
+          - nvidia/nemotron-3-super-120b-a12b:free
+          - openai/gpt-oss-120b:free
+          - qwen/qwen3-coder:free
+          - qwen/qwen3-next-80b-a3b-instruct:free
+          - arcee-ai/trinity-large-thinking:free
+          - google/gemma-4-31b-it:free
+          - google/gemma-4-26b-a4b-it:free
+          - minimax/minimax-m2.5:free
+          - z-ai/glm-4.5-air:free
+          - meta-llama/llama-3.3-70b-instruct:free
+          - openai/gpt-oss-20b:free
+          - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+          - nvidia/nemotron-3-nano-30b-a3b:free
+          - nvidia/nemotron-nano-12b-v2-vl:free
+          - nvidia/nemotron-nano-9b-v2:free
+          - poolside/laguna-m.1:free
+          - poolside/laguna-xs.2:free
+          - baidu/cobuddy:free
+          - openrouter/free
+          - openrouter/owl-alpha
+        private-models:
+          - inclusionai/ring-2.6-1t:free
+          - arcee-ai/trinity-large-thinking:free
+          - z-ai/glm-4.5-air:free
+          - qwen/qwen3-coder:free
+          - meta-llama/llama-3.3-70b-instruct:free
+          - qwen/qwen3-next-80b-a3b-instruct:free
