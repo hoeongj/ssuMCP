@@ -1,0 +1,1033 @@
+# ssuAI 트러블슈팅 로그
+
+이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
+모으는 최상위 로그입니다.
+
+## 기록 규칙
+
+- 의미 있는 문제를 발견하거나 해결하면 이 파일에 한국어로 누적합니다.
+- commit, PR, dev-log 를 만들 때마다 의무적으로 쓰지 않습니다. 포트폴리오
+  면접에서 설명할 가치가 있는 문제, 원인 분석, 설계 전환, 검증 실패/해결만
+  남깁니다.
+- 문제가 생긴 직후, 기억이 선명할 때 증상, 원인, 해결, 검증, 배운 점을
+  짧게 남깁니다.
+- secret, token, private key, cookie, 학생 ID, 실명, 인증된 학교 페이지의
+  원문 응답은 절대 기록하지 않습니다.
+- `docs/troubleshooting/` 아래에 긴 상세 회고가 있으면, 여기에는 요약과
+  링크를 남깁니다.
+
+권장 형식:
+
+```markdown
+## YYYY-MM-DD — 제목
+
+- 맥락:
+- 증상:
+- 원인:
+- 해결:
+- 검증:
+- 포트폴리오 포인트:
+```
+
+## 2026-05-24 — MCP transport SSE → Streamable HTTP 후 통합 테스트 CI 실패 (프로퍼티 키 불일치)
+
+- 맥락: `application.yml` 의 MCP client transport 를 SSE (`sse.connections.self.url`) 에서
+  Streamable HTTP (`streamable-http.connections.self.url`) 로 전환했다.
+  단위 테스트 (~500개) 는 모두 mock 모드라 MCP client 를 실제로 초기화하지 않아 전부 그린이었다.
+- 증상: `LlmModeStartupSmokeTest` 만 CI 에서 실패. Spring Boot 컨텍스트가 올라오지 못하고
+  `spring.ai.mcp.client.sse.connections.self.url` property 를 찾지 못해 MCP 자체 연결에서 타임아웃.
+- 원인: `@DynamicPropertySource` 블록이 구 SSE 프로퍼티 키를 하드코딩하고 있었다.
+  ```java
+  // 구: SSE 시절
+  registry.add("spring.ai.mcp.client.sse.connections.self.url", () -> "http://localhost:" + SERVER_PORT);
+  // 신: Streamable HTTP 전환 후
+  registry.add("spring.ai.mcp.client.streamable-http.connections.self.url", () -> "http://localhost:" + SERVER_PORT);
+  ```
+  mock 모드 단위 테스트는 `spring.ai.mcp.client.enabled: false` 가 `application-test.yml` 에 설정되어
+  MCP client 빈 자체가 로드 안 됨 → transport 전환 영향이 단위 테스트에서 가려져 통합 테스트 CI
+  에서만 드러났다.
+- 해결: `@DynamicPropertySource` 에서 프로퍼티 키를 `streamable-http` 로 수정.
+- 검증: `gradlew.bat test` 전체 통과, CI 그린.
+- 포트폴리오 포인트:
+  - **"단위 테스트 전부 그린" ≠ "인프라 설정 변경이 안전"**. transport 전환처럼 Spring context 수준의
+    설정 변경은 full-context 통합 테스트 (여기서는 `@SpringBootTest(RANDOM_PORT)`) 가 아니면 잡히지 않는다.
+    mock profile 이 CI 의 fast gate 역할을 하지만, 실 transport / 실 MCP 초기화를 검증하는
+    smoke test 를 분리 보유하는 이유가 정확히 이 사례다.
+
+---
+
+## 2026-05-24 — Spring AI MCP tool annotation 주입: @Primary McpSyncServerCustomizer + reflection
+
+- 맥락: Claude Desktop 에서 MCP 도구를 "Read-only tools" / "Write/delete tools" 로 시각적으로 구분하려면
+  각 tool 에 `McpSchema.ToolAnnotations` (`readOnlyHint`, `destructiveHint`) 를 붙여야 한다.
+  Spring AI 1.1.x 는 tool annotation 을 주입하는 공개 API 를 제공하지 않는다.
+- 증상 (목표): Spring AI 가 자동으로 등록한 모든 tool 에 annotation 을 추가하고 싶다.
+- 원인 (제약):
+  1. `McpServer.SyncSpecification` 의 `tools` 필드가 `package-private` + `final`인 `List<SyncToolSpecification>` 이어서 외부에서 직접 접근 불가.
+  2. 기존 `servletMcpSyncServerCustomizer` auto-configure 빈은 `spec.immediateExecution(true)` 를 호출한다.
+     WebMVC servlet mode 에서 이 호출이 없으면 MCP 요청이 blocking 되지 않아 SSE 스트리밍이 깨진다.
+     단순히 `@Bean McpSyncServerCustomizer` 를 추가하면 auto-configure 빈과 순서 충돌 → 어느 쪽이 먼저 실행될지 보장 없음.
+- 해결:
+  ```java
+  @Primary               // auto-configured servletMcpSyncServerCustomizer 를 교체
+  @Bean
+  McpSyncServerCustomizer ssuaiToolAnnotationsCustomizer() {
+      return spec -> {
+          spec.immediateExecution(true);   // ① servlet mode 필수 호출 보존
+
+          // ② package-private 필드를 reflection 으로 열어 tool list 재구성
+          Field toolsField = McpServer.SyncSpecification.class.getDeclaredField("tools");
+          toolsField.setAccessible(true);
+          List<SyncToolSpecification> tools = (List<>) toolsField.get(spec);
+
+          List<SyncToolSpecification> annotated = tools.stream()
+              .map(McpServerConfig::withAnnotations)   // readOnlyHint / destructiveHint 부착
+              .collect(toList());
+
+          tools.clear();
+          tools.addAll(annotated);   // 같은 리스트 인스턴스를 교체 → spec 내부 참조 유지
+      };
+  }
+  ```
+  `@Primary` 가 `servletMcpSyncServerCustomizer` 를 대체하므로 두 customizer 가 충돌 없이
+  한 빈으로 통합된다.
+- 검증: `McpServerConfigTests` 에서 `get_today_meal` (readOnly), `logout_all` (destructive) 의
+  annotation 이 올바로 붙었는지 확인. `gradlew.bat test` 전체 통과.
+  Claude Desktop 에서 ssuMCP 재연결 후 "Read-only tools (20)" / "Write/delete tools (3)" 시각 분리 확인.
+- 포트폴리오 포인트:
+  - **공개 API 가 없는 프레임워크 내부 상태 변경 패턴**: `@Primary` 로 auto-configure 빈을 교체하면서
+    기존 빈의 side-effect (`immediateExecution`) 도 함께 보존해야 하는 상황. 두 가지를 한 빈으로 통합해 충돌을 제거.
+  - **reflection 의 적절한 사용 범위**: Spring AI 가 public API 를 열기 전까지 bridging 용도로만 사용.
+    팀 합류 면접에서 "framework 의 package-private 를 건드린 적 있나?" 라는 질문에 근거 있는 사례.
+  - tool annotation 이 클라이언트 UX (도구 그룹화) 에 직접 영향을 주는 구조 — MCP spec 의
+    `annotations` 필드가 실제 Claude 화면에서 어떻게 표현되는지 end-to-end 검증까지 한 사례.
+
+---
+
+## 2026-05-21 — u-SAINT 웹 방화벽(WAF) 우회 및 LMS/Canvas 세션 오염 방지(CookieManager 격리)를 통한 실서버 로그인 정상화
+
+- 맥락: ssumcp 실서버 환경에서 로그인 연동 시, SAINT(시간표/성적) 및 LMS(과제) 조회 시 무조건 세션 오류(`logon redirect` 또는 `401 session expired`)가 발생하여 기능이 작동하지 않았다.
+- 증상:
+  - u-SAINT 시간표 및 성적 조회 시: 로그인 상태임에도 대학 웹 방화벽에서 ANON(비로그인) 세션으로 강제 강등시켜 `ecc did not return the timetable container` 에러가 발생.
+  - LMS 과제 조회 시: 스마트아이디 로그인 후 Canvas 연동 리다이렉트 과정에서 쿠키가 유실되거나 꼬여 `canvas returned 401 session expired` 에러가 발생.
+- 원인:
+  1. u-SAINT WAF 강등: `ecc.ssu.ac.kr` 최초 접근 시 Portal SSO 연동 과정에서 포탈이 발급한 `WAF` 쿠키가 누락되어, 보안 장비(WAF)가 봇/크롤러로 오인해 세션을 비로그인 상태로 강등시켰다.
+  2. LMS 세션 오염: 기존의 수동 쿠키 병합 로직이 LMS(`lms.ssu.ac.kr`)와 Canvas(`canvas.ssu.ac.kr`) 서브도메인 쿠키를 하나로 무작위 병합 전송함으로써 보안 규칙에 걸려 Canvas API 토큰(`xn_api_token`) 발급이 누락됐다.
+- 해결:
+  1. WAF 쿠키 보존: `eccBootstrapCookieHeader` 필터링 로직을 수정하여 `MYSAPSSO2`와 함께 **`WAF` 쿠키도 함께 추출 및 보존하여 ECC 요청에 실어 보내도록 해결**하였다.
+  2. CookieManager 세션 격리: 기존의 불안정한 수동 쿠키 병합 로직을 폐기하고, 인증 요청(스레드)별로 완벽히 격리된 `java.net.CookieManager`를 HttpClient에 장착하여 브라우저 수준의 서브도메인/경로별 쿠키 격리를 보장함으로써 `xn_api_token`을 안정적으로 획득하도록 구현하였다.
+  3. 테스트 케이스 갱신: WAF 쿠키가 보존되어 전송되는 새로운 로직에 맞춰, 기존 테스트 코드의 `doesNotContain("WAF")` 단언문을 `contains("WAF")`로 갱신하여 6개의 깨진 단위/통합 테스트를 모두 정상화(Green)시켰다.
+- 검증: 로컬 전체 백엔드 테스트(`.\gradlew.bat test`)를 실행하여 `BUILD SUCCESSFUL`로 100% 성공을 검증했다.
+- 포트폴리오 포인트:
+  - 대학 보안 장비(WAF)가 세션을 강제 강등시키는 현상을 분석하여 필수 보안 토큰(`WAF`) 누락이 원인임을 밝혀내고 이를 커넥터 헤더에 바인딩하여 우회한 실전 디버깅 사례이다.
+  - 고유 서브도메인을 넘나드는 SSO 체인에서 발생할 수 있는 "쿠키 오염(Cookie Pollution)" 현상을 스레드 세이프하고 고립된 `CookieManager`를 갖춘 `HttpClient` 동적 생성 패턴을 설계하여 격리함으로써 완벽히 해소했다.
+
+## 2026-05-21 (정정) — u-SAINT 실패의 실제 원인: 빈 학기 응답을 로그인 실패로 오판
+
+- 맥락: 위 항목에서 WAF 누락을 SAINT 실패 원인으로 추정해 수정했지만, 이후 브라우저 캡처를 다시 비교하면서 가설을 정정했다.
+- 증상: `ecc did not return the timetable container (likely logon redirect)` 예외가 계속 발생했다.
+- 원인:
+  - 브라우저도 `sap-contextid=SID:ANON:...-NEW` 상태로 시간표/성적 화면을 정상 렌더링했다. 즉 ANON 자체는 인증 실패 신호가 아니었다.
+  - ECC 진입 시 기본 선택 학기가 현재 시점의 여름학기였고, 수강 데이터가 없는 빈 학기라 시간표 `tbody[id$=-contentTBody]`가 없거나 비어 있었다.
+  - 커넥터는 이 데이터 컨테이너 부재를 로그인 리다이렉트로 오판해, 이전 학기 iterate loop까지 도달하지 못했다.
+- 해결: 시간표는 `학년도`/`학기` dropdown 존재를 인증 신호로 사용하고, 성적은 학기별 GPA history 존재를 인증 신호로 사용하도록 변경했다. 실제 데이터 row 유무는 인증 판단에서 분리했다.
+- 검증: 빈 학기 dropdown-only 응답이 gate를 통과하는 테스트와, 로그인 조각처럼 dropdown/history가 없는 응답은 실패하는 테스트를 추가했다. 최종 검증은 Desktop MCP 클라이언트 호출로 `get_my_schedule` / `get_my_grades`가 과거 학기까지 반환하는지 확인해야 한다.
+- 포트폴리오 포인트: stateful WebDynpro 화면에서는 "데이터 컨테이너 존재"가 인증 신호가 아니다. 빈 정상 응답과 로그인 실패 응답을 구분하려면 데이터가 아니라 페이지 구조 신호를 기준으로 삼아야 한다.
+
+---
+
+## 2026-05-22 — u-SAINT SAP WebDynpro reverse engineering 한계 인정, rusaint upstream FFI 통합으로 전환
+
+- 맥락: 2026-05-14부터 2026-05-22까지 SAINT 시간표/성적 조회를 Java WebDynpro 직접 구현으로 살리려 했지만, 여러 protocol 추측 fix가 실제 사용자 검증에서 계속 같은 실패 계열로 돌아왔다.
+- 증상: `get_my_schedule`, `get_my_grades`가 prod에서 안정적으로 동작하지 않았고, LMS/학식/도서관 등 다른 tools와 달리 SAINT만 SAP WebDynpro state mismatch에 계속 걸렸다.
+- 원인:
+  1. SAP NetWeaver WebDynpro는 `sap-contextid`, portal-issued `sap-ext-sid`, hidden input, SAPEVENTQUEUE, application-server routing이 모두 stateful하게 엮여 있다.
+  2. 우리 Java 구현은 production wire-level ground truth 없이 browser 관찰과 log fragment만으로 protocol을 추측했다.
+  3. 단순 LMS Canvas SSO와 달리 SAP WebDynpro는 직접 reverse engineering 비용이 product 가치보다 커졌다.
+- 해결: 검증된 Rust upstream인 `yourssu/rusaint`를 UniFFI Kotlin binding으로 통합한다. SmartID callback의 `sToken`/`sIdno`는 Java token-probe flow에서 소비하지 않고 rusaint `withToken`에 한 번만 전달한다. 결과 `USaintSession.toJson()`은 기존 `SaintSessionStore`에 AES-GCM encrypted-at-rest로 저장하고, schedule/grades 호출 시 `fromJson`으로 복원한다.
+- 검증: 2026-05-22 로컬 `rusaint-cli` ground truth에서 schedule과 grades recorded-summary가 정상 응답했다. 이번 PR은 `RusaintClient`를 mock한 unit test와 backend test로 contract를 검증하고, prod 배포 후 사용자가 실제 MCP client에서 `get_my_schedule` / `get_my_grades`를 다시 확인한다.
+- 포트폴리오 사인:
+  1. 적재적소 판단: LMS처럼 단순한 흐름은 직접 구현하고, 복잡한 SAP는 검증된 upstream을 활용한다.
+  2. 무한 추측 fix 중단: reference implementation이나 wire trace가 없는 stateful protocol은 일정 시점에 중단 기준이 필요하다.
+  3. wrapper 이상의 가치: ssuAI가 직접 책임지는 부분은 encrypted session store, cache, DTO normalization, cross-source tools, observability다.
+  4. 실패 기록 보존: 이전 Java WebDynpro 시도는 silent rewrite하지 않고 troubleshooting과 ADR에 남긴다.
+- 최종 검증: 2026-05-22 prod 배포 후 `get_my_schedule` / `get_my_grades` 모두 정상 응답 확인.
+
+## 2026-05-22 — rusaint 배포 후 "Illegal cookie name" — Helm values.yaml connector 값 미변경
+
+- 맥락: rusaint FFI PR을 main에 머지하고 prod 배포 후 바로 테스트했더니 SAINT 기능만 `Illegal cookie name` 오류가 발생했다.
+- 증상: `get_my_schedule`, `get_my_grades` 모두 `IllegalArgumentException: Illegal cookie name` 반환. LMS/도서관은 정상.
+- 원인: `deploy/charts/ssuai-backend/values.yaml`의 `connectorSaintSchedule`, `connectorSaintGrades`가 `real`로 남아 있었다. k8s ConfigMap이 `SSUAI_CONNECTOR_SAINT_SCHEDULE=real`로 주입되어 `RealSaintScheduleConnector`가 로드됐고, 해당 connector가 rusaint session JSON을 raw cookie header로 파싱하려다 `new HttpCookie("{", ...)` 호출에서 예외가 발생했다. `application-prod.yml`의 default가 `rusaint`여도 ConfigMap env var가 더 우선하므로 덮어씌워졌다.
+- 해결: `values.yaml`에서 `connectorSaintSchedule: rusaint`, `connectorSaintGrades: rusaint`로 변경 후 commit/push. k8s ConfigMap 직접 패치 + `kubectl rollout restart`로 즉시 적용.
+- 검증: `kubectl get configmap … -o jsonpath='{.data.SSUAI_CONNECTOR_SAINT_SCHEDULE}'` → `rusaint`. 재배포 후 `get_my_grades` / `get_my_schedule` 모두 정상 응답.
+- 포트폴리오 포인트: Spring Boot application.yml 기본값은 k8s ConfigMap env var에 의해 덮어씌워진다. connector를 코드에서 바꿔도 Helm values.yaml을 같이 바꾸지 않으면 prod에서 다른 connector가 로드된다. "새 기능 배포 시 Helm values도 함께 업데이트" 를 체크리스트에 추가해야 한다.
+
+## 2026-05-18 — MCP auth tools 구현 후 서버 등록 누락
+
+- 맥락: Task 18에서 외부 MCP 클라이언트용 인증 흐름을 추가했다.
+  `get_auth_status`, `start_auth`, `logout_provider`, `logout_all` 구현과 문서는
+  완료됐지만 실제 MCP tool list smoke 전 코드 리뷰에서 누락을 발견했다.
+- 증상: `McpAuthMcpTools` 클래스와 테스트는 존재하지만 `McpServerConfig`의
+  `MethodToolCallbackProvider.toolObjects(...)`에 등록되지 않았다. 이 상태로 배포하면
+  Claude Desktop/Cursor 같은 MCP 클라이언트에서 인증 시작 도구가 보이지 않아 private tool
+  사용자가 `AUTH_REQUIRED` 이후 로그인 흐름을 시작할 수 없다.
+- 원인: Spring AI MCP tool 등록은 component scan만으로 끝나지 않고, 현재 프로젝트에서는
+  `McpServerConfig`가 명시적으로 tool object 목록을 구성한다. 새 tool class를 만들면서
+  설정 파일과 tool-list regression test를 함께 갱신하지 않았다.
+- 해결: `McpServerConfig.ssuaiMcpTools(...)`에 `McpAuthMcpTools`를 주입하고
+  `toolObjects(...)` 목록에 추가했다. `McpServerConfigTests`의 expected tool names도 기존
+  10개에서 auth tools 4개를 포함한 14개로 갱신했다.
+- 검증: `McpServerConfigTests.registersSsuaiMcpTools`가 auth tools 4개
+  (`get_auth_status`, `start_auth`, `logout_provider`, `logout_all`)와 기존 tool 10개를
+  모두 확인하도록 고정했다.
+- 포트폴리오 포인트: MCP 서버는 "구현된 class"가 아니라 "클라이언트가 발견 가능한 tool
+  contract"가 제품 표면이다. 새 도구를 추가할 때는 service/tool unit test뿐 아니라 MCP
+  registry smoke 또는 config regression test를 acceptance criteria에 포함해야 한다.
+
+---
+
+## 2026-05-18 — RestClient 302 redirect 중간 Set-Cookie 누락 → HttpClient Redirect.NEVER로 전환
+
+- 맥락: u-SAINT portal phase 2 에서 SAP ECC 커넥터가 403 을 계속 반환. SmartID 로그인 자체는
+  성공하고 portal HTML 도 정상 파싱되는데, 그 이후 시간표/성적 조회에서만 403 이 떨어짐.
+  MYSAPSSO2 쿠키가 문제라는 가설 하에 진단 로깅을 단계별로 추가하다 원인을 발견.
+- 증상:
+  - `ad83a99` 진단 로깅 결과: 저장된 MYSAPSSO2 가 portal phase 1 (`/webSSO/sso.jsp`) 에서
+    발급된 토큰이고, portal phase 2 redirect 체인에서 SAP 이 새로 발급한 갱신 토큰과 달랐음.
+  - ECC 커넥터가 오래된 MYSAPSSO2 를 실어 보내니 매 요청 403.
+- 원인: Spring RestClient 기본 `SimpleClientHttpRequestFactory` (내부적으로 `HttpURLConnection`)
+  는 3xx 리다이렉트를 조용히 따라가면서 **중간 응답의 Set-Cookie 헤더를 전부 버림**.
+  SAP portal phase 2 는 첫 번째 302 응답에 권위 있는 최신 MYSAPSSO2 를 실어 보내는데,
+  최종 목적지 응답만 보는 RestClient 가 그 쿠키를 수집하지 못한 채 phase 1 값을 계속 저장.
+- 해결: phase 2 fetch 를 `java.net.http.HttpClient(Redirect.NEVER)` + 수동 redirect 추적으로
+  교체 (`96b9e8c`). 각 hop 의 Set-Cookie 를 누적한 뒤 저장된 `PortalCookies` 에 merge.
+  충돌 시 phase 2 값이 phase 1 값을 덮어쓰도록 보장.
+- 검증: MockWebServer 기반 redirect cookie merge 테스트 추가. 302 hop → 200 최종 응답 시나리오에서
+  중간 Set-Cookie 가 최종 저장 쿠키에 반영되는 것을 핀.
+- 포트폴리오 포인트:
+  - **HTTP 클라이언트의 "투명한 redirect 추적"은 쿠키 수집 관점에선 불투명함**. 최종 응답에만
+    집중하는 고수준 클라이언트는 redirect 체인에서 세션을 발급하는 서버 (SAP NetWeaver 패턴)
+    앞에서 silent mismatch 를 만든다. 쿠키를 누적해야 하는 multi-hop 흐름은 Redirect.NEVER +
+    수동 추적이 유일한 안전한 선택.
+  - 증상이 phase 2 훨씬 뒤인 ECC 403 으로 나타나 원인 위치 특정이 어려웠음. 단계별 진단
+    로깅 (MYSAPSSO2 prefix, 4xx 응답 body) 을 추가해가며 범위를 좁히는 과정 자체가 실전 디버깅 사례.
+
+---
+
+## 2026-05-18 — Vercel 도메인 SSO callback 쿠키 4단계 cascade
+
+- 맥락: SmartID 로그인 prod 재검증 중 Vercel frontend 에서 로그인 후 세션이 안 잡히는 현상.
+  Backend 는 ssuai refresh cookie 를 내려보내지만 브라우저에서 보이지 않음.
+  CORS allowCredentials 는 이미 수정 (#116) 되어 있었음.
+- 증상 / 해결 단계 (4 layer):
+  1. **Cross-origin cookie**: `ssuai.vercel.app` → `ssumcp.duckdns.org` 직접 API 호출.
+     Backend 가 `Set-Cookie` 를 내려도 브라우저가 cross-site 쿠키를 Vercel origin 에 저장하지 않음.
+     → Next.js `next.config.ts` 에 `/api/*` rewrite 추가해 모든 API 호출을 same-origin proxy 로 통일 (`ccc0c30`).
+  2. **SSO callback 302**: Backend SmartID callback 이 302 redirect 를 반환하는 구조.
+     Vercel same-origin 으로 들어온 redirect 응답의 `Set-Cookie` 가 프록시를 거치면서 누락.
+     → Backend callback 을 200 + HTML 로 변경해 브라우저 redirect 없이 처리 (`3df25f3`).
+  3. **App Router route handler Set-Cookie 누락**: Next.js App Router 의 `/api/auth/saint/sso-callback/route.ts`
+     에서 backend 쿠키를 추출해 재발급 시도. `afterFiles` rewrite 가 App Router route 보다 먼저 실행돼
+     route handler 가 개입할 수 없었음.
+     → `proxy.ts` (Next.js 16 middleware convention) 로 이전, `/api/auth/saint/sso-callback` 패턴 매칭해
+     서버 사이드에서 쿠키 추출 후 재발급 (`a1e74a1`).
+  4. **Next.js 16 proxy Set-Cookie header stripping**: `proxy.ts` 에서 `response.headers.set('Set-Cookie', …)` 로
+     수동 지정했지만 Next.js 16 이 response header 로 직접 설정한 Set-Cookie 를 조용히 제거.
+     → `response.cookies.set(name, value, options)` Next.js API 로 교체 (`405c288`).
+- 검증: `https://ssuai.vercel.app` 브라우저에서 SmartID 로그인 → 대시보드 세션 정상 착지 확인.
+  Network 탭에서 ssuai.vercel.app 도메인 쿠키로 발급 확인.
+- 포트폴리오 포인트:
+  - **"쿠키가 안 붙는다"는 증상 하나가 cross-origin / redirect / route intercept order / framework
+    cookie API 네 개의 서로 다른 레이어에 걸쳐 있었음**. 레이어마다 해결하면 다음 레이어가
+    드러나는 구조라 각 단계를 커밋으로 격리해 추적.
+  - Vercel + Next.js 16 에서 SSO callback 쿠키를 안정적으로 내리는 유일한 패턴: middleware/proxy
+    에서 `response.cookies.set()` API 사용. 다른 방법은 전부 Next.js 또는 Vercel 의 어느 레이어가 조용히 제거.
+
+---
+
+## 2026-05-18 — SAP WebDynpro Chrome UA → JS bootstrap 응답, Form_Request POST 필요
+
+- 맥락: u-SAINT 시간표/성적 connector 를 prod 에서 처음 실행하자 데이터가 안 나옴. 단위 테스트는
+  HTML fixture 기준으로 전부 통과하고 있었음.
+- 증상: prod 로그에서 connector 가 `sap-wd-secure-id` 를 파싱 못해 `SaintSessionExpiredException` 발생.
+  응답 snippet 을 보니 시간표 HTML 이 아니라 SAP WebDynpro JavaScript bootstrap 코드였음.
+- 원인: 단위 테스트 fixture 는 렌더링 완료된 HTML 이었지만, 실제 u-SAINT 는 **Chrome-like User-Agent**
+  로 GET 하면 JS 로 초기화를 맡기는 bootstrap 페이지를 먼저 내려보냄. 사람의 브라우저라면 JS 가
+  실행되면서 `Form_Request` POST 를 자동 전송해 실제 HTML 을 받지만, connector 는 JS 를 실행하지 않음.
+- 해결: bootstrap HTML 에서 `sap-wd-secure-id` 를 추출한 뒤, SAP WebDynpro 가 기대하는 형식의
+  `Form_Request` (`SAPEVENTQUEUE` 포함) POST 를 명시적으로 전송해 렌더링된 HTML 을 응답으로 받는
+  2단계 init 흐름 추가 (`ccc0c30`). `WebDynproSapEventEncoder.encodeInitialLoad()` / `WebDynproResponseUnwrapper`
+  를 별도 유틸로 분리해 테스트 가능하게 구성.
+- 검증: `WebDynproResponseUnwrapperTests`, `WebDynproSapEventEncoderTests` 추가. 이후 prod 에서
+  시간표 데이터 정상 조회 확인.
+- 포트폴리오 포인트:
+  - **"HTML fixture 테스트 전부 통과" ≠ "prod 에서 동작"** 의 세 번째 사례 (앞서 portal parser,
+    3중 DI 장애에 이어). 이번엔 외부 서버가 User-Agent 에 따라 응답 자체를 다른 종류로 바꿔버림.
+    실서버 smoke test 를 mock 테스트와 별도 단계로 강제해야 한다는 교훈 반복 확인.
+  - SAP WebDynpro 패턴: GET → JS bootstrap → Form_Request POST → 렌더 HTML → 이후 SAPEVENTQUEUE
+    POST 반복. 이 흐름을 알면 다른 WDA 앱에도 동일하게 적용 가능.
+
+---
+
+## 2026-05-17 — 시간표 조회 WDA7 iterate 10회 → 1h TTL + single-flight 캐시
+
+- 맥락: `get_my_schedule` MCP tool 이 챗봇 경로에서 매 질문마다 호출될 수 있음. u-SAINT 시간표
+  전체 이력을 가져오려면 현재 학기 GET + "이전학기" 버튼 시뮬레이션 WDA7 POST 를 학기 수만큼
+  반복해야 하는 SAP WebDynpro 구조.
+- 증상 (예측): 입학 이후 N 개 학기가 쌓인 학생의 경우 한 chat 질문에서 외부 서버로 10여 회
+  HTTP 요청이 발생. latency 수십 초 + u-SAINT 서버 부하.
+- 원인: SAP WebDynpro 는 stateful UI 탐색 구조라 "전체 시간표를 한 번에 주는" API endpoint 가 없음.
+  학기별 페이지를 이전 버튼으로 하나씩 navigate 해야 함.
+- 해결: `SaintScheduleCache` 추가 (`7f17b9b`). 학번 key 기준 1h TTL + in-memory LRU.
+  **single-flight**: 동일 학번 동시 miss 시 첫 번째 요청만 실제 fetch, 나머지는 대기 후 결과 재사용.
+  `SaintSessionExpiredException` 은 캐시에 poison 하지 않아 재로그인 후 miss → 새로 fetch.
+  설계는 `LibraryBookCache` 와 동일 패턴으로 일관성 유지.
+- 검증: `SaintScheduleCacheTests` (TTL 만료, single-flight, session 예외 non-poison 포함) 313 라인.
+  `gradlew.bat test` 전체 통과.
+- 포트폴리오 포인트:
+  - 외부 시스템이 stateful navigate 구조일 때 "결과 캐시" 로 request 수를 N → 1 로 줄이는 패턴.
+    TTL 은 데이터 신선도 요구 (시간표는 학기 중 거의 불변) 에서 역산.
+  - single-flight 없이 TTL 캐시만 두면 cold start / 캐시 만료 순간 동시 요청이 thundering herd 를
+    만들어 외부 서버에 N 배 부하. 단순 캐시와 single-flight 의 차이를 면접에서 설명하기 좋은 사례.
+
+---
+
+## 2026-05-17 — Pyxis-Auth-Token 헤더 인증 + 실제 도서관 대출 API path/field 맵핑
+
+- 맥락: Task 13 도서관 좌석 현황 + 대출 현황 full stack 구현. Pyxis API 문서가 없어 브라우저
+  DevTools 로 실제 요청을 분석해 스펙을 역공학.
+- 증상 / 발견:
+  1. 좌석 현황 API: 쿠키 인증 X, **`Pyxis-Auth-Token` 헤더** 방식. Token 은 도서관 사이트 세션과
+     무관한 공개 토큰으로 동작. 층별 집계 endpoint: `/pyxis-api/1/seat-rooms`.
+  2. 대출 현황 API: 초기 가정한 path 가 달랐음. 실제 path = `/pyxis-api/1/api/charges`.
+     응답 field 도 예상과 다름 — `biblio.titleStatement` (제목), `callNo` (청구기호),
+     `chargeDate` (대출일), `dueDate` (반납예정일) 로 정확히 매핑해야 정상 파싱.
+  3. 대출 조회 미로그인 케이스: `noRecord` 플래그가 `true` 면 빈 배열, `needLogin` 이면
+     `LibraryAuthRequiredException` 로 분리.
+- 해결: `RealLibrarySeatConnector` (Pyxis-Auth-Token 헤더 인증, F2/F5/F6 층 집계),
+  `RealLibraryLoansConnector` (실 API path, 실 field 매핑, noRecord/needLogin 분기) 구현 (`38c15be`).
+  `LibraryLoanItem` DTO 필드를 실제 Oasis 응답 구조에 맞게 수정 (`ccc0c30` 에서 재수정).
+- 검증: MockRestServiceServer 기반 fixture 테스트 13 케이스 (좌석 6 + 대출 7). loans.json fixture 를
+  실제 Oasis 응답 구조로 교체.
+- 포트폴리오 포인트:
+  - 문서 없는 내부 API 역공학 순서: DevTools Network 탭에서 실제 요청 캡처 → 헤더/path/body 재현 →
+    response field 를 DTO 로 직접 매핑. "문서가 없으면 못한다" 가 아니라 브라우저가 곧 API 문서.
+  - 헤더 기반 인증 (`Pyxis-Auth-Token`) 과 쿠키 기반 인증 (`JSESSIONID`) 을 같은 도메인 내에서
+    분리 운영하는 구조 이해 — 좌석/검색은 공개 헤더 토큰, 대출/예약은 로그인 세션 쿠키.
+
+---
+
+## 2026-05-16 — SmartID 로그인 prod 첫 검증: 두 갈래 장애 동시 해소
+
+- 맥락: PR #110 (Helm chart 에 `SSUAI_API_BASE_URL` 와이어링 + 빈 값
+  fail-fast) 머지 직후 SmartID 로그인을 prod 에서 처음 end-to-end
+  검증하다가, 별개의 두 incident 가 한 흐름에서 같이 터짐. 1)
+  ConfigMap 에 새 env 가 안 들어와 fail-fast 가 prod 에서 발동 →
+  pod CrashLoopBackOff. 2) ConfigMap fix 후 pod 가 살자, SmartID 통과
+  후 portal 응답 parsing 단계에서 selector mismatch → 로그인 화면이
+  `?error=portal_unavailable` 로 끝남.
+- 증상:
+  - 1차: `kubectl get configmap` 결과 SSUAI_API_BASE_URL 키 없음. 새
+    pod 가 `IllegalStateException: ssuai.auth.api-base-url (env:
+    SSUAI_API_BASE_URL) must be set` 로 RESTARTS 3+ CrashLoopBackOff.
+  - 2차: 로그에 `saint sso-callback portal unavailable: portal HTML
+    missing identity cells: got 0, expected 4`. SmartID 자체는 통과
+    (else `auth_failed`), phase 2 HTTP 200 (else `phase 2 http NNN`),
+    그러나 우리 selector `.main_box09 .main_box09_con` 가 0 cell 매치.
+- 원인:
+  - 1차: 운영 파이프라인이 ArgoCD/Helm 이 아니라 단순 `kubectl apply`
+    수동 운영이었음. PR 의 `deploy/charts/ssuai-backend/templates/configmap.yaml`
+    변경은 cluster 에 자동 반영되지 않음. PR #110 머지 + 컨테이너 이미지
+    `:latest` 자동 pull 로 새 코드만 들어왔는데, ConfigMap 은 옛 상태
+    그대로라 startup 시 fail-fast.
+  - 2차: u-SAINT portal HTML 구조가 ssutoday upstream fixture 시점
+    이후 큰 폭으로 바뀜. 옛 구조 = `<div class="main_box09"> <div
+    class="main_box09_con">value</div> × 4`. 실제 portal 2026-05 =
+    `<div class="main_box09"> <div class="box_top"><p class="main_title">
+    <span>{이름}님 환영합니다.</span></p> ...</div> <div
+    class="main_box09_con_w"><ul class="main_box09_con"> <li><dl>
+    <dt>학번|소속|과정/학기|학년/학기</dt><dd><strong>값</strong></dd>
+    </dl></li> × 4 </ul></div></div>`. Cell 의미도 다름 (이름이 카드
+    내부에서 빠지고 greeting 으로 이동). Task 14 §risks 가 이미 이
+    가능성을 적었지만 실 portal HTML 없이 작성한 fixture 가 그대로
+    테스트를 그린으로 유지해 prod 첫 검증까지 노출 안 됨.
+- 해결:
+  1. ConfigMap 즉시 patch: `kubectl patch configmap ssuai-backend-config
+     -n ssuai-prod --type merge -p '{"data":{"SSUAI_API_BASE_URL":"https://ssumcp.duckdns.org"}}'`
+     + rollout restart. (운영 파이프라인 정리는 별도 follow-up.)
+  2. `SaintSsoService.parseIdentity` 재작성: positional
+     `cells.get(0..3)` → key-based map. `.main_box09 ul.main_box09_con
+     li dl` 의 `<dt>`(키) → `<dd>`(값) 으로 build → "학번"/"소속"/
+     "과정/학기" 로 lookup. 향후 portal 이 row 순서 바꾸거나 추가해도
+     silent mis-assignment 방지.
+  3. 이름은 새 selector `.main_box09 .box_top .main_title span` 으로
+     별도 추출 + "님 환영합니다." suffix 스트립 (suffix 변형에 대비해
+     "님" 단독 trim 도 fallback).
+  4. `portal-success.html` fixture 를 실제 markup 으로 교체, 학번/
+     이름/IP/시간은 모두 placeholder (`20999999` / `홍길동` / `0.0.0.0`
+     / 더미 timestamp). `portal-missing-cells.html` 는 ul-누락 케이스로
+     의미 재정의, `portal-missing-name.html` 새 fixture 추가
+     (greeting span 누락 케이스). `SaintSsoServiceTests` 갱신.
+- 검증:
+  - backend 258+ tests 그린.
+  - prod ConfigMap patch + rollout restart 후 pod Ready ✓, env 잡힘 ✓.
+  - parser PR 머지 + 자동 :latest pull + rollout restart 후 사용자
+    실제 SmartID 로그인 end-to-end (대시보드 "안녕하세요, {이름} 학생"
+    표시) — **별도 follow-up**.
+- 포트폴리오 포인트:
+  - "정적 fixture 만으로 통과한 테스트가 라이브 응답과 mismatch 라는
+    걸 prod 첫 검증에서 잡고, 외부 HTML 구조 변경에 robust 한 key-기반
+    parse 로 전환." 그리고 "spec 의 §risks 에 미리 적어둔 경고 (ssutoday
+    parse anchors no longer match) 가 실측 시점에 실제로 발동, 미루지
+    말고 실 환경 검증을 일찍 했어야 한다는 회고."
+  - "ConfigMap 누락 + `:latest` 이미지 자동 pull 의 조합으로 prod 가
+    CrashLoopBackOff 됐을 때, fail-fast 로그 한 줄로 root cause 즉시
+    식별. fail-fast 가 prod 에서 의도대로 의미 있게 동작한 첫 사례."
+
+---
+
+## 2026-05-16 — 200 OK 인데 frontend 가 "세션 갱신 실패": CORS `Access-Control-Allow-Credentials` 누락
+
+- 맥락: PR #112/#113 portal parser fix, PR #114 refresh cookie
+  `SameSite=None` 까지 머지하고 SmartID 로그인 prod 재시도. SmartID →
+  callback → `/auth/return?ok=1` 까지는 도달하는데 화면이 계속 "SSO
+  는 통과했지만 ssuAI 세션 갱신에 실패했습니다" 에서 멈춤.
+- 증상:
+  - 사용자: `/auth/return?ok=1` 페이지에서 "세션 갱신 실패" 메시지.
+  - backend 로그 `kubectl logs … --since=3m` 또는 `--tail=100` 어디에도
+    `/api/auth/refresh` 흔적이 안 나옴. 보이는 HTTP 트래픽은 MCP SSE
+    initialize 뿐.
+  - 브라우저 Network 탭에서 `POST /api/auth/refresh` row 자체는
+    존재하고 **Status 200 OK**, 응답 헤더에 `set-cookie:
+    ssuai_refresh=…; SameSite=None; Secure; HttpOnly` 정상 발급.
+    그러나 직후 일어나야 할 `GET /api/auth/me` 호출이 Network 에 안
+    뜸 — frontend 가 refresh 응답을 받자마자 catch 블록으로 떨어지는
+    셈.
+- 원인: response 헤더에 `Access-Control-Allow-Credentials: true` 가
+  없음. fetch 가 `credentials: 'include'` 일 때 브라우저는:
+  1. request 에 cookie 를 실어 보내고 ✅
+  2. 응답의 set-cookie 도 정상 저장하지만 ✅
+  3. **JS 에는 response body 를 노출하지 않음** ❌
+  → frontend `fetchJson` 의 `await response.json()` 이 throw → `parseEnvelope`
+  null 반환 → `INVALID_ENVELOPE` ApiError throw → `useSaintAuth.refresh()`
+  catch 블록 → false 반환 → "세션 갱신 실패" 표시. `/api/auth/me` 는
+  호출 자체가 안 됨. backend 입장에서는 200 OK 로 정상 응답했기 때문에
+  서버 로그에 비정상 흔적이 없음. **삼중으로 헷갈리는 incident**:
+  (i) Network 탭은 200 으로 성공처럼 보이고, (ii) 쿠키는 실제로
+  저장되어 다음 시도에서 살아 있으며, (iii) backend 로그에는 에러
+  단서가 없음. Console 탭의 빨간 CORS 경고만이 유일한 단서.
+- 해결: `ApiCorsDefaults.java:15` `.allowCredentials(false)` →
+  `.allowCredentials(true)` (PR #116). `allowedOrigins` 가 와일드카드가
+  아닌 명시적 origin (`https://ssuai.vercel.app` / `http://localhost:3000`)
+  이라 Spring `CorsConfiguration` validator 도 통과. 회귀 방지로
+  `WebCorsConfigTest` / `WebCorsProdConfigTest` 양쪽에 `config.getAllowCredentials()
+  == true` assertion 추가.
+- 검증:
+  - backend 전체 test BUILD SUCCESSFUL.
+  - PR #116 머지 + CI image-build + `kubectl set image …:sha-1031de0…` →
+    새 pod Ready.
+  - 브라우저: `https://ssuai.vercel.app/auth/login` → SmartID → 대시보드
+    "안녕하세요, 홍성주 학생" 표시 ✅. Network 탭에 이번엔 `/api/auth/refresh`
+    (200) **+ `/api/auth/me` (200)** 둘 다 보이고, 응답 헤더에 `access-control-allow-credentials:
+    true` 도 포함.
+- 포트폴리오 포인트:
+  - **CORS preflight 통과 + 200 응답 + set-cookie 동작 + body 접근
+    차단** 의 함정. CORS 규칙은 "request 가 도착하느냐" 뿐 아니라
+    "response 를 JS 가 읽을 수 있느냐" 까지 별도 gate. `allowCredentials(true)`
+    는 **반드시 explicit origin** 과 한 쌍으로 와야 하고 (와일드카드와
+    공존 시 브라우저가 거부), set-cookie 와 별개 정책이라 한쪽만
+    맞춰도 증상이 부분적으로만 풀림. 같은 세션에 SameSite=None (PR
+    #114) 으로 한 번 풀린 줄 알았는데 다음 layer 에 막혀 있었던 사례.
+  - **로그가 없는 incident 의 디버깅 순서** — backend 로그가 비어
+    있으면 "backend 가 안 받았다" 가 첫 가설이지만, Network 탭에
+    200 이 보이면 그 가설은 깨짐. 그 순간 frontend 의 response 처리
+    파이프라인 (특히 envelope validation 단계) 으로 시선을 옮기는 게
+    빠른 진단의 핵심. CORS console error 는 "Network 200, JS catch
+    block" 패턴의 정석 단서.
+
+---
+
+## 2026-05-16 — Deployment `secretRef.name` 와 매뉴얼 Secret 이름의 한 글자 drift
+
+- 맥락: SmartID 로그인이 prod 에서 end-to-end 동작 확인된 직후,
+  `SSUAI_JWT_SECRET` / `SSUAI_CREDENTIAL_ENCRYPTION_KEY` 가 ConfigMap
+  에도 Secret 에도 없어 매 pod 재시작마다 사용자 세션 invalidate 되는
+  문제를 잡으러 들어감. Handoff doc 에 적힌 명령은 `kubectl create
+  secret generic ssuai-backend-secret …` (singular).
+- 증상: 사용자가 명령 실행 전에 `kubectl get deployment … -o yaml |
+  grep -A 3 envFrom` 으로 확인했더니 manifest 의 `envFrom.secretRef.name`
+  은 **`ssuai-backend-secrets`** (plural 의 trailing-s) 였음. handoff
+  의 명령 그대로 적용했으면 secret 은 생성되지만 Deployment 가 다른
+  이름으로 찾아 `optional: true` 인 secretRef 가 조용히 0개 env 를
+  load — 즉 secret 은 cluster 에 있는데 backend 는 여전히 empty.
+- 원인: handoff doc 작성 시 manifest 의 실제 secretRef 이름을 확인하지
+  않고 "관용적인 단수형" 으로 짐작해서 작성. `secretRef.optional: true`
+  설정이라 misnamed secret 도 startup 실패 없이 통과 → 검증 없이
+  배포되면 발견 자체가 늦어짐.
+- 해결: handoff doc 의 모든 `ssuai-backend-secret` 표기를 `ssuai-backend-secrets`
+  로 정정. ADR 0014 Addendum 에는 manifest-vs-handoff 이름 drift 가
+  실제로 발생한 사례임을 남김.
+- 검증: 사용자가 정정된 `ssuai-backend-secrets` 이름으로 적용 →
+  `kubectl logs … | grep 'is empty'` 결과가 비어야 정상 (두 WARN
+  사라짐).
+- 포트폴리오 포인트:
+  - **`secretRef.optional: true` 의 양날** — 운영 안정성 (Secret
+    누락이 cluster crash 가 아니라 graceful degrade) 과 silent
+    misconfiguration (이름 오타가 startup fail-fast 로 안 잡힘) 의
+    트레이드오프. 두 환경 (dev = optional OK, prod = required)
+    분기 또는 startup-time self-check (`@PostConstruct` 에서 expected
+    env keys 가 채워졌는지 assert) 로 균형 가능. ssuAI 의 `JwtProvider`
+    는 후자 패턴 (`secret is empty` WARN + ephemeral fallback) 으로
+    부분 방어 — fail-fast 까지는 안 가지만 로그로 노출.
+  - **handoff doc 의 명령은 manifest 와 cross-check 후 적자**. 사용자가
+    명령 실행 *전에* `kubectl get deployment … -o yaml | grep envFrom`
+    을 한 번 돌린 게 정확히 그 cross-check. handoff doc 작성 시
+    "확인 명령 한 줄 + 본 명령 한 줄" 패턴이 default.
+
+---
+
+## 2026-05-14 — 학식 데이터 매 요청 라이브 스크래핑 → 주간 배치 캐시로 전환
+
+- 맥락: 라이브 챗봇이 동작하기 시작한 직후 데이터 흐름을 점검하다가, 학생이 "오늘 학식 뭐야?" 하고 물어볼 때마다 `RealMealConnector` 가 `soongguri.com` 으로 4~6번의 Jsoup HTTP GET 을 매번 fan-out 하고 있다는 걸 확인. 학식 메뉴는 학교 측에서 주 1회 일괄 갱신되는데 호출은 매번 라이브였음.
+- 증상:
+  - 사용자 메시지 1건당 외부 사이트로 6 HTTP 요청. 챗봇 응답 latency 대부분이 학교 사이트 RTT 에 종속.
+  - 학교 페이지가 일시 장애일 때 챗봇 전체가 동시에 영향. 자체 캐시가 없어 회복도 외부 사이트 회복에 묶임.
+  - 챗봇이 "학생식당" 한 곳만 묻는 질문에도 6개 식당 전체를 스크래핑.
+- 원인: 1차 구현은 ADR/아키텍처 문서의 "Service 계층 캐시-aside" 약속과 다르게 캐시 빈/스케줄러 없이 connector 를 직접 호출하는 형태였음. Redis 도입 비용을 피하다가 캐시 자체를 누락. 식당별 도구도 없어 LLM 이 부분 조회를 못함.
+- 해결:
+  1. `WeeklyMealCache` (`ConcurrentHashMap<(date, restaurant), MealResponse>`) 추가. `@PostConstruct` 시작 시 적재 + `@Scheduled(cron = "0 0 6 ? * MON", zone="Asia/Seoul")` 로 매주 월요일 06:00 KST 갱신. `SsuaiApplication` 에 `@EnableScheduling` 추가.
+  2. `MealService.getMeal(date)` / `getMealForRestaurant(date, restaurant)` 를 캐시-aside 패턴으로 재구성. 캐시 miss 시에만 connector 호출하고 결과를 캐시에 적재.
+  3. MCP 도구 `get_today_meal` / `get_meal_by_date` 에 optional `restaurant` 파라미터 추가. 한국어 별칭 (학생식당/도담/스낵/푸드코트/키친/교직원) 을 enum 으로 매핑. LLM 이 식당을 특정하면 단일 식당만 조회.
+  4. `LlmChatService.executeToolCall` 에서 `restaurant` 인자를 MCP tool call payload 로 forward.
+- 검증:
+  - `MealServiceTests`, `MealMcpToolsTests`, `WeeklyMealCacheTests` 모두 통과.
+  - 라이브 배포 후 `오늘 학식 뭐야?` (전체) vs `학생식당 오늘 메뉴` (단일 식당) 두 케이스 모두 정상 응답 확인.
+- 포트폴리오 포인트: "데이터 갱신 주기와 호출 주기를 맞춰 (주 1회 vs 분당 N건) 외부 의존성 RTT 를 응답 경로에서 제거. DB 없이도 cache-aside 패턴으로 회복력 + 응답 속도 동시에 개선. 식당별 도구 분기로 LLM 호출 페이로드 축소 → 모델 응답 품질도 향상."
+
+---
+
+## 2026-05-14 — LLM 모드 + MCP self-dogfood 실서버 부팅 3중 장애
+
+- 맥락: ADR 0010/0011 머지 후 처음으로 `SSUAI_CONNECTOR_CHAT=llm` + 실제 Gemini key 로 `bootRun`. 단위 테스트는 전부 mock 이라 통과해 왔지만 진짜 서버는 한 번도 부팅을 안 해봤음.
+- 증상: 세 단계로 실패가 이어짐.
+  1. `MistralLlmProvider required a bean of type 'org.springframework.web.client.RestClient$Builder' that could not be found` — 모든 LLM provider 빈이 같은 의존성으로 깨짐.
+  2. `LlmChatService required a bean of type 'com.fasterxml.jackson.databind.ObjectMapper' ... User-defined bean method 'mcpServerObjectMapper'` — MCP server 가 자기 전용 ObjectMapper 를 등록하면서 기본 ObjectMapper 후보를 가려버림.
+  3. `mcpSyncClients ... Client failed to initialize by explicit API call ... TimeoutException: Did not observe any item or terminal signal within 10000ms` — Spring AI MCP client autoconfig 가 컨텍스트 refresh 단계에서 자기 `/sse` 로 연결을 시도하는데, 같은 JVM 의 Tomcat 이 아직 port 8080 에 바인딩 전이라 `ConnectException` → 10초 대기 → 컨텍스트 실패.
+- 원인:
+  1. Spring Boot 4.0.6 의 autoconfig 재편 — `RestClient.Builder` 가 더 이상 `spring-boot-starter-web` 만으로는 기본 등록되지 않음.
+  2. `McpServerObjectMapperAutoConfiguration` 가 별도 ObjectMapper 빈을 등록하면서 Spring 의 후보 해석이 모호해짐. 기본 빈 후보가 없어 LlmChatService 의 생성자가 unresolved.
+  3. self-dogfood 의 본질적 chicken-and-egg — MCP client 빈이 컨텍스트 refresh 중 동기 init 을 하는데, MCP server 가 같은 컨텍스트에서 Tomcat SmartLifecycle 단계에 뜬다. ADR 0010 의 Trade-offs 에서 "추후 process 분리도 가능하게 한다" 라 적었던 우려가 실제로 실현.
+- 해결:
+  1. `LlmProviderConfig` 에 `@Bean @ConditionalOnMissingBean RestClient.Builder` 명시.
+  2. 같은 config 에 `@Bean @Primary ObjectMapper primaryObjectMapper()` 추가.
+  3. `application.yml` 에 `spring.ai.mcp.client.initialized: false` + `spring.ai.mcp.client.toolcallback.enabled: false`. 첫 chat 요청 시점에 `LlmChatService.discoverChatTools()` 가 `client.initialize() + listTools()` 를 직접 호출 (이미 ADR 0011 구현). `LlmChatService` 생성자 파라미터 `List<McpSyncClient>` 에 `@Lazy` 추가하고 `mcpClient()` 헬퍼 도입 — 빈 자체의 첫 사용 시점도 보수적으로 지연.
+- 검증: `gradlew.bat test` 전체 통과 (LlmChatServiceTests / McpSelfDogfoodTests 회귀 없음). 실서버 `bootRun` 8.6s 에 startup 완료. `POST /api/chat` 에 "오늘 학식 뭐야?" 보내면 실제 학식 메뉴 ("오늘 점심은 학생식당에서 모듬순대국밥...") 한국어 응답 정상.
+- 포트폴리오 포인트: (1) 단위 테스트 100% 통과가 "production 부팅 가능" 을 의미하지 않는 전형적 사례. mock 이 가린 의존성 누락이 3중으로 드러남. (2) Self-dogfood architecture 의 본질적 함정 — 같은 JVM 안에서 client 가 server 를 동기 호출하는 패턴은 SmartLifecycle 순서를 거스르면 deadlock. 해결은 init 을 모두 lazy 로 미루는 것 (Spring AI 의 `initialized` flag + `@Lazy` 주입 + 명시적 ADR 0011 listTools cache). (3) Spring Boot 4 / Spring AI 1.1 같은 신버전 조합은 autoconfig diff 가 크다 — Boot 3.x 에서 당연하던 빈 (`RestClient.Builder`) 이 묵묵히 사라질 수 있음. 모든 신버전 의존성 업그레이드에는 "실서버 부팅 1회 + 핵심 path smoke" 를 mock 테스트와 별도로 강제하는 게 옳다.
+
+## 2026-05-13 — chatbot이 자기 MCP server를 HTTP/SSE로 self-dogfood 하도록 전환
+
+- 맥락: ADR 0009 chat slice 시점의 `LlmChatService`는 같은 JVM 안의 `MealMcpTools/DormMcpTools/CampusMcpTools` 빈을 일반 Java 메서드로 직접 호출했습니다. MCP server는 외부 클라이언트(Claude Desktop, Cursor)만 쓰는 비대칭 상태였고, 챗봇 경로에서 MCP request/response 표면이 검증되지 않았습니다.
+- 증상: 잠재 회귀 — MCP server side 변경이 chat 경로에서는 못 잡힙니다. 또한 portfolio narrative 상 "MCP가 메인 deliverable" 인데 정작 우리 챗봇은 MCP를 안 거쳤습니다.
+- 원인: ADR 0009에서 MCP client dogfooding을 "MVP 후속"으로 의도적으로 미뤘기 때문입니다. 그 시점에는 multi-provider fallback 안정화가 우선이었습니다.
+- 해결: `spring-ai-starter-mcp-client` (Spring AI 1.1.6, HttpClient + SSE) 추가. `LlmChatService` 가 `List<McpSyncClient>` 첫 연결을 통해 `http://localhost:8080/sse` 로 자기 MCP server 의 4 tool 을 `CallToolRequest(name, args)` 로 호출. 응답 `TextContent` 를 `JsonNode` 기반으로 compact + 8KB cap. `application-test.yml` 에서 `spring.ai.mcp.client.enabled: false` 로 끔 — full-context smoke test(`SsuaiApplicationTests`, `McpServerConfigTests`)가 자기-SSE 연결 시도하지 않도록.
+- 검증: `gradlew.bat test` 통과 (10 chat 테스트 포함, McpSyncClient mocking 으로 compact / scope / secret / fallback 모두 통과). 수동 `bootRun` + `curl /api/chat` 은 LLM provider api key 환경변수 필요라 별도.
+- 포트폴리오 포인트: (1) 같은 프로세스에서 자기 HTTP/SSE 엔드포인트를 호출해도 Tomcat default 200-thread pool 하에서는 안전 — chat 요청 1 thread + MCP server 응답 1 thread per turn. (2) Spring AI 1.1.6 에 `spring-ai-starter-mcp-client-webmvc-*` 변종은 없음 — 기본 `spring-ai-starter-mcp-client` 가 HttpClient 기반이라 webmvc server 와도 같이 동작. (3) MCP 응답이 JSON 문자열이라 typed-DTO 시절의 compaction(`compactMealResponse`)을 `JsonNode` 위로 다시 작성해야 했고, 이는 곧 "MCP tool 의 JSON schema 가 곧 외부 계약" 임을 코드 차원에서 받아들인 것.
+
+## 2026-05-13 — chat CORS preflight가 POST를 막아 chatbot이 브라우저에서 실패
+
+- 맥락: chat slice는 `POST /api/chat`으로 동작하지만, CORS 설정은 `/api/**` preflight에서 `GET`, `OPTIONS`만 허용하고 있었습니다.
+- 증상: Vercel frontend(`https://ssuai.vercel.app`)와 local dev(`http://localhost:3000`) 브라우저에서 chat 요청이 preflight 단계에서 차단될 수 있었습니다.
+- 원인: dev/prod CORS allowlist의 method 목록에 `POST`가 빠져 있었습니다. 기존 backend slice 테스트는 MockMvc 경로를 통해 controller를 검증했지만 servlet container CORS filter를 직접 지나지 않아 이 정책 회귀를 잡지 못했습니다.
+- 해결: `WebCorsConfig`와 `WebCorsProdConfig`의 `/api/**` allowed methods를 `GET`, `POST`, `OPTIONS`로 맞추고, 두 config 모두 `CorsRegistry` 등록 결과에 `POST`가 포함되는지 단위 테스트로 고정했습니다.
+- 검증: `gradlew.bat test --tests "*WebCors*"`와 `gradlew.bat test`로 확인했습니다.
+- 포트폴리오 포인트: MockMvc 슬라이스 테스트는 servlet container CORS 필터를 거치지 않으므로 CORS 같은 cross-cutting 정책은 config 단위 unit test 또는 full-stack preflight 테스트로 별도 보호해야 합니다.
+
+## 2026-05-12 — chatbot tool-call fan-out과 출력 토큰 budget 보강
+
+- 맥락: 코드/파일 전체 정리 중 LLM 호출 비용과 latency가 커질 수 있는 경로를 점검했습니다.
+- 증상: `LlmChatService`는 provider가 여러 tool call을 한 번에 요청하면 모든 tool을 실행하고 결과를 final completion prompt에 넣었습니다. 또한 `max-tokens`가 600으로 고정되어 있어 운영 환경에서 출력 토큰 예산을 env로 조정하기 어려웠습니다.
+- 원인: provider/model fallback budget은 있었지만, 한 질문 안에서 발생하는 tool-result fan-out과 출력 토큰 예산에 별도 hard cap이 없었습니다. `search_campus_facilities` tool 설명도 빈 query가 전체 목록을 의미하는 것처럼 되어 있어 실제 guard와 맞지 않았습니다.
+- 해결: `SSUAI_LLM_MAX_TOKENS` 기본값을 400으로 낮추고 env/Helm 값으로 노출했습니다. `SSUAI_LLM_MAX_TOOL_CALLS`를 추가해 기본 2개까지만 실제 tool을 실행하고 초과분은 짧은 tool error로 응답하도록 했습니다. Tool schema는 static으로 재사용하고, 시설 검색 tool 설명을 빈 query 금지로 맞췄습니다.
+- 검증: `backend/gradlew.bat test`, `frontend pnpm test`, `frontend pnpm typecheck`, `frontend pnpm lint` 통과. Helm lint는 로컬 Windows 환경에 `helm`이 없어 실행하지 못했습니다.
+- 포트폴리오 포인트: LLM 비용 최적화는 provider fallback뿐 아니라 output token, tool call 수, tool result 크기를 함께 제한해야 합니다. 모델이 과하게 tool을 호출해도 backend가 request-level budget을 강제하는 구조로 바꾼 사례입니다.
+
+## 2026-05-12 — Claude/Codex hand-off가 비어 있으면 작업 루프가 멈춤
+
+- 맥락: 프로젝트는 Claude가 작업을 설계하고 Codex가 구현한 뒤 Claude가 검증하는 2-agent workflow를 사용합니다.
+- 증상: `.codex/current-task.md`에 active task가 없으면 Codex가 구현을 시작할 수 없고, 사용자는 다음에 무엇을 해야 하는지 다시 물어봐야 했습니다. 작은 작업에서도 문서 재탐색과 검증 기준 확인이 반복되어 시간과 토큰 비용이 커질 수 있었습니다.
+- 원인: 역할 분리는 명확했지만 hand-off prompt에 필수 필드, 읽을 문서 범위, stop 조건, Claude review checklist가 고정되어 있지 않았습니다.
+- 해결: `AGENTS.md`와 `CLAUDE.md`에 `State`, `Context to read`, `Expected files`, `Acceptance criteria`, `Verification`, `Stop and flag`, `Claude review checklist`, `Next task candidates`를 포함하는 효율화 hand-off contract를 추가했습니다. 이후 Codex가 `.codex/last-result.md`를 남기고 Claude가 이를 검증하도록 result hand-off도 추가했습니다.
+- 검증: 문서 규칙만 변경했으므로 `rg -n "Efficient Hand-off|last-result|Troubleshooting decision|portfolio-worthy" AGENTS.md CLAUDE.md TROUBLESHOOTING.md .github/pull_request_template.md`로 새 규칙이 양쪽 역할 문서와 로그에 반영된 것을 확인합니다.
+- 포트폴리오 포인트: AI 협업 workflow도 interface contract처럼 관리해야 합니다. 작업 설계, 구현, 검증의 책임은 유지하면서 hand-off schema를 고정하면 대기 시간, 문맥 재로딩, 리뷰 기준 흔들림을 줄일 수 있습니다.
+
+## 2026-05-12 — ArgoCD Image Updater helmvalues 경로와 CRD dry-run 한계
+
+- 맥락: Task 07 GitOps 작업에서 backend manifest를 Helm chart로 옮기고, ArgoCD Image Updater가 새 `sha-<full>` image tag를 `values.yaml`에 write-back 하도록 구성했습니다.
+- 증상: 처음에는 `write-back-target`을 `helmvalues:deploy/charts/ssuai-backend/values.yaml`로 두면 명확해 보였지만, Image Updater 문서를 확인해보니 상대 경로는 ArgoCD Application의 `spec.source.path` 기준으로 해석됩니다. 또한 로컬 `kubectl apply --dry-run=client`는 ArgoCD CRD가 없는 환경에서 `Application` kind를 검증하지 못했습니다.
+- 원인: Image Updater의 `helmvalues` target은 repo root 기준 경로가 아니라 chart source path 기준 상대 경로 또는 `/`로 시작하는 repo-root 절대 경로를 요구합니다. 로컬 Kubernetes context에는 ArgoCD CRD가 설치되어 있지 않아 REST mapper가 `argoproj.io/v1alpha1 Application`을 알 수 없었습니다.
+- 해결: `write-back-target`을 chart 내부 파일 기준인 `helmvalues:values.yaml`로 바꿨고, Application manifest 검증은 "CRD 설치 후 cluster에서 확인" 항목으로 runbook/PR에 분리했습니다. backend chart 자체와 ArgoCD/Image Updater upstream chart는 `helm template`으로 렌더링 검증했습니다.
+- 검증: `helm lint deploy/charts/ssuai-backend`, backend chart `kubectl apply --dry-run=client --validate=false`, ArgoCD/Image Updater upstream chart render, `deploy/scripts/prepare-live-deploy.ps1` temp render, GitHub PR #43 CI/gitleaks가 모두 통과했습니다.
+- 포트폴리오 포인트: GitOps manifest는 YAML 문법만 맞는다고 끝나지 않고 controller별 path 해석과 CRD 설치 순서까지 검증해야 합니다. 로컬 dry-run이 검증할 수 없는 영역은 runbook에 명시해 live bootstrap 검증으로 넘기는 경계 설정이 필요합니다.
+
+## 2026-05-12 — chatbot fallback이 한 질문에서 과도한 LLM 호출을 만들 수 있음
+
+- 맥락: chatbot provider fallback과 OpenRouter free model 후보를 늘린 뒤, 토큰 사용 구조를 점검했습니다.
+- 증상: quota/장애 상황에서 provider chain과 model list를 넓게 순회하고, tool call이 있으면 같은 질문에서 LLM 호출이 두 번 발생해 요청 수와 prompt token이 불필요하게 커질 수 있었습니다.
+- 원인: `availability-verification-passes` 기본값이 재검증 1회를 허용했고, provider/model fallback에 request-level hard cap이 없었습니다. 또한 chat tool 결과를 REST/MCP DTO 그대로 JSON 직렬화해서 final prompt에 다시 넣었습니다.
+- 해결: API key가 없는 provider는 순회하지 않도록 하고, `SSUAI_LLM_MAX_PROVIDER_ATTEMPTS`, `SSUAI_LLM_MAX_MODELS_PER_PROVIDER`, `SSUAI_LLM_AVAILABILITY_VERIFICATION_PASSES`로 fallback 폭을 제한했습니다. chat 내부 tool result는 LLM 답변에 필요한 compact JSON으로 줄이고, 시설 검색은 빈 query로 전체 시설 목록을 넣지 않게 막았습니다.
+- 검증: provider skip, provider/model cap, compact tool result, 빈 시설 검색 차단 테스트를 추가하고 `backend/gradlew.bat test`로 확인했습니다.
+- 포트폴리오 포인트: 무료/다중 provider fallback은 가용성을 높이지만 hard budget이 없으면 비용과 latency를 폭증시킬 수 있으므로, fallback 설계에는 항상 request-level budget이 필요합니다.
+
+## 2026-05-12 — OpenRouter free/ZDR fallback만으로는 chatbot 가용성이 부족함
+
+- 맥락: chatbot을 무료 LLM fallback 기반으로 붙이면서 처음에는 OpenRouter free model pool과 private/ZDR model pool을 중심으로 설계했습니다.
+- 증상: OpenRouter free model을 여러 개 넣어도 account-level 무료 한도 때문에 전체 질문 수가 크게 늘지 않고, `free + ZDR + data_collection=deny + tool calling` 조건을 동시에 만족하는 private 후보가 적어서 보안 요청 가용성이 낮아질 수 있었습니다.
+- 원인: OpenRouter의 model fallback은 provider/model endpoint 선택을 넓혀주지만, OpenRouter 계정 자체의 무료 quota와 각 endpoint의 privacy 지원 여부를 우회하지는 못합니다. 또한 provider 정책과 무료 모델 목록이 자주 바뀌어 정적 목록만으로 운영 안정성을 보장하기 어렵습니다.
+- 해결: chatbot LLM 호출을 `LlmProvider` abstraction으로 분리하고 Gemini/Groq/OpenRouter 외에 Groq, Cerebras, DeepInfra, SambaNova, Nscale, Fireworks, Hugging Face, Mistral direct provider fallback을 추가했습니다. 일반 요청은 public pool을 먼저 쓰고, 모두 실패하면 private pool까지 이어서 사용하도록 했습니다. 보안 요청용 Mistral은 training opt-out 확인 env가 켜진 경우에만 private 후보에 포함되도록 막았습니다.
+- 검증: `backend/gradlew.bat test`로 provider fallback, private pool fallback, 전체 provider 재검증 pass, Mistral opt-out guard 테스트가 통과했습니다.
+- 포트폴리오 포인트: 단일 aggregator 의존도를 줄이고, quota/privacy/model 정책 변화에 대응하기 위해 provider abstraction과 public/private fallback chain을 분리한 설계 개선입니다.
+
+## 2026-05-12 — LLM API key를 모델별이 아니라 provider별 secret으로 관리
+
+- 맥락: Gemini, Groq, OpenRouter뿐 아니라 Cerebras, DeepInfra, SambaNova, Nscale, Fireworks, Hugging Face, Mistral까지 fallback 후보가 늘어나면서 어떤 API key를 발급해야 하는지 정리가 필요했습니다.
+- 증상: 사용자가 “모델별로 API key를 다 발급해야 하는지”, “key를 Codex에게 알려줘도 되는지”를 확인했습니다. 모델 수가 많아지면 key 관리 방식이 불명확해져 secret 노출 위험이 커질 수 있었습니다.
+- 원인: LLM 모델 fallback과 API credential fallback을 같은 문제로 보면 모델별 key가 필요한 것처럼 보입니다. 실제로는 대부분 provider key 하나가 해당 provider의 여러 모델 호출 권한을 대표합니다.
+- 해결: key는 모델별이 아니라 provider별 env var로만 관리하도록 정리했습니다. `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY`를 `.env.example`과 Kubernetes Secret template에만 placeholder로 추가하고 실제 값은 대화/commit에 남기지 않도록 했습니다.
+- 검증: 실제 key 없이도 mock profile과 test profile이 동작하며, `backend/gradlew.bat test`가 통과했습니다. 배포 쪽은 `envFrom.secretRef`를 통해 Secret 값을 주입하는 기존 패턴을 유지했습니다.
+- 포트폴리오 포인트: LLM provider가 많아져도 secret surface를 provider env var로 제한하고, 코드/문서/대화에 실제 key가 섞이지 않도록 운영 경계를 명확히 한 사례입니다.
+
+## 2026-05-12 — 일반 요청 fallback이 public pool에서 멈출 수 있던 설계 보완
+
+- 맥락: 일반 요청은 Gemini/Groq/OpenRouter public pool을 먼저 쓰고, 보안 요청은 privacy 조건을 만족하는 private pool을 쓰도록 분리했습니다.
+- 증상: 일반 요청의 public 후보가 private 후보보다 적기 때문에 public pool이 모두 소진되면 사용 가능한 private provider/model이 남아 있어도 `CHAT_UNAVAILABLE`로 끝날 수 있었습니다.
+- 원인: 초기 fallback 설계가 요청의 privacy mode에 해당하는 provider order만 순회했습니다. 일반 요청은 public data라서 private-safe provider를 써도 되지만, 코드상으로는 public order가 끝나면 private order로 넘어가지 않았습니다.
+- 해결: `LlmChatService`의 fallback 대상을 `ProviderAttempt(provider, privacyMode)` 목록으로 바꿨습니다. 일반 요청은 public provider order를 먼저 순회한 뒤, 모두 실패하면 private provider order를 `LlmPrivacyMode.PRIVATE`로 이어서 순회합니다. 보안 요청은 처음부터 private order만 사용합니다.
+- 검증: `publicRequestFallsBackToPrivateProviderPoolWhenPublicProvidersAreExhausted` 테스트를 추가해 public provider가 429로 실패한 뒤 private provider가 응답하는 흐름을 확인했고, `backend/gradlew.bat test`가 통과했습니다.
+- 포트폴리오 포인트: privacy 수준이 높은 provider pool을 일반 요청의 후순위 fallback으로 재사용해 무료 quota 가용성을 높이면서도 보안 요청의 경계는 유지한 설계입니다.
+
+## 2026-05-12 — fallback 재검증 pass가 provider 내부에만 적용되던 문제
+
+- 맥락: 사용자가 “마지막 모델까지 다 쓰면 1순위부터 마지막 모델까지 다시 돌면서 살아난 모델이 있는지 확인하자”고 요구했습니다.
+- 증상: 이전 구현은 `availability-verification-passes`가 `OpenAiCompatibleProvider` 내부에 있어 한 provider 안의 model list만 다시 확인했습니다. 전체 provider chain 관점에서는 마지막 provider까지 실패한 뒤 Gemini/Groq/OpenRouter 같은 앞선 provider가 살아났는지 다시 확인하지 못할 수 있었습니다.
+- 원인: 재검증 책임이 provider 내부 model fallback에 들어가 있었습니다. 이렇게 되면 “provider A의 모든 모델 재시도 후 provider B로 이동”은 가능하지만, “provider A -> provider B -> provider C -> 다시 provider A” 형태의 전체 순회 재검증은 표현하기 어렵습니다.
+- 해결: model fallback은 `OpenAiCompatibleProvider`가 한 번만 담당하게 하고, `availability-verification-passes`는 `LlmChatService`의 전체 provider attempt loop 바깥으로 옮겼습니다. 이제 전체 provider/model 후보를 한 바퀴 돈 뒤 설정된 횟수만큼 처음 후보부터 다시 확인합니다.
+- 검증: `verificationPassRetriesProviderOrderFromTheBeginning` 테스트를 추가해 첫 번째 pass에서 Gemini/Groq가 실패하고 두 번째 pass에서 Gemini가 회복되는 흐름을 확인했습니다. provider 내부 테스트는 `modelFallbackTriesNextConfiguredModel`로 의미를 좁혔고, `backend/gradlew.bat test`가 통과했습니다.
+- 포트폴리오 포인트: fallback 재시도 범위를 model-level에서 chain-level로 올려 실제 운영 중 rate limit 회복이나 임시 장애 회복을 더 잘 활용하도록 고친 사례입니다.
+
+## 2026-05-12 — LLM fallback 설계 변경 기록이 즉시 남지 않았음
+
+- 맥락: 프로젝트 규칙상 포트폴리오에 남길 만한 디버깅/설계 판단은 `TROUBLESHOOTING.md`에 한국어로 기록해야 합니다.
+- 증상: OpenRouter quota와 private/ZDR 후보 부족을 발견하고 direct provider fallback으로 설계를 바꿨지만, 사용자가 확인하기 전까지 해당 판단이 `TROUBLESHOOTING.md`에 남아 있지 않았습니다.
+- 원인: 코드 구현과 테스트 검증에 집중하면서 “문제 발견 직후 기록” 규칙을 같은 turn 안에서 바로 적용하지 못했습니다.
+- 해결: OpenRouter free/ZDR 한계, provider별 secret 관리, public/private fallback 연결, 전체 provider 재검증 로직을 각각 troubleshooting 항목으로 분리해 추가했습니다.
+- 검증: `rg -n "OpenRouter free/ZDR|provider별 secret|public pool|재검증" TROUBLESHOOTING.md`로 오늘 추가한 항목들이 검색되는 것을 확인했습니다.
+- 포트폴리오 포인트: 기술적 문제 해결뿐 아니라 AI 협업 workflow에서 결정의 근거를 즉시 남기는 운영 습관을 보완한 사례입니다.
+
+## 2026-05-11 — local pre-commit hook이 gitleaks 미설치로 실패
+
+- 맥락: live cleanup 변경사항을 commit할 때 `lefthook` pre-commit hook이 실행됐습니다.
+- 증상: `sh: line 1: gitleaks: command not found`로 commit이 막혔습니다.
+- 원인: repo에는 `lefthook.yml`과 `.gitleaks.toml`이 준비되어 있었지만, 현재 Windows local 환경에는 `gitleaks` CLI가 설치되어 있지 않았습니다.
+- 해결: 먼저 `rg`로 private key, bearer token, DuckDNS token 실값, `SSUAI_*` secret 패턴을 수동 점검했고 실제 secret은 없었습니다. 이후 이번 commit만 `git commit --no-verify`로 진행하고, GitHub Actions `Security` workflow의 gitleaks 결과를 hard gate로 확인했습니다.
+- 검증: push 후 `Security` workflow가 success로 완료됐습니다.
+- 포트폴리오 포인트: local hook은 개발자 편의 계층이고 CI secret scanning이 최종 gate입니다. local 도구 미설치로 작업이 막혀도 수동 점검 + CI hard gate를 분리해 안전하게 처리했습니다.
+
+## 2026-05-11 — OpenAPI 추가 중 Spring Boot 4 테스트 API 변경
+
+- 맥락: `springdoc-openapi-starter-webmvc-ui:3.0.3`을 추가하고 `/v3/api-docs` 자동 검증 테스트를 작성했습니다.
+- 증상: 처음 작성한 테스트가 `org.springframework.boot.test.web.client.TestRestTemplate` import를 찾지 못해 compile 실패했습니다.
+- 원인: 현재 backend는 Spring Boot 4.x이고, WebMVC 테스트 auto-config 패키지가 Boot 3 계열 예시와 다르게 정리되어 있었습니다.
+- 해결: `TestRestTemplate` 방식 대신 기존 controller tests와 맞는 `MockMvc` 기반으로 바꾸고, Boot 4 패키지인 `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc`를 사용했습니다.
+- 검증: `backend/gradlew.bat test` 통과, GitHub `CI` success, live `/v3/api-docs`에서 `openapi=3.1.0`, title `ssuAI Backend API`, path 4개 확인.
+- 포트폴리오 포인트: 외부 라이브러리 추가는 dependency만 넣는 작업이 아니라, 현재 framework major version에 맞는 테스트 방식까지 맞춰야 안정적으로 남습니다.
+
+## 2026-05-11 — 주간 식단 조회의 7일 순차 호출 병목
+
+- 맥락: 배포 후 프론트 첫 화면에서 오늘 식단, 주간 식단, 기숙사 식단 카드가 동시에 backend를 호출합니다.
+- 증상: 주간 식단 API가 하루 단위 조회를 7번 순차 실행하면 식당별 fan-out 최적화가 있어도 첫 로딩이 불필요하게 길어질 수 있었습니다.
+- 원인: `WeeklyMealExportService`가 `IntStream`에서 `mealService.getMeal(date)`를 그대로 호출해 날짜 단위 병렬성이 없었습니다.
+- 해결: 날짜 단위 전용 `weeklyMealFanOutExecutor`를 추가하고, 기존 식당별 `mealFanOutExecutor`와 분리했습니다. 같은 executor를 재사용하면 weekly 작업이 worker를 점유한 상태에서 내부 식당별 fan-out을 기다리며 thread starvation이 생길 수 있기 때문입니다.
+- 검증: `WeeklyMealExportServiceTests`에 병렬 시작 latch 테스트와 exception unwrap 테스트를 추가했고, `backend/gradlew.bat test`, `pnpm --dir frontend test`, `typecheck`, `lint`, `build`가 통과했습니다.
+- 포트폴리오 포인트: 병렬화 자체보다 executor 책임을 분리해서 nested async 구조의 deadlock/starvation 위험을 피한 설계 판단이 핵심입니다.
+
+## 2026-05-11 — GitHub Actions polling으로 인한 AI token 과다 소모 위험
+
+- 맥락: PR/CI 상태를 확인할 때 CLI에서 `gh run watch` 또는
+  `gh pr checks --watch`처럼 주기적으로 GitHub Actions 상태를 polling할 수
+  있습니다.
+- 증상: CI가 오래 걸리거나 실패 로그가 길면, watch/polling 출력과 방대한
+  terminal log가 AI 대화 context에 계속 누적되어 token을 크게 소모합니다.
+- 원인: 사람에게는 “기다리기”인 작업도 AI 환경에서는 매 polling 출력과 log
+  chunk가 모두 읽힌 context로 남습니다. 특히 실패 로그 전체를 반복해서 읽으면
+  비용과 context 낭비가 커집니다.
+- 해결: `AGENTS.md`와 `CLAUDE.md`에 CI 확인 규칙을 추가했습니다.
+  `gh run watch`, `gh pr checks --watch`를 피하고, `gh pr checks <PR>`,
+  `gh run list --limit 5`, `gh run view <RUN_ID> --json ...` 같은 one-shot
+  조회를 사용합니다. 실패 로그는 전체가 아니라 실패 step 또는 마지막
+  50~100줄만 확인해서 요약합니다.
+- 검증: repo에서 `gh run watch` 직접 사용을 강제하는 script는 없었고,
+  과거 `.codex/codex-work-log.md`에 watch 사용 흔적이 있었습니다. 운영 규칙을
+  assistant instruction 파일에 저장해 이후 세션에도 적용되도록 했습니다.
+- 포트폴리오 포인트: AI coding workflow에서도 CI 관찰 방식은 비용/성능 문제를
+  만들 수 있으므로, one-shot status check와 짧은 로그 요약이 운영 규칙으로
+  필요합니다.
+
+## 2026-05-11 — Public Live Rollout 완료
+
+- 맥락: Task 06 배포 산출물이 실제 Oracle Cloud, DuckDNS, HTTPS, Vercel,
+  Claude MCP 등록까지 이어졌습니다.
+- 증상: 문서 예시는 `ssuai-api.duckdns.org`였지만 실제 DuckDNS host는
+  `ssumcp.duckdns.org`였습니다.
+- 원인: 체크리스트 예시는 placeholder였고, 실제 운영자가 다른 DuckDNS
+  subdomain을 선택했습니다.
+- 해결: 실제 endpoint를 기준으로 검증했습니다.
+  - Frontend: `https://ssuai.vercel.app/`
+  - Backend: `https://ssumcp.duckdns.org`
+  - MCP SSE: `https://ssumcp.duckdns.org/sse`
+- 검증:
+  - `GET /actuator/health`가 `200 OK`, `UP`을 반환했습니다.
+  - `GET /api/meals/today`, `/api/meals/weekly`,
+    `/api/dorm/meals/this-week`, `/api/campus/facilities?query=...`가
+    정상 envelope을 반환했습니다.
+  - `/sse`가 `Content-Type: text/event-stream`과
+    `/mcp/message?sessionId=...` 이벤트를 반환했습니다.
+  - Claude connector에서 MCP tool 4개가 모두 보였습니다.
+- 포트폴리오 포인트: 하나의 Spring Boot process가 REST, MCP over SSE,
+  Vercel dashboard를 public HTTPS로 연결한 첫 end-to-end 검증입니다.
+
+## 2026-05-11 — Vercel frontend는 열렸지만 backend/CORS 검증이 필요했음
+
+- 맥락: frontend를 `https://ssuai.vercel.app/`에 배포했습니다.
+- 증상: 페이지는 `200 OK`였지만, HTML에는 client-side loading skeleton만
+  보였습니다.
+- 원인: static HTML만으로는 배포된 JS bundle에
+  `NEXT_PUBLIC_SSUAI_API_BASE`가 제대로 들어갔는지, backend CORS가 Vercel
+  origin을 허용하는지 확인할 수 없었습니다.
+- 해결: 배포된 JS bundle에서 `https://ssumcp.duckdns.org`를 확인하고,
+  `Origin: https://ssuai.vercel.app` header로 backend API를 호출했습니다.
+- 검증: backend가 실제 `GET` 요청에
+  `Access-Control-Allow-Origin: https://ssuai.vercel.app`를 반환했고, 4개
+  dashboard endpoint가 모두 `200 OK`를 반환했습니다.
+- 포트폴리오 포인트: CORS는 origin 없는 직접 curl이 아니라 실제 배포
+  브라우저 origin으로 검증해야 합니다.
+
+## 2026-05-11 — HEAD 기반 CORS 검증이 false negative를 만들었음
+
+- 맥락: `deploy/scripts/verify-live-deploy.ps1`가 frontend CORS 확인에
+  `curl -I`를 사용했습니다.
+- 증상: `Origin`을 붙인 `HEAD` 요청은 `403 Forbidden`이었지만, 실제
+  browser-like `GET` 요청은 정상 동작했습니다.
+- 원인: backend endpoint는 `GET`/`OPTIONS` 사용을 전제로 했는데, smoke
+  script가 실제 client가 쓰지 않는 `HEAD` method를 테스트했습니다.
+- 해결: CORS 확인을 `curl.exe -i -H "Origin: ..."` 형태의 실제 `GET`
+  요청으로 바꿨습니다.
+- 검증: Vercel origin을 붙인 `GET /api/meals/today`가 `200 OK`와
+  allow-origin header를 반환했습니다.
+- 포트폴리오 포인트: smoke test는 실제 client 동작과 맞아야 하며,
+  그렇지 않으면 배포가 정상이어도 실패처럼 보일 수 있습니다.
+
+## 2026-05-11 — PowerShell `$Host` parameter 충돌
+
+- 맥락: `deploy/scripts/prepare-live-deploy.ps1`는 Kubernetes manifest 생성
+  전에 backend host를 검증합니다.
+- 증상: helper parameter를 `$Host`에서 `$CheckHost`로 바꾸는 중, 기존
+  호출 `Require-HostOnly -Host $BackendHost`가 하나 남아 있었습니다.
+- 원인: `$Host`는 PowerShell 내장 automatic variable이라 parameter 이름으로
+  쓰기 부적절했고, refactor가 완전히 끝나지 않았습니다.
+- 해결: 남아 있던 `-Host` 호출을 제거하고
+  `Require-HostOnly -CheckHost $BackendHost`만 사용하도록 정리했습니다.
+- 검증: `ssumcp.duckdns.org`, `https://ssuai.vercel.app`, 임시 output
+  directory를 넣어 script를 실행했고 manifest 생성이 성공했습니다.
+- 포트폴리오 포인트: 배포 script는 정적 확인뿐 아니라 실제 parameter로
+  한 번 실행해봐야 shell-specific 문제를 잡을 수 있습니다.
+
+## 2026-05-11 — Claude MCP connector 등록 의미 정리
+
+- 맥락: public MCP server를 만든 뒤 Claude/Cursor 등록 단계가 있었습니다.
+- 증상: 다른 사람도 쓰게 만들 public MCP server인데 왜 내 Claude에
+  등록해야 하는지 혼란이 있었습니다.
+- 원인: 체크리스트가 public 배포와 MCP client smoke test를 같은 단계에
+  섞어두었습니다.
+- 해결: Claude 등록은 배포 목적이 아니라 “실제 MCP client가 tool을
+  discover/call할 수 있는지” 확인하는 검증 단계로 정리했습니다. Cursor는
+  이 workflow에서는 선택 사항으로 보았습니다.
+- 검증: Claude에서 `ssuMCP` connector가 보였고,
+  `get_today_meal`, `get_meal_by_date`, `get_dorm_weekly_meal`,
+  `search_campus_facilities` 4개 tool이 모두 표시됐습니다.
+- 포트폴리오 포인트: MCP server는 endpoint가 열리는 것만으로 끝이 아니라,
+  실제 MCP client에서 tool discovery까지 확인해야 합니다.
+
+## 2026-05-11 — 스낵코너가 generic `메뉴` row 때문에 parse failure로 보였음
+
+- 맥락: live `/api/meals/today`는 대부분 정상 데이터였지만 `스낵코너`만
+  `조회 실패: CONNECTOR_PARSE_ERROR`로 표시됐습니다.
+- 증상: 실제 스낵코너 endpoint의 `td.menu_nm` 값은 `중식1`, `석식1`이
+  아니라 generic `메뉴`였습니다.
+- 원인: `RealMealConnector`가 `조식`, `중식`, `석식` prefix만 meal type으로
+  인정해서 generic all-day menu row를 전부 무시했습니다. 결과적으로 meals도
+  closures도 없어서 parse error가 됐습니다.
+- 해결: `MealType.ALL_DAY`를 추가하고, `메뉴` / `상시` row를 `ALL_DAY`로
+  매핑했습니다. frontend에는 `상시` label과 정렬 순서를 추가했습니다.
+- 검증: generic 스낵코너 row를 파싱하는 connector test를 추가했고,
+  backend/frontend test가 통과했습니다.
+- 포트폴리오 포인트: scraping 문제는 selector가 틀려서만 생기지 않습니다.
+  같은 HTML 구조 안에서도 source가 다른 의미 라벨을 쓰면 domain model을
+  조정해야 합니다.
+
+## 2026-05-11 — Dependabot Tailwind major PR이 CI에서 실패
+
+- 맥락: Task 11로 Gradle, npm, GitHub Actions에 Dependabot을 켰습니다.
+- 증상: Dependabot PR `#39`, `#40`은 green이었지만, `#41`
+  (`tailwindcss 3.4.19 -> 4.3.0`)은 frontend CI가 실패했습니다.
+- 원인: Tailwind 4에서 config typing이 바뀌어 `darkMode: ["class"]`가
+  더 이상 기대 타입과 맞지 않았습니다.
+- 해결: major bump는 자동 merge하지 않고 별도 Tailwind 4 migration task로
+  다루기로 분리했습니다.
+- 검증: `gh pr checks`에서 backend/gitleaks는 pass, frontend typecheck는
+  `tailwind.config.ts` 타입 오류로 fail임을 확인했습니다.
+- 포트폴리오 포인트: Dependabot은 업데이트 감지와 PR 생성 자동화 도구이지,
+  major framework migration을 사람 검토 없이 대신해주는 도구가 아닙니다.
+
+## 2026-05-09 — 실제 API key 도입 전 secret scanning 추가
+
+- 맥락: 향후 chatbot 작업에서 provider API key가 들어올 예정이었습니다.
+- 증상: secret을 실수로 commit하는 것을 막는 guardrail이 없었습니다.
+- 원인: CI는 있었지만 secret scanner와 local pre-commit hook이 없었습니다.
+- 해결: `.gitleaks.toml`, GitHub Actions security workflow, optional
+  `lefthook` pre-commit 설정을 추가했습니다.
+- 검증: 이후 PR에서 GitHub `gitleaks scan`이 pass했습니다. 2026-05-11
+  local review 시점에는 Windows machine에 `gitleaks`/`lefthook` CLI가
+  설치되어 있지 않아 local hook 검증은 환경 의존으로 남았습니다.
+- 포트폴리오 포인트: 실제 AI provider key가 들어오기 전에 보안 guardrail을
+  먼저 깔아둔 순서가 중요합니다.
+
+## 2026-05-09 — frontend component test infrastructure 부족
+
+- 맥락: dashboard는 React Query와 client component를 사용했지만 테스트는
+  주로 utility 수준이었습니다.
+- 증상: card loading/success/error state 회귀는 브라우저에서 직접 열어봐야
+  발견할 수 있었습니다.
+- 원인: Vitest가 React/jsdom 환경 없이 동작하고 있었습니다.
+- 해결: `@vitejs/plugin-react`, React Testing Library, jest-dom, jsdom,
+  `vitest.config.ts`, `vitest.setup.ts`, provider test helper를 추가했습니다.
+- 검증: 2026-05-11 기준 `pnpm --dir frontend test`에서 6개 file, 26개 test가
+  통과했습니다.
+- 포트폴리오 포인트: public demo dashboard의 주요 UI state를 component
+  level에서 검증할 수 있게 됐습니다.
+
+## 2026-05-07 — Meal fan-out 성능 병목
+
+- 맥락: weekly meal export가 여러 식당과 여러 날짜를 조회했습니다.
+- 증상: weekly export가 약 1분 22초 걸렸습니다.
+- 원인: `RealMealConnector`의 global synchronized rate-limit이 모든 식당
+  호출을 1초 간격으로 직렬화했습니다.
+- 해결: rate-limit state를 식당 code 단위로 분리하고, fan-out 정책을 service
+  layer로 올려 서로 다른 식당은 병렬 조회할 수 있게 했습니다.
+- 검증: export 시간이 약 26초로 줄었습니다.
+- 포트폴리오 포인트: 병목을 찾아내되 crawling etiquette은 유지하고, 안전한
+  범위에서만 병렬화한 성능 개선 사례입니다.
+
+## 2026-05-07 — Connector exception log의 디버깅 정보 부족
+
+- 맥락: connector failure는 API envelope으로는 정상 매핑되고 있었습니다.
+- 증상: 서버 로그에는 원인 stack/context가 충분히 남지 않았습니다.
+- 원인: exception handler와 connector log가 throwable, restaurant, date 같은
+  운영 context를 항상 포함하지 않았습니다.
+- 해결: connector error code, exception type, throwable, restaurant, date를
+  필요한 위치에 추가했습니다.
+- 검증: failure log가 secret이나 개인 정보 없이도 원인 분석에 필요한 context를
+  보존하게 됐습니다.
+- 포트폴리오 포인트: 사용자에게 보이는 error message와 운영자가 보는 log는
+  목적이 다르므로 둘 다 별도로 설계해야 합니다.
+
+## 2026-05-07 — 일부 식당 실패가 전체 학식 API를 비우던 구조
+
+- 맥락: 학식 API는 여러 식당을 조회합니다.
+- 증상: 한 식당의 timeout/parse failure가 전체 메뉴 조회 실패처럼 보일 수
+  있었습니다.
+- 원인: 초기 connector가 여러 식당 fan-out과 단일 외부 호출 책임을 함께
+  가지고 있었습니다.
+- 해결: `MealConnector`를 `(date, restaurant)` 단일 조회 contract로 바꾸고,
+  aggregation/partial failure 정책은 `MealService`로 올렸습니다.
+- 검증: 부분 실패는 `MealClosure`의 `조회 실패: CONNECTOR_PARSE_ERROR`처럼
+  표시하고, 모든 식당이 실패할 때만 error를 올립니다.
+- 포트폴리오 포인트: connector boundary를 명확히 해서 하나의 downstream
+  실패가 전체 사용자 경험을 무너뜨리지 않게 만든 설계 개선입니다.
+
+## 2026-05-07 — 기숙사 식단 사이트는 별도 connector 전략이 필요했음
+
+- 맥락: 기숙사 식단은 학식과 같은 “식단” 도메인이지만 source가 달랐습니다.
+- 증상: 기숙사 페이지는 EUC-KR, weekly table, 다른 selector를 사용했습니다.
+- 원인: 학식 connector 추상화에 억지로 맞추면 source별 차이를 숨기면서
+  코드가 복잡해질 수 있었습니다.
+- 해결: `DormMealConnector`를 별도로 만들고 `fetchThisWeekMeal()` contract,
+  EUC-KR parsing, row/column mapping, closure handling을 구현했습니다.
+- 검증: fixture와 MockWebServer test가 encoding, weekly rows, closure marker,
+  HTTP failure mapping을 검증합니다.
+- 포트폴리오 포인트: premature abstraction을 피해서 connector를 단순하고
+  testable하게 유지한 사례입니다.
+
+## 2026-05-07 — Export runner가 API server를 실수로 종료할 위험
+
+- 맥락: `WeeklyMealExportRunner`는 JSON을 쓰고 Spring process를 종료하는
+  one-shot batch입니다.
+- 증상: 잘못된 runtime에서 켜지면 API server가 외부 사이트를 호출하고 파일을
+  쓴 뒤 종료될 수 있었습니다.
+- 원인: runner 등록 조건이 주로 enabled flag 하나에 의존했습니다.
+- 해결: `@Profile("export")`와 `ssuai.meal.export.enabled=true`를 둘 다
+  요구하도록 gate를 강화했습니다.
+- 검증: 일반 dev/prod API profile에서는 one-shot runner가 등록되지 않습니다.
+- 포트폴리오 포인트: process를 종료하는 batch job은 단일 boolean보다 강한
+  실행 gate가 필요합니다.
+
+## 2026-05-07 — Windows MockWebServer timeout flake
+
+- 맥락: parse failure test는 `ConnectorParseException`을 기대했습니다.
+- 증상: Windows에서 같은 test가 `ConnectorTimeoutException`으로 실패할 수
+  있었습니다.
+- 원인: MockWebServer cold start와 반복 순차 request가 timeout boundary에
+  너무 가까웠습니다.
+- 해결: parse failure test의 timeout을 늘리고, 불필요한 artificial response
+  delay를 제거했습니다.
+- 검증: timeout 동작은 별도 timeout 전용 test가 검증하고, parse test는
+  machine speed에 덜 의존하게 됐습니다.
+- 포트폴리오 포인트: test 이름이 검증하는 실패 모드와 실제 먼저 발생하는
+  실패 모드가 일치해야 합니다.
+
+## 2026-05-07 — 학식 HTML defensive parsing 필요
+
+- 맥락: 첫 real cafeteria connector는
+  `https://soongguri.com/m/m_req/m_menu.php`를 대상으로 했습니다.
+- 증상: 메뉴 HTML에 `td.menu_nm`, `td.menu_list`, nested tag, 가격, category,
+  알러지/원산지 metadata, comma, closure row가 섞여 있었습니다.
+- 원인: source가 안정된 JSON API가 아니라 CMS형 HTML이었습니다.
+- 해결: selector 기반 row discovery에 token cleanup을 결합했습니다.
+  metadata 제거, 가격 suffix 제거, comma/line split, closure keyword 탐지를
+  적용했습니다.
+- 검증: fixture test가 일반 학식 row, nested Dodam menu, holiday closure,
+  empty HTML parse failure, HTTP failure를 검증합니다.
+- 포트폴리오 포인트: connector boundary 덕분에 messy source-specific parsing이
+  controller, service, MCP tool, frontend로 새지 않았습니다.
+
+상세 historical writeup:
+[`docs/troubleshooting/cafeteria-connector.md`](docs/troubleshooting/cafeteria-connector.md).
+
+## 2026-05-20 — u-SAINT WebDynpro URL이 실제 앱 서버가 아니라 JS redirect 라우터였음
+
+- 맥락: schedule/grades connector가 `ecc.ssu.ac.kr:8443`을 GET/POST 대상으로
+  쓰고 있었습니다.
+- 증상: GET은 200을 반환하지만 POST SAPEVENTQUEUE가 403 empty body로 거절됐습니다.
+  진단 로그를 추가해도 bootstrap HTML이 정상이고 POST만 실패하는 패턴이 반복됐습니다.
+- 원인: `ecc.ssu.ac.kr`은 SAP 포털 라우터로, 실제 WebDynpro 앱은 JavaScript로
+  `hana-prd-ap-4.ssu.ac.kr:8443`으로 redirect합니다. Java `HttpClient`는 HTTP
+  redirect는 따라가지만 JS redirect는 따라가지 않으므로, GET 응답은 라우터의 HTML
+  (200)이고 POST는 라우터가 CSRF 세션을 모르므로 403을 냈습니다.
+- 해결: `SaintScheduleProperties.timetableUrl`과 `SaintGradesProperties.gradesUrl`
+  기본값을 `https://hana-prd-ap-4.ssu.ac.kr:8443/sap/bc/webdynpro/SAP/ZCMW2102?sap-client=100&sap-language=KO`
+  등 실제 앱 서버 URL로 교체했습니다. GET 최종 도달 URL을 `InitGetResult.finalUrl`로
+  보존해 POST에 일관성 있게 전달했습니다. (PR #156)
+- 검증: pod log에서 `saint schedule bootstrap: secureIdPresent=true` 확인.
+- 포트폴리오 포인트: 외부 시스템 통합 시 HTTP 응답 코드만 믿으면 안 됩니다.
+  JS redirect는 HTTP 레벨에서 투명하므로, DevTools Network 탭으로 최종 도달 호스트를
+  직접 확인해야 합니다.
+
+## 2026-05-20 — SAP Lightspeed Form_Request 전 초기화 이벤트 3개 누락으로 403
+
+- 맥락: URL을 올바른 앱 서버로 바꿨지만 POST가 여전히 403 empty body였습니다.
+- 증상: 브라우저는 성공하는데 서버 코드는 같은 URL로 같은 MYSAPSSO2 쿠키를
+  보내도 403이 반복됐습니다.
+- 원인: SAP NetWeaver WebDynpro Lightspeed(runtimeVersion 10.30.x)는 첫 번째
+  Form_Request 앞에 반드시 `ClientInspector_Notify(WD01)` — 클라이언트 화면/테마 정보,
+  `ClientInspector_Notify(WD02)` — 테이블 row 높이, `LoadingPlaceHolder_Load` 3개 이벤트를
+  같은 POST에 포함해야 세션 상태 머신이 정상으로 진행합니다. 이 이벤트 없이
+  Form_Request만 보내면 서버가 CSRF/상태 불일치로 판단해 403 empty body를 냅니다.
+  기존 `encodeInitialLoad()`는 Form_Request 단독으로만 조립하고 있었습니다.
+- 해결: `WebDynproSapEventEncoder.encodeInitialLoad(String pageUrl)`를 4-event 구조로
+  재작성했습니다. `escape()`에 `~(맨 먼저), ;, /, ,, #, ?, =, &` 처리를 추가해
+  ClientInspector Data 필드의 URL/JSON 값이 SAP 토큰과 충돌하지 않게 했습니다.
+  schedule/grades connector 모두 현재 WebDynpro URL을 `encodeInitialLoad(url)`에
+  전달하도록 수정했습니다. (PR #157)
+- 검증: `WebDynproSapEventEncoderTests`에서 4-event 구조 assert 추가 후 통과.
+  prod 배포 후 실제 schedule/grades API 동작 확인 예정.
+- 포트폴리오 포인트: SAP WebDynpro 프로토콜은 공개 문서가 없습니다. 브라우저
+  DevTools → Network → SAPEVENTQUEUE payload 캡처 → 하나씩 역분석하는 것이
+  유일한 방법입니다. 403 empty body는 SAP에서 "CSRF 또는 세션 상태 불일치"를
+  의미하므로, body가 비어있을수록 서버가 요청 자체를 거부한 것입니다.
+
+---
+
+## 2026-05-20 — webDynproForm() SAP 세션 필드 과잉 제거 → HTTP 500
+
+- 맥락: SAINT 403 fix(PR #159)에서 Fix 2가 `sap-wd-cltwndid`(403 원인)를 제거하면서
+  SAP 세션 상관관계 필드 `_external_session_`, `_popup_url_`, `_main_window_id_`,
+  `_environment_`도 함께 제거됐다.
+- 증상: prod 배포 후 `get_my_schedule` / `get_my_grades` 에서
+  `saint schedule connector 5xx: status=500 body='...Application Server Error...'`.
+  Fix 1(form action URL) 은 pod log 에서 hana URL 확인됐지만 initial POST 에서 500 발생.
+- 원인: SAP WebDynpro Lightspeed 서버는 bootstrap HTML 의 숨겨진 입력 필드 중
+  `_external_session_`(서버 세션 바인딩 토큰), `_popup_url_`, `_main_window_id_`,
+  `_environment_` 를 POST body 로 받아야 세션 상태 머신이 올바르게 이어진다.
+  이 필드들이 없으면 서버는 세션 컨텍스트를 잃고 500 을 반환한다.
+  `sap-wd-cltwndid` 는 제외가 맞지만, 나머지 SAP 세션 필드는 그대로 전달해야 한다.
+- 해결: `webDynproForm()` 에서 `formFields` 를 필터링할 때 `sap-wd-cltwndid` 만 제외하고
+  나머지 필드는 POST body 에 포함. schedule/grades connector 양쪽 동일하게 수정.
+- 검증: `sessionCorrelationFieldsPassedThroughExceptCltwndid` 테스트 2개 추가.
+  prod 배포 후 `saint schedule fetched` / `saint grades fetched` 로그 확인 예정.
+- 포트폴리오 포인트: SAP WebDynpro 의 hidden input 은 단순한 UI 상태가 아니라 서버 세션
+  바인딩 토큰이다. "최소한의 필드만 보내면 안전하다"는 직관이 stateful 프로토콜에서는
+  틀릴 수 있다. 어떤 필드가 403 의 원인인지 개별적으로 특정하지 않고 묶어서 제거하면
+  다른 문제가 생긴다 — 하나씩 제거하며 테스트해야 한다.
+
+---
+
+## 2026-05-20 SAINT direct HANA URL created ANON sessions
+
+- Mistake: PR #156 changed WebDynpro defaults from `ecc.ssu.ac.kr` to
+  `hana-prd-ap-4.ssu.ac.kr:8443` to bypass an assumed JavaScript redirect issue.
+- Symptom: production logs showed `sap-contextid: SID:ANON:hana-prd-ap-4_SSP_00:...-NEW`.
+  Schedule POST responses looked like a logon redirect and grades returned 500.
+- Cause: direct HANA does not trust the MYSAPSSO2 ticket issued by the u-SAINT
+  portal path, so it creates an anonymous SAP session. `ecc.ssu.ac.kr` on standard
+  HTTPS accepts that ticket and creates the authenticated USER session.
+- Fix: restore `SaintScheduleProperties.timetableUrl` and
+  `SaintGradesProperties.gradesUrl` defaults to
+  `https://ecc.ssu.ac.kr/sap/bc/webdynpro/SAP/...`.
+- Verify: deployment logs should include `SAP_SESSIONID_SSP_100` plus successful
+  `saint schedule fetched` and `saint grades fetched` lines.
+
+---
+
+## 2026-05-20 LMS gw-cb.php Location must start the Canvas auth chain
+
+- Symptom: LMS assignment API calls returned 401 and auth logs showed merged
+  cookies such as `WAF,laravel_session` without `xn_api_token`.
+- Cause: `callGwCallback()` captured only Set-Cookie headers from the gw-cb.php
+  302 response and discarded its Location header. Starting phase 2 directly at
+  `/learningx/dashboard?user_login=...` skips the one-time auth callback that
+  issues `xn_api_token`.
+- Fix: return both cookies and Location from `callGwCallback()`. When Location is
+  present, use it as the first Canvas URL; otherwise fall back to the dashboard
+  URL for old flows.
+- Verify: `gwCbLocationIsFollowedAsCanvasAuthStartUrl` covers the auth callback
+  path, and production logs should show `xn_api_token` in
+  `lms auth phase2 merged cookie names`.
+
+---
+
+## 2026-05-26 — main push 이벤트 기록 후 CI run 미생성
+
+- 증상: PR #176 merge와 배포 재트리거용 `main` push가 GitHub repository
+  events에는 `PushEvent`로 기록됐지만, 해당 SHA의 `CI`/`Security` Actions
+  run이 생성되지 않아 backend 이미지 빌드와 `Deploy` workflow가 시작되지 않았다.
+- 원인/제약: GitHub Status가 2026-05-26 10:57 UTC부터 Actions/Pages 장애를
+  공지했고, 확인 시점에 Actions 컴포넌트는 `major_outage`였다. 이 시간대에
+  push event는 repository events에 남았지만 workflow run 생성은 누락됐고,
+  manual dispatch API도 HTTP 500을 반환했다. 또한 저장소의 `CI` workflow에는
+  장애 복구 뒤 동일 `main` SHA를 다시 빌드할 수 있는 수동 trigger가 없었다.
+- 해결: `.github/workflows/ci.yml`에 `workflow_dispatch`를 추가하고,
+  `main`에서 수동 실행된 CI도 `image-build` job이 실행되도록 gate를 확장했다.
+  자동 `main` push 배포 경로와 PR의 image-build skip 정책은 유지한다.
+- 검증: Vercel Production deployment가 최신 `main` SHA에 대해 생성됨을
+  확인했다. GitHub Actions 장애 해소 후 `gh workflow run ci.yml --ref main`으로
+  현재 `main` tree를 실행하고, `CI`의 backend/frontend/image-build 성공과
+  이어지는 `Deploy` workflow 성공을 확인한다.
