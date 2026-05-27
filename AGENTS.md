@@ -14,20 +14,25 @@ MCP 표준 도구로 학식 · 도서관 · 시설 · u-SAINT · LMS 정보를 �
 
 ```
 src/main/
-├── java/com/ssuai/
-│   ├── global/         # auth, config, exception, response
+├── java/com/ssuai/           # 패키지명 com.ssuai (리팩터링 예정 없음)
+│   ├── global/               # auth, config, exception, response
 │   └── domain/
-│       ├── auth/       # MCP 세션 인증 (McpAuthSession, McpAuthStore)
-│       ├── campus/     # 시설 검색
-│       ├── chat/       # 챗봇 LLM 연동
-│       ├── dorm/       # 레지던스홀 식단
-│       ├── library/    # 도서관 좌석·도서·대출
-│       ├── lms/        # LMS 과제
-│       ├── mcp/        # McpServerConfig + 23개 @Tool 클래스
-│       ├── meal/       # 학식
-│       ├── notice/     # 공지사항
-│       └── saint/      # u-SAINT (시간표, 성적, 채플, 졸업, 장학금)
-ssufid/                 # rusaint Rust FFI 바인딩 (JNA 로드)
+│       ├── auth/             # MCP 세션 인증 (McpAuthSession, McpAuthStore)
+│       ├── campus/           # 시설 검색
+│       ├── chat/             # 챗봇 LLM 연동
+│       ├── dorm/             # 레지던스홀 식단
+│       ├── library/          # 도서관 좌석·도서·대출
+│       ├── lms/              # LMS 과제
+│       ├── mcp/              # McpServerConfig + 23개 @Tool 클래스
+│       ├── meal/             # 학식
+│       ├── notice/           # 공지사항
+│       └── saint/            # u-SAINT (시간표, 성적, 채플, 졸업, 장학금)
+└── kotlin/
+    ├── com/ssuai/domain/saint/connector/
+    │   └── RusaintUniFfiClient.kt    # rusaint JNA 호출 어댑터
+    └── dev/eatsteak/rusaint/         # rusaint Kotlin FFI 바인딩 (JNA)
+        ├── ffi/rusaint_ffi.kt
+        └── model/rusaint.kt
 deploy/                 # k8s Helm chart + Docker
 Dockerfile              # 멀티스테이지 빌드 (Rust → JVM)
 smithery.yaml           # Smithery 레지스트리 설정

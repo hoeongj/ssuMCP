@@ -1,11 +1,11 @@
-# ssuAI MCP Tools
+# ssuMCP MCP Tools
 
 ## 1. 개요
-ssuAI MCP server 는 숭실대학교 학생을 위한 캠퍼스 정보 조회 기능을 MCP(Model Context Protocol) tool 로 노출한다. Claude Desktop, Cursor, MCP inspector 같은 MCP client 는 이 서버에 붙어서 학식, 기숙사 식단, 캠퍼스 시설 정보를 대화 중에 조회할 수 있다.
+ssuMCP server 는 숭실대학교 학생을 위한 캠퍼스 정보 조회 기능을 MCP(Model Context Protocol) tool 로 노출한다. Claude Desktop, Cursor, MCP inspector 같은 MCP client 는 이 서버에 붙어서 학식, 기숙사 식단, 캠퍼스 시설 정보를 대화 중에 조회할 수 있다.
 
-**Task 18 이후**: 외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `get_my_assignments`, `get_my_library_loans` 를 직접 호출할 수 있다. 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다.
+외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `get_my_assignments`, `get_my_library_loans` 를 직접 호출할 수 있다. 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다.
 
-MCP server 는 별도 프로세스가 아니라 기존 ssuAI Spring Boot backend 안에서 REST API 와 함께 실행된다. backend 를 띄우면 REST endpoint 와 MCP endpoint 가 같은 JVM 안에서 같이 살아난다.
+MCP server 는 REST API 와 같은 Spring Boot 프로세스 안에서 실행된다. endpoint: `http://localhost:8080/mcp` (Streamable HTTP).
 
 현재 transport 는 **Streamable HTTP** (MCP spec 2025-03-26, 단일 POST `/mcp` endpoint) 이며 기본 endpoint 는 `http://localhost:8080/mcp` 이다.
 

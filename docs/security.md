@@ -1,8 +1,8 @@
-# ssuAI Security
+# ssuMCP Security
 
 ## Goals of this document
 
-Define the rules that protect ssuAI's users — Soongsil students — and the
+Define the rules that protect ssuMCP users — Soongsil students — and the
 sensitive academic data the system will eventually touch. This is the
 **single source of truth** for:
 
