@@ -34,8 +34,6 @@ deploy/
 │   └── ssuai-backend/
 ├── cluster-bootstrap/
 │   └── clusterissuer.yaml
-├── docker/
-│   └── Dockerfile
 ├── scripts/
 └── README.md
 ```
@@ -43,6 +41,8 @@ deploy/
 `deploy/charts/ssuai-backend/` is the source of truth for backend Kubernetes
 resources. The old raw `deploy/k8s/` manifests were retired after the chart
 rendered and passed client-side Kubernetes dry-run validation.
+The container image is built from the repository-root `Dockerfile` used by CI.
+`deploy/generated/` is reserved for ignored, local break-glass renders.
 
 ---
 
@@ -52,7 +52,7 @@ rendered and passed client-side Kubernetes dry-run validation.
 |---|---|---|
 | Oracle Cloud account | <https://cloud.oracle.com> | Free tier signup needs a valid credit card. Use `ap-seoul-1` if you want Korea Central. |
 | DuckDNS subdomains + token | <https://duckdns.org> | Point `ssumcp` and `argo-ssuai` at the VM public IP. |
-| Vercel account | <https://vercel.com> | Frontend deploys from the `frontend/` directory. |
+| Vercel account | <https://vercel.com> | Frontend deploys from the `ssuAI` repository root. |
 | Local tools | your laptop | `kubectl`, `helm`, `ssh`, optional `argocd` CLI. |
 | GitHub PAT | GitHub UI | Fine-grained PAT scoped to `contents:write` on `ghdtjdwn/ssuMCP` only, used by Image Updater. |
 
@@ -233,9 +233,9 @@ the previous chart value.
 > does **not** have ArgoCD or Image Updater installed; `helm` is also
 > not present on the VM. Steps 3-5 above describe the design intent,
 > not the current operational truth. Until that gap is closed, deploys
-> follow §7.1 (manual) or §7.2 (GitHub Actions auto-deploy).
+> follow §7.2 (GitHub Actions auto-deploy), with §7.1 as break-glass fallback.
 
-### 7.1 Manual deploy (current default)
+### 7.1 Manual deploy (break-glass fallback)
 
 After CI's `image-build` job publishes `ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>`:
 
@@ -256,14 +256,15 @@ The Deployment manifest is currently pinned to `:latest` with
 `imagePullPolicy: IfNotPresent`, so a plain `rollout restart` does
 **not** pick up the new image — the explicit `set image` is required.
 
-### 7.2 GitHub Actions auto-deploy (opt-in)
+### 7.2 GitHub Actions auto-deploy (current default)
 
 `.github/workflows/deploy.yml` runs `kubectl set image` automatically
-after CI succeeds on `main`. It is a no-op until the `KUBE_CONFIG`
-repository secret is provisioned, so merging the workflow alone changes
-nothing in prod.
+after CI succeeds on `main`. `KUBE_CONFIG` is provisioned in repository
+secrets; the latest Deploy workflow was verified successful on 2026-05-27.
+If the secret is absent after a future rotation, the workflow logs a skip
+notice and makes no production change.
 
-To enable:
+To provision or rotate the secret:
 
 1. On the cluster machine, copy the kubeconfig and base64-encode it:
 

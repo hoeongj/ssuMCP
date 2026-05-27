@@ -69,6 +69,8 @@ class LlmChatServiceTests {
             mock(com.ssuai.domain.saint.service.SaintScholarshipService.class);
     private final com.ssuai.domain.lms.service.LmsAssignmentsService lmsAssignmentsService =
             mock(com.ssuai.domain.lms.service.LmsAssignmentsService.class);
+    private final com.ssuai.domain.library.service.LibrarySeatService librarySeatService =
+            mock(com.ssuai.domain.library.service.LibrarySeatService.class);
     private final com.ssuai.domain.library.service.LibraryLoansService libraryLoansService =
             mock(com.ssuai.domain.library.service.LibraryLoansService.class);
 
@@ -475,6 +477,8 @@ class LlmChatServiceTests {
         assertThat(response.reply()).contains("운영체제");
         verify(scheduleService).fetchSchedule("20221528");
         verify(mcpClient, never()).callTool(argThat(named("get_my_schedule")));
+        assertThat(provider.request(0).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
+        assertThat(provider.request(1).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
         // 두 번째 LLM call (tool 결과 포함) — professor / timeRange / dayLabel 차단 확인
         String toolContent = provider.request(1).messages().stream()
                 .filter(message -> "tool".equals(message.role()))
@@ -510,6 +514,25 @@ class LlmChatServiceTests {
                 .orElseThrow()
                 .content();
         assertThat(toolContent).contains("로그인");
+    }
+
+    @Test
+    void conversationThatUsesPrivateToolKeepsLaterHistoryOnPrivateProviders() {
+        FakeProvider provider = new FakeProvider("gemini")
+                .toolCall("gemini-model", new OpenAiToolCall(
+                        "call-1",
+                        "function",
+                        new OpenAiToolCall.FunctionCall("get_my_schedule", "{}")))
+                .reply("gemini-model", "u-SAINT 로그인이 필요해요.")
+                .reply("gemini-model", "학생식당 메뉴를 확인할게요.");
+        LlmChatService chatService = chatService(List.of(provider), List.of("gemini"), List.of(), 0);
+
+        chatService.reply("c-private-history", "내 시간표 알려줘", null);
+        chatService.reply("c-private-history", "그럼 오늘 학식 알려줘", null);
+
+        assertThat(provider.request(0).privacyMode()).isEqualTo(LlmPrivacyMode.PUBLIC);
+        assertThat(provider.request(1).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
+        assertThat(provider.request(2).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
     }
 
     @Test
@@ -981,6 +1004,7 @@ class LlmChatServiceTests {
                 scheduleService,
                 gradesService,
                 lmsAssignmentsService,
+                librarySeatService,
                 libraryLoansService,
                 List.of(mcpClient),
                 chapelService,
@@ -1004,6 +1028,7 @@ class LlmChatServiceTests {
                 scheduleService,
                 gradesService,
                 lmsAssignmentsService,
+                librarySeatService,
                 libraryLoansService,
                 List.of(mcpClient),
                 clock,
@@ -1034,8 +1059,8 @@ class LlmChatServiceTests {
                                 "숭실대학교 캠퍼스 시설을 검색합니다.",
                                 requiredStringSchema("query", "검색어. 비워두지 마세요.")),
                         canonicalTool("get_library_seat_status",
-                                "숭실대학교 중앙도서관의 좌석 현황을 층별로 조회합니다.",
-                                requiredIntegerSchema("floor", "도서관 층 코드 (-1, 1, 2, 3, 4, 5, 6)")),
+                                "숭실대학교 중앙도서관의 좌석 현황을 층별로 조회합니다. LIBRARY 연동이 필요합니다.",
+                                requiredIntegerSchema("floor", "도서관 층 코드 (2, 5, 6)")),
                         canonicalTool("search_library_book",
                                 "숭실대학교 중앙도서관 소장 도서를 키워드로 검색합니다.",
                                 requiredStringSchema("query", "검색어 (제목/저자/출판 키워드, 1~64자)")),

@@ -3,7 +3,7 @@
 ## Goals of this document
 
 Define the rules that protect ssuMCP users — Soongsil students — and the
-sensitive academic data the system will eventually touch. This is the
+sensitive academic data the system touches through linked providers. This is the
 **single source of truth** for:
 
 - What data is sensitive and how to handle it.
@@ -37,10 +37,11 @@ The realistic threats this project must take seriously:
 | Dependency vulnerability (e.g., Log4Shell-class)    | Java/Node ecosystems, regular CVEs.                                            |
 | Abuse of crawling against the school's site         | Excess load could get us blocked or worse.                                     |
 
-Threats that are **not** in scope for the MVP:
+Threats that are not exhaustively modelled here:
 
-- Sophisticated targeted attacks against the running service (no real users
-  yet, and the MVP exposes only public data).
+- Sophisticated targeted attacks against infrastructure beyond the lightweight
+  controls appropriate to this deployment. Linked personal data is already in
+  scope and must follow the rules below.
 - Insider threats inside Soongsil's IT team.
 - Supply-chain attacks on the JDK/Node runtime itself.
 
@@ -53,7 +54,7 @@ The class determines storage, transport, logging, and retention rules.
 
 | Class       | Examples                                                                                  | Storage              | Logging                      | Notes                                       |
 |-------------|-------------------------------------------------------------------------------------------|----------------------|------------------------------|---------------------------------------------|
-| **Public**  | Today's cafeteria menu, library book catalog, library seat counts                         | Cache / DB freely    | OK to log content            | MVP is mostly this class.                   |
+| **Public**  | Today's cafeteria menu, library book catalog, library seat aggregate counts                | Cache / DB freely    | OK to log content            | Seat counts are non-personal, but the current upstream requires a library-linked session to retrieve them. |
 | **Personal**| ssuAI account email, display name, ssuAI user ID                                          | DB (plain)           | Log only the user ID, never email/name | Standard PII handling.                      |
 | **Sensitive**| Course schedule, grades, graduation progress, LMS assignments, LMS submissions          | DB, owner-only access | **Never log content**, only "fetched X items" counts | Treat with the same care as health records. |
 | **Secret**  | u-SAINT / LMS passwords, long-lived session cookies, API keys, signing keys, encryption keys | Env vars, KMS, or encrypted DB column | **Never log, ever**          | A leak means immediate rotation.            |
@@ -97,7 +98,7 @@ think it is.
 | `SSUAI_REDIS_URL`                      | Secret   | Future (current cache is in-process `ConcurrentMap`) |
 | Per-provider LLM keys — `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, ... (9 providers) | Secret | Live (chat). Each optional; missing keys skip the provider |
 | `SSUAI_JWT_SECRET`                     | Secret   | From Task 14. HS256 ≥ 32 bytes; empty default = ephemeral random per restart (dev/test only) |
-| `SSUAI_CREDENTIAL_ENCRYPTION_KEY`      | Secret   | When manual library-token paste / LMS login lands |
+| `SSUAI_CREDENTIAL_ENCRYPTION_KEY`      | Secret   | Live: protects linked SAINT/LMS/library session material in production |
 
 ### Pre-commit guardrails
 
@@ -164,8 +165,8 @@ every layer (Controller, Service, Connector, MCP tool).
 
 ## 5. School credentials (LMS / u-SAINT)
 
-These rules apply when the LMS / u-SAINT integration is built — they are
-not MVP work, but the rules need to be settled before any code is written.
+These rules apply to the implemented SAINT, LMS, and library provider
+integration and to any future provider.
 
 ### Storage
 
@@ -210,11 +211,13 @@ not MVP work, but the rules need to be settled before any code is written.
 
 ## 6. User consent & action confirmation
 
-The MVP exposes **read-only** endpoints and tools, so this section is
-forward-looking — but the rule is set now so it isn't relitigated later.
+The current server exposes read queries plus authentication-session lifecycle
+tools. It does not yet expose a school-state-changing action, so this section
+defines the required gate for that future addition.
 The **flagship action tool** that drives this entire policy is
-`reserve_library_seat` (the library seat agent — see
-[`docs/vision.md`](vision.md) §3.4). Every rule below must hold before
+`reserve_library_seat`; see
+[ssuAI vision](https://github.com/ghdtjdwn/ssuAI/blob/main/docs/vision.md).
+Every rule below must hold before
 that tool is allowed to ship.
 
 ### Consent for read access
@@ -276,7 +279,7 @@ Implemented as of Task 14:
   and refresh JWTs (14-day TTL). Secret comes from `SSUAI_JWT_SECRET`
   (≥ 32 bytes); in dev/test it falls back to an ephemeral random secret
   so restarts invalidate old tokens automatically. See
-  `backend/src/main/java/com/ssuai/global/auth/`.
+  `src/main/java/com/ssuai/global/auth/`.
 - **Where tokens live on the client** — refresh JWT in an `HttpOnly`,
   `Secure`, `Path=/api/auth` cookie. Access JWT lives in frontend
   memory only (never localStorage / sessionStorage). Mobile reuses the
@@ -296,8 +299,8 @@ Implemented as of Task 14:
   params via SSO callback, exchange them for identity inside
   `SaintSsoService.authenticate`, and discard them. There is no
   `BCryptPasswordEncoder` to roll.
-- **Login rate-limiting** — deferred until Phase 3 frontend (Task 14 PR
-  14c) lands. Add when the rate of SSO-callback hits becomes observable.
+- **Login rate-limiting** — remains an operational hardening item. Add
+  explicit rate limits before user volume or abuse exposure increases.
 - **Refresh rotation** — refresh JWTs should rotate on each
   `/api/auth/refresh` call (planned in PR 14b-4).
 
@@ -343,8 +346,8 @@ Implemented as of Task 14:
 
 - Pin Gradle and npm/pnpm dependency versions; commit the lockfile
   (`gradle.lockfile`, `pnpm-lock.yaml`).
-- Enable Dependabot (or Renovate) for both `backend/` and `frontend/`
-  once CI exists.
+- Keep Dependabot enabled in this repository for Gradle and GitHub Actions,
+  and in the separate `ssuAI` repository for pnpm dependencies.
 - Run `./gradlew dependencyCheckAnalyze` (OWASP Dependency-Check) or an
   equivalent SCA tool monthly, and on any release branch.
 - Don't add a dependency for one helper function — the supply-chain risk
@@ -411,32 +414,32 @@ If a real or suspected leak occurs:
 
 ---
 
-## 14. MVP-specific notes
+## 14. Current security posture
 
-The MVP is unusually safe because it:
+The server now handles linked provider sessions and sensitive academic data.
+Accordingly:
 
-- Has no user accounts → no passwords, no sessions, no PII at rest.
-- Touches only **Public** data → no encryption-at-rest worries beyond
-  standard DB hygiene.
-- Has no action features → no audit log requirements yet.
-
-This makes it a great window to **build the habits early**: the logging
-rules, the connector boundary, the response envelope, and the
-`.env`-based config should all already exist before the first sensitive
-feature lands. The cost of adding them now is low; the cost of
-retrofitting them around a working LMS integration is high.
+- Provider session material is secret and must remain encrypted or ephemeral,
+  never logged or returned through tool responses.
+- MCP private tools return `AUTH_REQUIRED` until their provider is linked.
+  `get_library_seat_status` follows this rule because its real upstream needs
+  a library token.
+- Once a chat turn invokes a private tool, the result synthesis and subsequent
+  conversation history use the configured private LLM provider policy rather
+  than the public-provider pool.
+- The library seat cache separates authenticated and anonymous request
+  boundaries, preventing an authenticated response from satisfying an
+  unauthenticated MCP request.
+- No school-state-changing action tool is exposed yet; confirmation and audit
+  requirements apply before reservation or submission features ship.
 
 ---
 
-## 15. Open questions
+## 15. Remaining security decisions
 
-To resolve before the relevant feature starts:
-
-- Which secret scanner do we adopt — `gitleaks`, `detect-secrets`, or
-  GitHub's built-in secret scanning?
-- Sessions vs JWTs — locked above as "sessions in Redis," but worth one
-  more review when auth design starts.
-- Does Soongsil offer any official OAuth / SSO surface for student apps?
-  If yes, it changes most of §5.
-- For action audit logs, is `jsonb` masking enough, or do we need a
-  separate "encrypted payload" column?
+- Define concrete rate limits and monitoring thresholds for provider login
+  and MCP auth endpoints.
+- Decide action audit payload storage and masking before any reservation tool
+  is implemented.
+- Revisit session-store durability and revocation if the deployment becomes
+  multi-instance or supports sustained real-user traffic.
