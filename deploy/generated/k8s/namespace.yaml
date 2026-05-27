@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ssuai-prod
-  labels:
-    app.kubernetes.io/name: ssuai
-    app.kubernetes.io/part-of: ssuai
-    environment: prod

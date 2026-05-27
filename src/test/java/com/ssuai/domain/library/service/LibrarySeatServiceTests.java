@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -13,8 +12,6 @@ import java.time.Instant;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-
 import com.ssuai.domain.library.auth.LibrarySessionProperties;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.dto.LibraryFloor;
@@ -28,27 +25,12 @@ class LibrarySeatServiceTests {
     private static final String TOKEN = "stub-ssotoken-value";
 
     @Test
-    void delegatesToCacheForRequestedFloor() {
-        LibrarySeatCache cache = mock(LibrarySeatCache.class);
-        LibrarySeatStatusResponse stub = stubResponse(LibraryFloor.F2);
-        when(cache.get(eq(LibraryFloor.F2), any())).thenReturn(stub);
-        LibrarySeatService service = mockModeService(cache, new LibrarySessionStore(defaultProperties()));
-
-        LibrarySeatStatusResponse response = service.getSeatStatus(LibraryFloor.F2);
-
-        assertThat(response).isSameAs(stub);
-        ArgumentCaptor<LibraryFloor> floorCaptor = ArgumentCaptor.forClass(LibraryFloor.class);
-        verify(cache).get(floorCaptor.capture(), any());
-        assertThat(floorCaptor.getValue()).isEqualTo(LibraryFloor.F2);
-    }
-
-    @Test
     void connectorExceptionBubblesUpWithoutWrapping() {
         LibrarySeatCache cache = mock(LibrarySeatCache.class);
         when(cache.get(eq(LibraryFloor.F2), any())).thenThrow(new ConnectorTimeoutException());
         LibrarySeatService service = mockModeService(cache, new LibrarySessionStore(defaultProperties()));
 
-        assertThatThrownBy(() -> service.getSeatStatus(LibraryFloor.F2))
+        assertThatThrownBy(() -> service.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
                 .isInstanceOf(ConnectorTimeoutException.class);
     }
 

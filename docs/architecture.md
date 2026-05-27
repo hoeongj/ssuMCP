@@ -1,6 +1,8 @@
 # ssuMCP Architecture
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
+> Current architecture snapshot as of 2026-05-27. Historical design decisions
+> remain under `docs/adr/`.
 
 ## Goals of this document
 
@@ -11,11 +13,10 @@ minutes and know where any new feature should live.
 
 ## Non-goals
 
-This document covers the **MVP plus near-term extension points**, not the
-final-state system. It does not specify class names beyond the package layout
-(those belong in per-feature design docs), does not design authentication,
-LMS, or u-SAINT in detail, and does not cover deployment topology — those
-get their own docs once they are real.
+This document describes the shipped server boundaries and the explicitly
+planned action layer. Detailed tool arguments live in `docs/mcp-tools.md`,
+security rules in `docs/security.md`, and deployment operations in
+`deploy/README.md`.
 
 ---
 
@@ -37,9 +38,9 @@ flowchart LR
         CONN[Connectors]
     end
 
-    subgraph Infra
-        PG[(PostgreSQL)]
-        RD[(Redis cache)]
+    subgraph LocalState["Current state stores"]
+        DB[(JPA / H2 by default)]
+        MEM[(In-process caches and session stores)]
     end
 
     subgraph School["Soongsil systems"]
@@ -56,30 +57,30 @@ flowchart LR
     MCP --> SVC
     SVC --> REPO
     SVC --> CONN
-    REPO --> PG
-    SVC --> RD
+    REPO --> DB
+    SVC --> MEM
     CONN --> MEAL
     CONN --> LIB
-    CONN -.future.-> LMS
-    CONN -.future.-> USAINT
+    CONN --> LMS
+    CONN --> USAINT
 ```
 
-Solid arrows are MVP. Dashed arrows are deferred (LMS, u-SAINT) and exist on
-the diagram only to show **where** they will plug in — not as work scheduled
-for week 1.
+All pictured upstream integrations are represented by implemented services
+and connector modes. Production selects real or `rusaint` connectors while
+local and test profiles select deterministic mocks.
 
 ---
 
 ## 2. Runtime topology
 
-The MVP is **one Spring Boot process**. It exposes:
+The deployed backend is **one Spring Boot process**. It exposes:
 
 - A REST API for the web dashboard and chatbot UI.
-- An MCP server (via Spring AI) for Claude Desktop / Claude Code.
+- An MCP server (via Spring AI Streamable HTTP `/mcp`) for external clients.
 
 Both surfaces share the **same Service layer**, the same Connectors, and the
-same Redis/PostgreSQL infrastructure. There is no duplicated business logic
-between REST and MCP.
+same in-process caches/session stores and JPA configuration. There is no
+duplicated connector logic between REST and MCP.
 
 ```
 ┌────────────────────────────────────────────┐
@@ -97,8 +98,8 @@ between REST and MCP.
 │  Repositories             Connectors       │
 └───────┬──────────────────────────┬─────────┘
         ▼                          ▼
-   PostgreSQL                External school
-   + Redis                      systems
+   JPA/H2 default            External school
+   + in-process state          systems
 ```
 
 **Why one process for now:** one deployment unit, one config surface, no
@@ -324,31 +325,26 @@ error can be looked up in logs.
 ## 7. Caching strategy
 
 The cache-aside pattern lives in the **Service layer** (not the
-Connector, not the Controller). The table below describes the
-*target shape*; the current MVP implements only the cafeteria entry —
-see "Current implementation" below.
-
-Redis is the eventual store; the MVP uses an in-memory `ConcurrentMap`
-(`WeeklyMealCache`) as a stepping stone since the only cached data so
-far is the cafeteria menu and it refreshes weekly. Moving to Redis is a
-swap at the cache-aside service boundary, not a layer rewrite.
+Connector, not the Controller). Current caches are bounded in-process
+stores suited to the single-JVM deployment; a shared cache may replace
+them only if multi-instance operation requires it.
 
 | Data                      | Key                                     | TTL                  | Notes                                                    |
 |---------------------------|-----------------------------------------|----------------------|----------------------------------------------------------|
-| Today's cafeteria meal    | `meal:{date}`                           | until midnight       | Menu rarely changes mid-day; refresh once per day.       |
-| Library book search       | `library:book:{normalized-query}`       | 5 min                | Search results are stable enough; user can re-search.    |
-| Library seat status       | `library:seat:{room-id}`                | 30 s                 | Changes minute-to-minute; very short TTL.                |
-| (future) LMS assignments  | `lms:assignments:{userId}`              | 5–15 min             | Per-user; invalidated on user-triggered refresh.         |
+| Today's cafeteria meal    | date and restaurant                     | weekly preload/refresh | `WeeklyMealCache`; bulk scrape avoided during chat turns. |
+| Library book search       | normalized query + pagination           | 60 s                  | Public catalog search result cache.                       |
+| Library seat status       | floor + authentication boundary         | 30 s                  | Authenticated data never warms anonymous access.          |
+| SAINT schedule            | student/session scope                   | 1 h                   | Linked personal data only.                                |
 
 Keys are namespaced (`<domain>:<entity>:<id>`) so a future bulk-invalidate
 is straightforward.
 
 Cache misses fall through to the Connector. Connector failures while a stale
-cache value exists are an explicit Service decision — for the MVP, prefer
+cache value exists are an explicit Service decision; prefer
 returning a 5xx and let the client retry rather than serving stale data
 silently. Reconsider per-feature when real data arrives.
 
-### Current implementation — `WeeklyMealCache`
+### Example implementation — `WeeklyMealCache`
 
 The cafeteria menu changes once per week. Rather than scrape
 `soongguri.com` on every chat turn or REST request, `WeeklyMealCache`
@@ -362,8 +358,10 @@ preloads the data:
   lookup with connector fallback for cache misses (e.g. dates outside
   the current week).
 
-This is the only cache active in the MVP. Library / LMS rows in the
-table above stay aspirational until those domains land.
+Library seat/book and SAINT caching follow the same service-owned boundary.
+For the library seat cache in particular, the key includes whether a request
+is authenticated, so MCP or REST callers without a linked library session
+cannot receive an authenticated caller's cached result.
 
 ---
 
@@ -371,30 +369,30 @@ table above stay aspirational until those domains land.
 
 Three profiles to start:
 
-- `dev` — default for local runs. All connectors `mock`. H2 or local
-  Postgres. Permissive logging.
+- `dev` — default for local runs. All connectors `mock`. H2 in-memory by
+  default. Permissive logging.
 - `test` — used by Gradle test tasks. All connectors `mock`. H2 in-memory.
   No external network.
-- `prod` — real Postgres, real Redis, connectors flipped to `real` per
-  feature as they become production-ready.
+- `prod` — real/`rusaint` connectors and deployment-supplied secrets;
+  datasource may be overridden from the H2-compatible default.
 
 Files: `application.yml` (shared defaults) + `application-{profile}.yml`.
 Secrets are **never** committed. They come from environment variables and
 are referenced as `${ENV_VAR_NAME}` in the YAML.
 
-The MVP needs no secrets (all data is public). The placeholders below are
-documented now so they're ready when the relevant features arrive:
+Personal integrations and LLM providers require secrets. Production supplies
+them as environment variables; development may omit them when using mocks.
 
 | Env var                | Used by         | When           |
 |------------------------|-----------------|----------------|
 | `SSUAI_DB_URL`         | Spring Data JPA | from Task 14 — defaults to in-memory H2 in PostgreSQL mode |
 | `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA | from Task 14 |
-| `SSUAI_REDIS_URL`      | Cache           | future — current MVP uses in-memory `ConcurrentMap` |
+| `SSUAI_REDIS_URL`      | Cache           | reserved for a future distributed cache; current stores are in-process |
 | `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9-provider LLM fallback (`LlmProviderConfig`) | live (chat) — each provider optional; chain skips empty keys |
 | `SSUAI_JWT_SECRET`     | `JwtProperties` — HS256 access/refresh signing | from Task 14 — empty default = ephemeral random per restart (dev/test). Prod must set (≥ 32 bytes). |
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | live (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | from Task 14 — defaults already point at saint.ssu.ac.kr |
-| `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | (future) AES-GCM library/LMS credential store | when manual paste / LMS login lands |
+| `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/library session material | live for stable linked sessions in prod |
 
 ---
 
@@ -413,8 +411,8 @@ What **never** to log, ever:
 - Anything that looks like a student ID, name, or grade.
 - Full request bodies that may contain the above.
 
-These rules are repeated in `docs/security.md` (to be drafted) — that doc
-is the source of truth; this section is just the architecture-level
+These rules are repeated in `docs/security.md` — that doc is the source of
+truth; this section is just the architecture-level
 reminder.
 
 Liveness check: `/actuator/health` (Spring Boot Actuator). Metrics and
@@ -424,14 +422,14 @@ distributed tracing are deferred until there's something worth measuring.
 
 ## 10. End-to-end data flow — `GET /api/meals/today`
 
-This is the template every future MVP feature copies.
+This shows the service-owned cache pattern used by read endpoints.
 
 ```mermaid
 sequenceDiagram
     participant C as Client (web/chatbot)
     participant Ctl as MealController
     participant Svc as MealService
-    participant R as Redis
+    participant R as WeeklyMealCache
     participant Conn as MealConnector (mock or real)
     participant Site as Cafeteria site
 
@@ -459,11 +457,11 @@ Numbered:
 
 1. Controller receives the request, validates (nothing to validate here),
    calls the service.
-2. Service builds the cache key, checks Redis.
+2. Service builds the cache key and checks its in-process cache.
 3. On hit, return immediately.
 4. On miss, call the Connector. The Connector is either the mock or the
    real implementation depending on `ssuai.connector.meal`.
-5. Service stores the result in Redis with the appropriate TTL.
+5. Service stores the result in the service cache with the appropriate refresh policy.
 6. Service returns the internal DTO.
 7. Controller wraps it in `ApiResponse<T>` and returns it.
 
@@ -502,7 +500,6 @@ Current tools (23 total — 20 read-only, 3 write):
 | `get_today_meal`, `get_meal_by_date` | `MealService` |
 | `get_dorm_weekly_meal` | `DormMealService` |
 | `search_campus_facilities` | `CampusService` |
-| `get_library_seat_status` | `LibrarySeatService` |
 | `search_library_book` | `LibraryBookService` |
 | `get_recent_notices`, `search_notices`, `list_notice_categories`, `get_notice_detail`, `get_active_notices`, `get_department_notices` | `NoticeService` |
 
@@ -524,6 +521,7 @@ Current tools (23 total — 20 read-only, 3 write):
 | `check_graduation_requirements` | SAINT | `SaintExtendedService` |
 | `get_my_scholarships` | SAINT | `SaintExtendedService` |
 | `get_my_assignments` | LMS | `LmsAssignmentsService` |
+| `get_library_seat_status` | LIBRARY | `LibrarySeatService` |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` |
 
 Tool annotations (`McpSchema.ToolAnnotations`) are applied at startup by `McpServerConfig`:
@@ -551,12 +549,11 @@ Rules:
   revalidation) so the UI stays simple and the backend can stay stateless.
 - Backend URL is read from an env var (`NEXT_PUBLIC_SSUAI_API_BASE`) — no
   hard-coded hosts.
-- The MVP frontend is three cards (today's meal, library book search,
-  library seat status). No login, no personalization. The frontend's job
-  in week 1 is to prove the API contract end-to-end, not to be pretty.
-
-A separate frontend design doc can grow from here when there's enough
-surface area to justify it.
+- The separate `ssuAI` repository owns dashboard cards, `/chat`, and
+  provider-linking UX for library, SAINT, and LMS data.
+- Product scope and UI decisions live in
+  [ssuAI docs](https://github.com/hoeongj/ssuAI/tree/main/docs); this server
+  document records the server/API boundary.
 
 ---
 
@@ -573,9 +570,9 @@ Layered tests mirror the layered code:
   Spring's `MockRestServiceServer` (RestClient stack) or OkHttp's
   `MockWebServer` (when raw HTTP / streaming is needed). Tests must be
   deterministic.
-- **Integration tests** — `@SpringBootTest` with Testcontainers for
-  Postgres and Redis. Added once the data layer becomes non-trivial; not
-  required for week 1.
+- **Integration tests** — `@SpringBootTest` with a random web port verifies
+  the Streamable HTTP MCP round trip and auth responses using test-profile
+  mocks.
 
 Hard rule: **automated tests never call real u-SAINT, real LMS, or any
 authenticated school endpoint.** Manual smoke scripts can, but they live
@@ -583,34 +580,30 @@ outside the CI test suite.
 
 ---
 
-## 14. Future extension points
+## 14. Shipped integrations and remaining work
 
-Each deferred feature already has a home in this architecture. Knowing
-*where* it lands is what lets us defer it without painting into a corner.
+The read and authentication foundation has shipped. Remaining work is
+deliberately limited to new state-changing or delivery capabilities.
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-| Future feature              | Where it lives                                                                 |
-|-----------------------------|--------------------------------------------------------------------------------|
-| Library read tools          | New `domain.library` package, with `LibraryConnector` (Jsoup or HTTP), service-layer real-time seat cache (TTL ≤ 30s), `@Tool` methods `search_library_book`, `get_library_book_status`, `get_library_seat_status`. |
-| User auth for ssuAI itself  | `domain.user` + `global.security` (Spring Security, JWT or session).           |
-| Encrypted credential store  | `domain.user.entity.SchoolCredential` + AES-GCM via `SSUAI_CREDENTIAL_ENCRYPTION_KEY`. Library credentials live here too. |
-| LMS read-only integration   | New `domain.lms` package, plus `domain.auth.lms` for an `LmsSessionStore` mirror of Task 16's `SaintSessionStore`. Connector defaults to Jsoup; escalate to Playwright only on a concrete blocker. Spec: [`docs/tasks/17-lms-integration.md`](tasks/17-lms-integration.md). |
-| u-SAINT read-only           | Currently `domain.auth.saint` (Task 14, identity-only). Realtime academic data tools (성적·시간표·출결) re-issue an SSO flow per call; the package may grow into `domain.usaint` once we settle on a session retention policy. |
-| **Library seat agent (flagship)** | `reserve_library_seat` `@Tool` in `domain.mcp.tool` + new `domain.library.agent` for the per-user reservation flow. Uses `LibraryConnector`'s authenticated write path with the user's encrypted credentials. **Action policy infrastructure** below is its prerequisite. |
-| Action MCP tools (general)  | New `@Tool` methods in `domain.mcp.tool`, split into `prepare_X` + shared `confirm_action(pending_action_id)`. Backed by `action_audit` table (append-only) + an in-process `ActionLock` interface (Redis SETNX-swappable). Full mechanism in [ADR 0015](adr/0015-action-tool-infrastructure.md). |
-| Notifications               | New `domain.notification` package; Redis for delivery state, web push first.   |
-| Mobile app                  | Separate Expo project; reuses the existing REST API. No backend changes.       |
+| Capability | Status | Location / contract |
+| --- | --- | --- |
+| Library book, seat and loan reads | Shipped | `domain.library`; seat and loans require `LIBRARY` linkage |
+| SAINT academic reads | Shipped | `domain.saint`, `domain.auth.saint`; `SAINT` linkage |
+| LMS assignment reads | Shipped | `domain.lms`, `domain.auth.lms`; `LMS` linkage |
+| MCP browser auth sessions | Shipped | `domain.auth.mcp`; secret `mcp_session_id` handle |
+| **Library seat reservation agent** | Planned | Separate write tools plus confirmation and audit policy |
+| Action MCP infrastructure | Planned | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md) |
+| Notifications / mobile app | Unscheduled | Must reuse current API and security contracts |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-The architecture's job through the MVP is to make sure none of these
-require rewriting the Service or Connector layers — only adding to them.
-The **library seat agent is the flagship deliverable** the architecture is
-designed to support: every layer above (auth, credential storage, action
-policy, audit log, distributed lock) is a prerequisite for it shipping
-safely. See [`docs/vision.md`](vision.md) §3.4 for the user-facing flow
-and [`docs/security.md`](security.md) §6 for the action policy.
+The **library seat agent is the flagship planned deliverable**. It must not
+ship until confirmation, audit, locking, and secret-handling rules are
+implemented. See
+[ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)
+for the user-facing flow and [`docs/security.md`](security.md) §6 for policy.
 
 ---
 
@@ -662,6 +655,7 @@ domain.mcp.tool
 ├── SaintScheduleMcpTool   // get_my_schedule(mcp_session_id) → McpPrivateToolResponse<ScheduleResponse>
 ├── SaintGradesMcpTool     // get_my_grades(mcp_session_id)
 ├── LmsAssignmentsMcpTool  // get_my_assignments(mcp_session_id)
+├── LibrarySeatMcpTool     // get_library_seat_status(floor, mcp_session_id)
 └── LibraryLoansMcpTool    // get_my_library_loans(mcp_session_id)
 ```
 
@@ -675,7 +669,10 @@ domain.mcp.tool
 
 ### 웹 챗봇과의 관계
 
-웹 챗봇 (`LlmChatService`) 은 private tool 을 MCP 경로로 호출하지 않는다. `get_my_schedule` 등은 `SaintScheduleService.fetchSchedule(studentId)` 를 직접 호출한다 (lines 526-534). MCP tool 메서드 시그니처 변경이 챗봇에 영향을 주지 않는 이유다.
+웹 챗봇 (`LlmChatService`) 은 private tool 을 MCP 경로로 호출하지 않는다.
+SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 session context를
+사용해 해당 service를 직접 호출한다. 외부 MCP client만 `mcp_session_id`를
+tool 인자로 전달한다.
 
 ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`) 은 웹 챗봇 경로에만 남아 있다. MCP private tool 은 ThreadLocal 을 사용하지 않는다 (Task 18 Slice C 이후).
 

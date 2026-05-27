@@ -3,6 +3,11 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+> 역사 기록 주의: 2026-05-27 저장소 분리 전 항목의 `backend/`는 현재
+> `ssuMCP/` 루트, `frontend/`는 별도 `ssuAI/` 루트를 의미합니다. SSE
+> 관련 항목은 당시 원인 분석을 보존한 것이며, 현재 MCP endpoint는
+> Streamable HTTP `/mcp`입니다.
+
 ## 기록 규칙
 
 - 의미 있는 문제를 발견하거나 해결하면 이 파일에 한국어로 누적합니다.
@@ -28,6 +33,26 @@
 - 검증:
 - 포트폴리오 포인트:
 ```
+
+## 2026-05-27 — 도서관 MCP 인증 캐시와 챗봇 private-provider 경계 수정
+
+- 맥락: 운영 도서관 좌석 connector는 Pyxis 인증 토큰을 요구하고, 챗봇은
+  공개/개인 LLM provider pool을 분리한다.
+- 증상: `get_library_seat_status`가 MCP 공개 도구로 남아 있어 인증된 REST
+  요청이 먼저 좌석 cache를 채우면 무세션 MCP 호출이 같은 값을 재사용할
+  가능성이 있었다. 또한 개인 tool 결과가 포함된 챗봇 최종 응답과 후속
+  history가 public provider policy로 전달될 수 있었다.
+- 원인: 좌석 cache key가 floor만 포함했고, MCP tool 계약이 실제 upstream
+  인증 조건을 반영하지 않았다. 챗봇은 tool 실행 전후 동일 privacy mode를
+  재사용했다.
+- 해결: 좌석 cache key를 floor와 인증 경계로 분리하고 좌석 MCP tool을
+  `LIBRARY` private tool로 전환했다. 링크는 남았지만 upstream token이 만료된
+  좌석/대출 호출은 `AUTH_REQUIRED`로 복구한다. 개인 tool이 사용된 conversation은
+  결과 생성과 후속 history 모두 private provider policy를 사용한다.
+- 검증: `.\gradlew.bat test`와 `.\gradlew.bat build` 통과. cache 경계,
+  무세션 MCP 응답, 만료 후 재연동, private conversation 유지 테스트를 추가했다.
+- 포트폴리오 포인트: 공개 성격의 집계 데이터라도 upstream 인증 경계와 LLM
+  전송 경계를 별도로 검증해야 데이터 노출 경로를 닫을 수 있다.
 
 ## 2026-05-24 — MCP transport SSE → Streamable HTTP 후 통합 테스트 CI 실패 (프로퍼티 키 불일치)
 
