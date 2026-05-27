@@ -1,8 +1,10 @@
-# ssuAI Architecture
+# ssuMCP Architecture
+
+> 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
 
 ## Goals of this document
 
-Give a single, scannable view of how ssuAI is put together: the layers, the
+Give a single, scannable view of how ssuMCP is put together: the layers, the
 packages, the runtime processes, and the contracts between them. Anyone
 joining the project (or a reviewer) should be able to read this in five
 minutes and know where any new feature should live.
@@ -27,7 +29,7 @@ flowchart LR
         U3[Claude Desktop / IDE MCP client]
     end
 
-    subgraph ssuAI["ssuAI Backend (single Spring Boot app)"]
+    subgraph ssuMCP["ssuMCP (Spring Boot MCP Server)"]
         REST[REST Controllers]
         MCP[MCP Server tools]
         SVC[Service layer]
@@ -81,7 +83,7 @@ between REST and MCP.
 
 ```
 ┌────────────────────────────────────────────┐
-│  ssuAI Spring Boot application (one JVM)   │
+│  ssuMCP Spring Boot application (one JVM)  │
 │                                            │
 │   ┌───────────┐         ┌──────────────┐   │
 │   │ REST API  │         │ MCP server   │   │
