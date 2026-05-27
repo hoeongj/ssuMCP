@@ -18,6 +18,7 @@ import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.dto.LibraryLoansResponse;
 import com.ssuai.domain.library.service.LibraryLoansService;
+import com.ssuai.global.exception.LibraryAuthRequiredException;
 
 class LibraryLoansMcpToolTests {
 
@@ -77,6 +78,22 @@ class LibraryLoansMcpToolTests {
         assertThat(resp.data()).isSameAs(stub);
         // The opaque key (not a student id) is passed to the service
         verify(loansService).getLoansForSession(OPAQUE_KEY);
+    }
+
+    @Test
+    void expiredLibraryTokenReturnsAuthRequiredForRelinking() {
+        McpPrivateToolResponse<LibraryLoansResponse> stub =
+                McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(loansService.getLoansForSession(OPAQUE_KEY))
+                .thenThrow(new LibraryAuthRequiredException());
+        when(authHelper.<LibraryLoansResponse>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(stub);
+
+        McpPrivateToolResponse<LibraryLoansResponse> response = tool.getMyLibraryLoans(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("AUTH_REQUIRED");
     }
 
     @Test

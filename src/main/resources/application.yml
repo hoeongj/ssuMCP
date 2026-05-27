@@ -26,8 +26,8 @@ spring:
         protocol: STREAMABLE
         instructions: >
           숭실대학교 공식 MCP 서버(ssuMCP)입니다.
-          공개 도구: 학식(오늘·날짜별), 기숙사 식단, 도서관 좌석·도서 검색, 시설 검색, 공지사항 6종.
-          개인 도구(u-SAINT·LMS·도서관): 시간표, 성적, 채플, 졸업 요건, 장학금, 과제, 대출 현황.
+          공개 도구: 학식(오늘·날짜별), 기숙사 식단, 도서관 도서 검색, 시설 검색, 공지사항 6종.
+          개인 도구(u-SAINT·LMS·도서관): 시간표, 성적, 채플, 졸업 요건, 장학금, 과제, 좌석·대출 현황.
           개인 도구 사용 전 start_auth 로 해당 서비스에 로그인하세요.
       client:
         enabled: ${SSUAI_MCP_CLIENT_ENABLED:true}

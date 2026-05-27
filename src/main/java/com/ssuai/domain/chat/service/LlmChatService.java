@@ -44,8 +44,10 @@ import com.ssuai.domain.chat.service.llm.LlmCompletionResult;
 import com.ssuai.domain.chat.service.llm.LlmPrivacyMode;
 import com.ssuai.domain.chat.service.llm.LlmProvider;
 import com.ssuai.domain.chat.service.llm.LlmProviderException;
+import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.mcp.LibraryToolContext;
 import com.ssuai.domain.library.service.LibraryLoansService;
+import com.ssuai.domain.library.service.LibrarySeatService;
 import com.ssuai.domain.lms.mcp.LmsToolContext;
 import com.ssuai.domain.lms.service.LmsAssignmentsService;
 import com.ssuai.domain.saint.mcp.SaintToolContext;
@@ -74,7 +76,6 @@ public class LlmChatService implements ChatService {
             - 학생식당 메뉴 (get_today_meal, get_meal_by_date)
             - 기숙사 식단 (get_dorm_weekly_meal)
             - 캠퍼스 시설 검색 (search_campus_facilities)
-            - 중앙도서관 좌석 현황 (get_library_seat_status, floor 코드: -1 B1, 1~6 1~6층)
             - 중앙도서관 도서 검색 (search_library_book, 키워드로 제목/저자/출판 부분 일치)
             - 학교 공지사항 (get_recent_notices, search_notices, get_active_notices,
               get_department_notices, get_notice_detail) — 학사/장학/채용/행사 등 전체 공지.
@@ -102,6 +103,8 @@ public class LlmChatService implements ChatService {
               같은 식으로 물으면 호출해. LMS 로그인이 안 된 경우 재로그인 안내.
 
             인증된 본인 데이터 (도서관 세션 연동 필요):
+            - 중앙도서관 좌석 현황 (get_library_seat_status, floor 코드: 2, 5, 6)
+              사용자가 "도서관 자리", "좌석"을 물으면 호출해. 도서관 세션이 없으면 연동 방법 안내.
             - 내 도서관 대출 현황 (get_my_library_loans) — 현재 대출 도서 목록, 반납 기한,
               연장 가능 여부. 사용자가 "대출", "반납", "연장", "도서관 빌린 책"
               같은 식으로 물으면 호출해. 도서관 세션이 없는 경우 연동 방법 안내.
@@ -128,19 +131,19 @@ public class LlmChatService implements ChatService {
             - 수강신청은 아직 지원 안 함.
             - get_my_assignments 는 LMS 로그인이 필요해. 로그인 안 된 사용자에게는
               LMS(SmartID) 로그인 안내.
-            - get_my_library_loans 는 도서관 연동이 필요해.
+            - get_library_seat_status 와 get_my_library_loans 는 도서관 연동이 필요해.
               연동 안 된 사용자에게는 도서관 좌석 카드의 "도서관 연동" 버튼 안내.
             - 비밀번호, 학번, 쿠키, 세션, API key 같은 비밀 정보는 요구하지도 받지도
               마. 사용자가 입력하면 저장/반복하지 말고 지우라고 안내해.
             """;
 
     private static final String SCOPE_GUIDANCE =
-            "아직은 그 정보는 지원하지 않아요. 지금은 학식, 기숙사 식단, 캠퍼스 시설, 도서관 좌석/도서 검색, 공지사항, 그리고 (로그인된 경우) 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제·도서관 대출 현황을 도와줄 수 있어요.";
+            "아직은 그 정보는 지원하지 않아요. 지금은 학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색, 공지사항, 그리고 (로그인된 경우) 도서관 좌석·대출 현황과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
 
     private static final String SECRET_GUIDANCE =
             "비밀번호, 쿠키, 세션, API key 같은 비밀 정보는 입력하지 말아주세요. "
-                    + "학식, 기숙사 식단, 캠퍼스 시설, 도서관 좌석/도서 검색, 공지사항, 그리고 "
-                    + "(로그인된 경우) 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제·도서관 대출 현황을 도와줄 수 있어요.";
+                    + "학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색, 공지사항, 그리고 "
+                    + "(로그인된 경우) 도서관 좌석·대출 현황과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
 
     private static final String SAINT_SESSION_GUIDANCE =
             "u-SAINT 로그인이 필요한 정보예요. 먼저 SmartID 로 로그인하고 다시 물어봐 주세요.";
@@ -167,6 +170,15 @@ public class LlmChatService implements ChatService {
     private static final String TOOL_TRUNCATION_MARKER = "...[truncated]";
     private static final Set<String> CHAT_EXCLUDED_TOOLS = Set.of(
             "start_auth", "get_auth_status", "logout_provider", "logout_all");
+    private static final Set<String> PRIVATE_RESULT_TOOLS = Set.of(
+            "get_my_schedule",
+            "get_my_grades",
+            "get_my_chapel_info",
+            "check_graduation_requirements",
+            "get_my_scholarships",
+            "get_my_assignments",
+            "get_library_seat_status",
+            "get_my_library_loans");
 
     private final LlmChatProperties properties;
     private final Map<String, LlmProvider> providersByName;
@@ -178,6 +190,7 @@ public class LlmChatService implements ChatService {
     private final SaintGraduationService graduationService;
     private final SaintScholarshipService scholarshipService;
     private final LmsAssignmentsService lmsAssignmentsService;
+    private final LibrarySeatService librarySeatService;
     private final LibraryLoansService libraryLoansService;
     private final Clock clock;
     private volatile List<OpenAiChatCompletionRequest.Tool> cachedChatTools;
@@ -193,6 +206,7 @@ public class LlmChatService implements ChatService {
             SaintScheduleService scheduleService,
             SaintGradesService gradesService,
             LmsAssignmentsService lmsAssignmentsService,
+            LibrarySeatService librarySeatService,
             LibraryLoansService libraryLoansService,
             @Lazy List<McpSyncClient> mcpClients,
             SaintChapelService chapelService,
@@ -200,7 +214,7 @@ public class LlmChatService implements ChatService {
             SaintScholarshipService scholarshipService
     ) {
         this(properties, providers, objectMapper, conversationStore,
-                scheduleService, gradesService, lmsAssignmentsService, libraryLoansService,
+                scheduleService, gradesService, lmsAssignmentsService, librarySeatService, libraryLoansService,
                 mcpClients, Clock.system(KST), chapelService, graduationService, scholarshipService);
     }
 
@@ -212,6 +226,7 @@ public class LlmChatService implements ChatService {
             SaintScheduleService scheduleService,
             SaintGradesService gradesService,
             LmsAssignmentsService lmsAssignmentsService,
+            LibrarySeatService librarySeatService,
             LibraryLoansService libraryLoansService,
             List<McpSyncClient> mcpClients,
             Clock clock,
@@ -230,6 +245,7 @@ public class LlmChatService implements ChatService {
         this.graduationService = graduationService;
         this.scholarshipService = scholarshipService;
         this.lmsAssignmentsService = lmsAssignmentsService;
+        this.librarySeatService = librarySeatService;
         this.libraryLoansService = libraryLoansService;
         this.mcpClients = mcpClients;
         this.clock = clock;
@@ -272,7 +288,7 @@ public class LlmChatService implements ChatService {
     private McpSyncClient mcpClient() {
         if (mcpClients == null || mcpClients.isEmpty()) {
             throw new IllegalStateException(
-                    "LLM chat mode requires at least one Spring AI MCP client connection (spring.ai.mcp.client.sse.connections.*).");
+                    "LLM chat mode requires at least one Spring AI MCP client connection (spring.ai.mcp.client.streamable-http.connections.*).");
         }
         return mcpClients.get(0);
     }
@@ -299,8 +315,11 @@ public class LlmChatService implements ChatService {
         conversationStore.appendUser(conversationId, message);
 
         try {
+            LlmPrivacyMode privacyMode = authenticated || conversationStore.isPrivate(conversationId)
+                    ? LlmPrivacyMode.PRIVATE
+                    : LlmPrivacyMode.PUBLIC;
             ChatResponse response = callLlm(conversationId, message, history,
-                    LlmPrivacyMode.PUBLIC, studentId);
+                    privacyMode, studentId);
             conversationStore.appendAssistant(conversationId, response.reply());
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
             log.info("chat reply completed: conversationId={} messageLength={} latencyMs={} historyTurns={}",
@@ -356,13 +375,8 @@ public class LlmChatService implements ChatService {
 
         List<OpenAiChatCompletionRequest.Message> messages = new ArrayList<>(baseMessages);
         messages.add(OpenAiChatCompletionRequest.assistantToolCallMessage(firstMessage.content(), toolCalls));
-        // Bind the authenticated student id to the chat thread for the
-        // duration of the tool dispatch loop. The private MCP tools
-        // ({@code get_my_schedule}, {@code get_my_grades}) read it from
-        // SaintToolContext when invoked through the in-process MCP
-        // callback path; chat's direct-service short-circuit uses the
-        // local parameter, so the binding is also a safety net for
-        // future loopback routing changes.
+        // Bind linked web-session context during direct private-service
+        // dispatch. External MCP clients use mcp_session_id instead.
         try (SaintToolContext.Scope ignored = SaintToolContext.withStudentId(studentId);
              LmsToolContext.Scope ignoredLms = LmsToolContext.withStudentId(studentId);
              LibraryToolContext.Scope ignoredLibrary =
@@ -379,8 +393,15 @@ public class LlmChatService implements ChatService {
             }
         }
 
+        boolean hasPrivateResult = toolCalls.stream()
+                .map(toolCall -> toolCall.function() == null ? "" : toolCall.function().name())
+                .anyMatch(PRIVATE_RESULT_TOOLS::contains);
+        if (hasPrivateResult) {
+            conversationStore.markPrivate(conversationId);
+        }
+        LlmPrivacyMode finalPrivacyMode = hasPrivateResult ? LlmPrivacyMode.PRIVATE : privacyMode;
         LlmCompletionResult finalResult = completeAcrossProviders(new LlmCompletionRequest(
-                privacyMode,
+                finalPrivacyMode,
                 messages,
                 null,
                 null
@@ -563,7 +584,9 @@ public class LlmChatService implements ChatService {
                 }
                 case "get_library_seat_status" -> {
                     int floor = requiredIntArgument(toolCall, "floor");
-                    yield callMcp(toolName, Map.of("floor", floor));
+                    yield dispatchPrivateLibraryTool(
+                            toolName, () -> librarySeatService.getSeatStatusForSession(
+                                    LibraryFloor.fromCode(floor), LibraryToolContext.currentSessionKey()));
                 }
                 case "search_library_book" -> {
                     String query = optionalArgument(toolCall, "query").trim();

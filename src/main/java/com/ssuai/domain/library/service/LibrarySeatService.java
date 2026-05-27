@@ -30,10 +30,6 @@ public class LibrarySeatService {
         this.authRequired = "real".equalsIgnoreCase(connectorMode);
     }
 
-    public LibrarySeatStatusResponse getSeatStatus(LibraryFloor floor) {
-        return fetchWithToken(floor, null);
-    }
-
     public LibrarySeatStatusResponse getSeatStatusForSession(LibraryFloor floor, String sessionKey) {
         String token = null;
         if (authRequired) {

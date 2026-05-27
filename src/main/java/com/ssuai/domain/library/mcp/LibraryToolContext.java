@@ -2,12 +2,13 @@ package com.ssuai.domain.library.mcp;
 
 /**
  * Thread-local carrier for the HTTP session key used by the private library
- * MCP tool ({@code get_my_library_loans}).
+ * chat tool dispatches ({@code get_library_seat_status} and
+ * {@code get_my_library_loans}).
  *
  * <p>The session key is used to look up the user's Pyxis-Auth-Token in
  * {@code LibrarySessionStore}. Set by {@code ChatController} before calling
  * {@code ChatService.reply()} so the key is available on the same thread
- * when the tool dispatches to {@code LibraryLoansService}.
+ * when a tool dispatches to a library service.
  */
 public final class LibraryToolContext {
 

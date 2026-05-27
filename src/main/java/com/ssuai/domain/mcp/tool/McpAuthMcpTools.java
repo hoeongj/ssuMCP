@@ -82,7 +82,7 @@ public class McpAuthMcpTools {
                     + "Creates a new MCP session if mcp_session_id is not provided."
     )
     public McpAuthStartResponse startAuth(
-            @ToolParam(description = "Provider to authenticate. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 대출 현황.")
+            @ToolParam(description = "Provider to authenticate. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 좌석·대출 현황.")
             String provider,
             @ToolParam(description = "Existing MCP session ID to reuse. If absent, a new session is created.", required = false)
             String mcp_session_id) {

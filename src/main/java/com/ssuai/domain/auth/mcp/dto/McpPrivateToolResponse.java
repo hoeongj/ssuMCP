@@ -4,7 +4,7 @@ import java.time.Instant;
 
 /**
  * Wrapper returned by all private MCP tools (get_my_schedule, get_my_grades,
- * get_my_assignments, get_my_library_loans).
+ * get_my_assignments, get_library_seat_status, get_my_library_loans).
  *
  * <p>status=OK: {@code data} holds the payload; all other fields except mcpSessionId are null.
  * status=AUTH_REQUIRED: {@code loginUrl} and {@code provider} indicate what to do next;

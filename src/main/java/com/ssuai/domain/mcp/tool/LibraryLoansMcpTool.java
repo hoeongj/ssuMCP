@@ -10,6 +10,7 @@ import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.dto.LibraryLoansResponse;
 import com.ssuai.domain.library.service.LibraryLoansService;
+import com.ssuai.global.exception.LibraryAuthRequiredException;
 
 /**
  * MCP tool for the authenticated user's library loans (Task 18 Slice C).
@@ -49,12 +50,19 @@ public class LibraryLoansMcpTool {
         return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
                 .map(sessionKey -> {
                     log.debug("get_my_library_loans: fetching loans");
-                    LibraryLoansResponse data = loansService.getLoansForSession(sessionKey);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    try {
+                        LibraryLoansResponse data = loansService.getLoansForSession(sessionKey);
+                        return McpPrivateToolResponse.<LibraryLoansResponse>ok(mcp_session_id, data);
+                    } catch (LibraryAuthRequiredException exception) {
+                        log.debug("get_my_library_loans: library token expired, returning AUTH_REQUIRED");
+                        return authHelper.<LibraryLoansResponse>buildAuthRequired(
+                                mcp_session_id, McpProviderType.LIBRARY);
+                    }
                 })
                 .orElseGet(() -> {
                     log.debug("get_my_library_loans: LIBRARY not linked, returning AUTH_REQUIRED");
-                    return authHelper.buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
+                    return authHelper.<LibraryLoansResponse>buildAuthRequired(
+                            mcp_session_id, McpProviderType.LIBRARY);
                 });
     }
 }

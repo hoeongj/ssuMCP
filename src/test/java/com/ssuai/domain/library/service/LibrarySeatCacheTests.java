@@ -68,6 +68,30 @@ class LibrarySeatCacheTests {
     }
 
     @Test
+    void authenticatedResultIsNotReusedForAnonymousRequest() {
+        CountingConnector connector = new CountingConnector();
+        MutableClock clock = new MutableClock(Instant.parse("2026-05-15T10:00:00Z"));
+        LibrarySeatCache cache = new LibrarySeatCache(connector, Duration.ofSeconds(30), clock);
+
+        cache.get(LibraryFloor.F2, "valid-token");
+        cache.get(LibraryFloor.F2, null);
+
+        assertThat(connector.callsFor(LibraryFloor.F2)).isEqualTo(2);
+    }
+
+    @Test
+    void authenticatedRequestsShareGlobalSeatCountsWithinTtl() {
+        CountingConnector connector = new CountingConnector();
+        MutableClock clock = new MutableClock(Instant.parse("2026-05-15T10:00:00Z"));
+        LibrarySeatCache cache = new LibrarySeatCache(connector, Duration.ofSeconds(30), clock);
+
+        cache.get(LibraryFloor.F2, "first-valid-token");
+        cache.get(LibraryFloor.F2, "second-valid-token");
+
+        assertThat(connector.callsFor(LibraryFloor.F2)).isEqualTo(1);
+    }
+
+    @Test
     void concurrentMissesOnSameFloorShareOneConnectorCall() throws Exception {
         BlockingConnector connector = new BlockingConnector();
         LibrarySeatCache cache = new LibrarySeatCache(connector, Duration.ofSeconds(30),

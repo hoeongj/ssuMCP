@@ -72,6 +72,32 @@ public class ChatConversationStore {
         append(conversationId, new Turn(ROLE_ASSISTANT, reply));
     }
 
+    public boolean isPrivate(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return false;
+        }
+        synchronized (entries) {
+            Entry entry = entries.get(conversationId);
+            if (entry == null || isExpired(entry)) {
+                entries.remove(conversationId);
+                return false;
+            }
+            return entry.privateData();
+        }
+    }
+
+    public void markPrivate(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        synchronized (entries) {
+            Entry entry = entries.get(conversationId);
+            if (entry != null && !isExpired(entry)) {
+                entry.markPrivate();
+            }
+        }
+    }
+
     public void clear(String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
             return;
@@ -137,6 +163,7 @@ public class ChatConversationStore {
 
         private final Deque<Turn> turns;
         private Instant lastAccessAt;
+        private boolean privateData;
 
         private Entry(Deque<Turn> turns, Instant lastAccessAt) {
             this.turns = turns;
@@ -153,6 +180,14 @@ public class ChatConversationStore {
 
         private void touch(Instant now) {
             this.lastAccessAt = now;
+        }
+
+        private boolean privateData() {
+            return privateData;
+        }
+
+        private void markPrivate() {
+            this.privateData = true;
         }
     }
 }

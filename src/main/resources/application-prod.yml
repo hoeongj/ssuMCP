@@ -1,4 +1,4 @@
-# This file is committed to the repository (see backend/.gitignore exception).
+# This file is committed to the repository (see the root .gitignore exception).
 # Per docs/security.md §3, it MUST NOT contain secrets — only non-sensitive
 # baseline settings or `${ENV_VAR}` references. DB passwords, JWT keys,
 # session cookies, API tokens etc. belong in environment variables and are

@@ -247,18 +247,14 @@ Oracle VM이 아직 없어도 Vercel project는 먼저 만들 수 있습니다.
 2. Dashboard에서 `Add New...` 또는 `New Project` 클릭
 3. GitHub repo 목록에서 `ssuAI` 선택
 4. `Import` 클릭
-5. Project 설정에서 `Root Directory`를 아래로 설정
-
-```text
-frontend
-```
+5. Project 설정에서 `Root Directory`를 repository root (`.`)로 둠
 
 6. Framework preset은 Next.js로 자동 인식되는지 확인
 
 체크:
 
 - [ ] Vercel project 생성 시작
-- [ ] Root Directory가 `frontend`
+- [ ] Root Directory가 repository root (`.`)
 
 ---
 

@@ -89,7 +89,7 @@ class McpSelfDogfoodTests {
     }
 
     @Test
-    void clientCanCallLibrarySeatStatusOverMcp() {
+    void librarySeatStatusWithoutSessionReturnsAuthRequiredOverMcp() {
         try (McpSyncClient client = openClient()) {
             client.initialize();
 
@@ -101,9 +101,31 @@ class McpSelfDogfoodTests {
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
             String text = extractText(result);
             assertThat(text)
+                    .contains("\"AUTH_REQUIRED\"")
+                    .contains("\"loginUrl\"")
+                    .contains("\"mcpSessionId\"");
+        }
+    }
+
+    @Test
+    void linkedLibraryClientCanCallSeatStatusOverMcp() {
+        McpAuthSession session = mcpAuthService.createSession();
+        mcpAuthService.linkProvider(session.id(), McpProviderType.LIBRARY, "opaque-library-key");
+
+        try (McpSyncClient client = openClient()) {
+            client.initialize();
+
+            McpSchema.CallToolResult result = client.callTool(
+                    new McpSchema.CallToolRequest(
+                            "get_library_seat_status",
+                            Map.of("floor", 2, "mcp_session_id", session.id().value())));
+
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            String text = extractText(result);
+            assertThat(text)
+                    .contains("\"OK\"")
                     .contains("\"floor\"")
-                    .contains("\"availableSeats\"")
-                    .contains("\"zones\"");
+                    .contains("\"availableSeats\"");
         }
     }
 

@@ -36,3 +36,6 @@ Thumbs.db
 exports/
 meals.json
 weekly-meals-*.json
+
+# Locally rendered emergency deployment manifests
+/deploy/generated/
