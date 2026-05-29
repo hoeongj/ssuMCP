@@ -1,58 +1,51 @@
-# ssuMCP Architecture
+# ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> Current architecture snapshot as of 2026-05-27. Historical design decisions
-> remain under `docs/adr/`.
+> 현재 아키텍처 스냅샷 기준일: 2026-05-27. 과거 설계 결정은 `docs/adr/`에 보존됨.
 
-## Goals of this document
+## 이 문서의 목적
 
-Give a single, scannable view of how ssuMCP is put together: the layers, the
-packages, the runtime processes, and the contracts between them. Anyone
-joining the project (or a reviewer) should be able to read this in five
-minutes and know where any new feature should live.
+ssuMCP가 어떻게 구성되어 있는지 한눈에 파악할 수 있는 단일 뷰를 제공한다: 레이어, 패키지, 런타임 프로세스, 그리고 각 요소 간의 계약. 이 프로젝트에 새로 합류하거나 리뷰하는 사람이 5분 안에 읽고 새 기능이 어디에 위치해야 하는지 알 수 있어야 한다.
 
-## Non-goals
+## 비목표
 
-This document describes the shipped server boundaries and the explicitly
-planned action layer. Detailed tool arguments live in `docs/mcp-tools.md`,
-security rules in `docs/security.md`, and deployment operations in
-`deploy/README.md`.
+이 문서는 출시된 서버 경계와 명시적으로 계획된 action 레이어를 설명한다. 상세한 도구 인자는 `docs/mcp-tools.md`에, 보안 규칙은 `docs/security.md`에, 배포 운영은 `deploy/README.md`에 있다.
 
 ---
 
-## 1. System context
+## 1. 시스템 컨텍스트
 
 ```mermaid
 flowchart LR
     subgraph Clients
-        U1[Student via Web]
-        U2[Student via Chatbot UI]
-        U3[Claude Desktop / IDE MCP client]
+        U1[웹을 통한 학생]
+        U2[챗봇 UI를 통한 학생]
+        U3[Claude Desktop / IDE MCP 클라이언트]
     end
 
-    subgraph ssuMCP["ssuMCP (Spring Boot MCP Server)"]
+    subgraph ssuMCP["ssuMCP (Spring Boot MCP 서버)"]
         REST[REST Controllers]
-        MCP[MCP Server tools]
-        SVC[Service layer]
-        REPO[(JPA Repositories)]
-        CONN[Connectors]
+        MCP[MCP 서버 도구]
+        SVC[서비스 레이어]
+        REPO[(JPA 저장소)]
+        CONN[커넥터]
     end
 
-    subgraph LocalState["Current state stores"]
-        DB[(JPA / H2 by default)]
-        MEM[(In-process caches and session stores)]
+    subgraph LocalState["현재 상태 저장소"]
+        DB[(JPA / H2 기본값)]
+        MEM[(인프로세스 캐시 및 세션 스토어)]
     end
 
-    subgraph School["Soongsil systems"]
-        MEAL[Cafeteria site]
-        LIB[Library site]
+    subgraph School["숭실대 시스템"]
+        MEAL[학식 사이트]
+        LIB[도서관 사이트]
         LMS[LMS]
         USAINT[u-SAINT]
     end
 
     U1 -->|HTTP/JSON| REST
     U2 -->|HTTP/JSON| REST
-    U3 -->|MCP protocol| MCP
+    U3 -->|MCP 프로토콜| MCP
     REST --> SVC
     MCP --> SVC
     SVC --> REPO
@@ -65,134 +58,117 @@ flowchart LR
     CONN --> USAINT
 ```
 
-All pictured upstream integrations are represented by implemented services
-and connector modes. Production selects real or `rusaint` connectors while
-local and test profiles select deterministic mocks.
+그림의 모든 upstream 연동은 구현된 서비스와 커넥터 모드로 표현되어 있다. 프로덕션은 real 또는 `rusaint` 커넥터를 선택하고, 로컬과 테스트 프로파일은 결정적인 mock을 선택한다.
 
 ---
 
-## 2. Runtime topology
+## 2. 런타임 토폴로지
 
-The deployed backend is **one Spring Boot process**. It exposes:
+배포된 백엔드는 **하나의 Spring Boot 프로세스**다. 다음 두 가지를 노출한다:
 
-- A REST API for the web dashboard and chatbot UI.
-- An MCP server (via Spring AI Streamable HTTP `/mcp`) for external clients.
+- 웹 대시보드와 챗봇 UI를 위한 REST API.
+- 외부 클라이언트를 위한 MCP 서버 (Spring AI Streamable HTTP `/mcp`).
 
-Both surfaces share the **same Service layer**, the same Connectors, and the
-same in-process caches/session stores and JPA configuration. There is no
-duplicated connector logic between REST and MCP.
+두 표면은 **동일한 Service 레이어**, 동일한 커넥터, 동일한 인프로세스 캐시·세션 스토어와 JPA 설정을 공유한다. REST와 MCP 사이에 중복된 커넥터 로직이 없다.
 
 ```
 ┌────────────────────────────────────────────┐
-│  ssuMCP Spring Boot application (one JVM)  │
+│  ssuMCP Spring Boot 애플리케이션 (단일 JVM)  │
 │                                            │
 │   ┌───────────┐         ┌──────────────┐   │
-│   │ REST API  │         │ MCP server   │   │
+│   │ REST API  │         │  MCP 서버    │   │
 │   └─────┬─────┘         └──────┬───────┘   │
 │         └──────────┬───────────┘           │
 │                    ▼                       │
-│              Service layer                 │
+│              서비스 레이어                  │
 │                    │                       │
 │       ┌────────────┴────────────┐          │
 │       ▼                         ▼          │
-│  Repositories             Connectors       │
+│  저장소                       커넥터         │
 └───────┬──────────────────────────┬─────────┘
         ▼                          ▼
-   JPA/H2 default            External school
-   + in-process state          systems
+   JPA/H2 기본값             외부 학교 시스템
+   + 인프로세스 상태
 ```
 
-**Why one process for now:** one deployment unit, one config surface, no
-duplicated business logic, fits Spring AI's MCP server support out of the
-box. If load or independent release cadence ever justifies it, the MCP
-server can be split into a separate process — but only after there is a
-real reason to.
+**지금 단일 프로세스인 이유:** 단일 배포 단위, 단일 설정 표면, 중복 없는 비즈니스 로직, Spring AI MCP 서버 지원을 바로 활용 가능. 부하나 독립 릴리즈 주기가 필요해지면 MCP 서버를 별도 프로세스로 분리할 수 있다 — 단, 실제 이유가 생긴 이후에만.
 
 ---
 
-## 3. Layered architecture
+## 3. 레이어드 아키텍처
 
-The project follows the layered structure described in `CLAUDE.md`. The
-short version of who owns what:
+이 프로젝트는 `CLAUDE.md`에 설명된 레이어드 구조를 따른다. 각 레이어의 역할 요약:
 
-- **Controller** — receive HTTP requests, validate request DTOs, call a
-  service, return a response DTO. No business decisions, no DB access, no
-  parsing of school-site HTML.
-- **Service** — application logic, transaction boundaries, deciding cache
-  strategy, combining Repository and Connector results. No browser
-  automation, no SQL strings, no HTML parsing.
-- **Repository** — database access only (Spring Data JPA).
-- **Connector** — every external school-system call. Owns the HTTP client,
-  the Jsoup/Playwright parsing, and the mapping into internal DTOs.
-  Connectors are interfaces with at least one implementation; they must be
-  swappable and testable.
+- **Controller** — HTTP 요청을 받고, 요청 DTO를 검증하고, 서비스를 호출하고, 응답 DTO를 반환한다. 비즈니스 결정을 내리지 않고, DB에 직접 접근하지 않으며, 학교 사이트 HTML을 파싱하지 않는다.
+- **Service** — 애플리케이션 로직, 트랜잭션 경계, 캐시 전략 결정, Repository와 Connector 결과 조합. 브라우저 자동화 없음, SQL 문자열 없음, HTML 파싱 없음.
+- **Repository** — 데이터베이스 접근만 (Spring Data JPA).
+- **Connector** — 모든 외부 학교 시스템 호출. HTTP 클라이언트, Jsoup·Playwright 파싱, 내부 DTO로의 매핑을 담당한다. 커넥터는 최소 두 개 구현체가 있는 인터페이스여야 하며 교체·테스트 가능해야 한다.
 
-A request never crosses a layer it shouldn't. A Controller never calls a
-Connector directly; a Connector never reads from the database.
+요청은 넘어서는 안 되는 레이어를 절대 건너뛰지 않는다. Controller가 Connector를 직접 호출하지 않고, Connector가 데이터베이스를 읽지 않는다.
 
 ---
 
-## 4. Package layout
+## 4. 패키지 레이아웃
 
 ```
 com.ssuai
 ├── global
 │   ├── auth            // JwtProvider, JwtProperties, JwtTokenType, JwtClaims, InvalidJwtException
-│   ├── config          // @Configuration classes — CORS, OpenAPI, TraceId filter, RestClient
-│   ├── exception       // ConnectorException hierarchy, ApiException, GlobalExceptionHandler
+│   ├── config          // @Configuration 클래스 — CORS, OpenAPI, TraceId filter, RestClient
+│   ├── exception       // ConnectorException 계층, ApiException, GlobalExceptionHandler
 │   └── response        // ApiResponse<T> envelope, ErrorResponse
 └── domain
     ├── auth
-    │   ├── controller  // SmartID / LMS SSO callback controllers (web-path auth)
-    │   ├── dto         // Auth request / response DTOs
+    │   ├── controller  // SmartID / LMS SSO 콜백 컨트롤러 (웹 경로 인증)
+    │   ├── dto         // 인증 요청/응답 DTO
     │   ├── lms         // LmsSessionStore (AES-256-GCM, 2h TTL), LmsCredentialLoginService
-    │   ├── mcp         // MCP auth session layer (Task 18)
+    │   ├── mcp         // MCP 인증 세션 레이어 (Task 18)
     │   │   ├── McpAuthSession, McpAuthSessionId, McpProviderLink, McpAuthStateEntry
-    │   │   ├── McpAuthSessionStore (LRU, 4h TTL), McpAuthStateStore (one-time, 10min TTL)
+    │   │   ├── McpAuthSessionStore (LRU, 4h TTL), McpAuthStateStore (일회용, 10min TTL)
     │   │   ├── McpAuthService, McpAuthUrlFactory
     │   │   ├── McpSaintAuthController  // GET /api/mcp/auth/saint/start|callback
     │   │   ├── McpLmsAuthController    // GET /api/mcp/auth/lms/start|callback
     │   │   ├── McpLibraryAuthController // GET /api/mcp/auth/library/start|callback
-    │   │   └── dto  // McpPrivateToolResponse<T>, McpAuthStatusResponse, etc.
-    │   └── saint       // SaintSsoService — SmartID 2-phase SSO (phase1: token, phase2: portal)
+    │   │   └── dto  // McpPrivateToolResponse<T>, McpAuthStatusResponse 등
+    │   └── saint       // SaintSsoService — SmartID 2단계 SSO (phase1: 토큰, phase2: 포털)
     ├── campus          // controller / dto / service — 캠퍼스 시설 검색 (정적 데이터)
     ├── chat
     │   ├── controller  // ChatController — POST /api/chat
     │   ├── config      // LlmChatProperties, ChatMemoryProperties
-    │   ├── dto         // ChatRequest/Response, OpenAI-compatible request/response DTOs
-    │   ├── memory      // ChatConversationStore (in-memory LRU, 30m TTL, 12 turns cap)
+    │   ├── dto         // ChatRequest/Response, OpenAI 호환 요청/응답 DTO
+    │   ├── memory      // ChatConversationStore (인메모리 LRU, 30m TTL, 12 turns cap)
     │   └── service
-    │       ├── ChatService (interface), MockChatService
-    │       ├── LlmChatService  // 10-provider fallback, MCP tool dispatch, secret guard
-    │       └── llm  // LlmProvider (interface), LlmProviderConfig, LlmCompletionRequest/Result
+    │       ├── ChatService (인터페이스), MockChatService
+    │       ├── LlmChatService  // 10개 프로바이더 fallback, MCP 도구 dispatch, secret 가드
+    │       └── llm  // LlmProvider (인터페이스), LlmProviderConfig, LlmCompletionRequest/Result
     ├── dorm            // connector / controller / service — 레지던스홀 기숙사 식단
     ├── library
     │   ├── auth        // LibrarySessionStore (AES-256-GCM, 24h TTL), LibraryCredentialLoginService
     │   │   └── dto
     │   ├── connector   // LibraryBookConnector (mock / real Pyxis JSON API)
-    │   │               // LibrarySeatConnector (mock / real oasis scrape)
+    │   │               // LibrarySeatConnector (mock / real oasis 스크래핑)
     │   │               // LibraryLoansConnector (mock / real)
     │   ├── controller  // LibraryBookController, LibrarySeatController
-    │   ├── dto         // LibraryBook, LibraryBookSearchResponse, LibrarySeatStatusResponse, etc.
-    │   ├── mcp         // LibraryToolContext — ThreadLocal scope (chat path only)
+    │   ├── dto         // LibraryBook, LibraryBookSearchResponse, LibrarySeatStatusResponse 등
+    │   ├── mcp         // LibraryToolContext — ThreadLocal 범위 (챗봇 경로 전용)
     │   └── service     // LibraryBookService (LRU 200, 60s TTL), LibrarySeatService (30s TTL)
     │                   // LibraryLoansService
     ├── lms
     │   ├── connector   // LmsAssignmentsConnector (mock / real — Canvas LMS SSO)
     │   ├── controller  // LmsAssignmentsController — GET /api/lms/assignments
     │   ├── dto         // AssignmentItem, LmsAssignmentsResponse
-    │   ├── mcp         // LmsToolContext — ThreadLocal scope (chat path only)
+    │   ├── mcp         // LmsToolContext — ThreadLocal 범위 (챗봇 경로 전용)
     │   └── service     // LmsAssignmentsService
     ├── mcp
-    │   ├── config      // McpServerConfig — ToolCallbackProvider bean + tool readOnly/destructive annotations
-    │   └── tool        // All @Tool classes (23 tools total — see §11)
-    │                   // McpAuthHelper — shared principalKey lookup + AUTH_REQUIRED factory
+    │   ├── config      // McpServerConfig — ToolCallbackProvider 빈 + tool readOnly/destructive 어노테이션
+    │   └── tool        // 모든 @Tool 클래스 (총 23개 — §11 참조)
+    │                   // McpAuthHelper — 공유 principalKey 조회 + AUTH_REQUIRED 팩토리
     ├── meal
-    │   ├── config      // MealFanOutConfig — parallelStream fan-out for weekly export
-    │   ├── connector   // MealConnector (interface), MockMealConnector, RealMealConnector (Jsoup)
+    │   ├── config      // MealFanOutConfig — 주간 export용 parallelStream fan-out
+    │   ├── connector   // MealConnector (인터페이스), MockMealConnector, RealMealConnector (Jsoup)
     │   ├── controller  // MealController — GET /api/meals/today|weekly
     │   ├── dto         // MealResponse, MealItem, MealRestaurant, MealType, WeeklyMealResponse
-    │   └── service     // MealService + WeeklyMealCache (startup warm + @Scheduled Mon 06:00 KST)
+    │   └── service     // MealService + WeeklyMealCache (시작 시 워밍 + @Scheduled 월 06:00 KST)
     ├── notice
     │   ├── connector   // NoticeConnector (mock / real — scatch.ssu.ac.kr)
     │   │               // DepartmentNoticeConnector (real — ssufid API)
@@ -202,28 +178,26 @@ com.ssuai
     ├── saint
     │   ├── connector   // SaintScheduleConnector, SaintGradesConnector (mock / real / rusaint)
     │   │               // SaintChapelConnector, SaintGraduationConnector, SaintScholarshipConnector
-    │   ├── controller  // SaintScheduleController, SaintGradesController, etc.
-    │   ├── dto         // ScheduleResponse, GradesResponse, ChapelInfo, GraduationRequirements, etc.
-    │   ├── mcp         // SaintToolContext — ThreadLocal scope (chat path only)
+    │   ├── controller  // SaintScheduleController, SaintGradesController 등
+    │   ├── dto         // ScheduleResponse, GradesResponse, ChapelInfo, GraduationRequirements 등
+    │   ├── mcp         // SaintToolContext — ThreadLocal 범위 (챗봇 경로 전용)
     │   └── service     // SaintScheduleService, SaintGradesService, SaintExtendedService
-    │                   // PortalNavigationService — resolves WebDynpro component entry URLs
+    │                   // PortalNavigationService — WebDynpro 컴포넌트 진입 URL 해석
     └── user
         ├── entity      // Student (JPA — studentId PK, name, lastLoginAt)
         ├── repository  // StudentRepository
-        └── service     // StudentService.upsertOnLogin — upsert on SmartID callback
+        └── service     // StudentService.upsertOnLogin — SmartID 콜백 시 upsert
 ```
 
-Rule: **do not create a package before there is code that needs it.** The
-layout above reflects the actual on-disk tree as of Phase 3 complete.
+규칙: **코드가 필요하기 전에 패키지를 먼저 만들지 않는다.** 위 레이아웃은 Phase 3 완료 기준의 실제 온디스크 트리를 반영한다.
 
 ---
 
-## 5. Connector pattern
+## 5. Connector 패턴
 
-This is the most important pattern in the codebase. Every external
-school-system call goes through a Connector.
+이 코드베이스에서 가장 중요한 패턴이다. 모든 외부 학교 시스템 호출은 Connector를 통해 처리된다.
 
-### Shape
+### 형태
 
 ```java
 public interface MealConnector {
@@ -231,18 +205,14 @@ public interface MealConnector {
 }
 ```
 
-For each Connector there are at least two implementations:
+각 Connector에는 최소 두 개의 구현체가 있다:
 
-- `MockMealConnector` — returns deterministic fixture data. **Always present**
-  in the codebase and clearly named `Mock*`. Used by tests, by local dev
-  before the real site is reverse-engineered, and as a fallback worth
-  considering for demos.
-- `RealMealConnector` — real implementation (Jsoup for static pages,
-  Playwright for JS-heavy or login-required pages, plain HTTP for JSON APIs).
+- `MockMealConnector` — 결정적 픽스처 데이터를 반환한다. **항상 코드베이스에 존재**하며 이름이 `Mock*`으로 명확하다. 테스트, 실제 사이트 역공학 전 로컬 개발, 데모 폴백으로 사용된다.
+- `RealMealConnector` — 실제 구현체 (정적 페이지는 Jsoup, JS가 많거나 로그인이 필요한 페이지는 Playwright, JSON API는 순수 HTTP).
 
-### Selection
+### 선택 방식
 
-Profiles and a config property decide which one is wired:
+프로파일과 설정 프로퍼티가 어떤 것을 주입할지 결정한다:
 
 ```yaml
 # application.yml
@@ -253,7 +223,7 @@ ssuai:
     library-seat: mock
 ```
 
-Each implementation is registered with `@ConditionalOnProperty`, e.g.:
+각 구현체는 `@ConditionalOnProperty`로 등록된다:
 
 ```java
 @Component
@@ -261,28 +231,21 @@ Each implementation is registered with `@ConditionalOnProperty`, e.g.:
 class MockMealConnector implements MealConnector { ... }
 ```
 
-Default is `mock` so a fresh checkout runs without any external dependency.
-`application-prod.yml` flips the relevant entries to `real`.
+기본값은 `mock`이므로 외부 의존성 없이 새로운 클론에서 실행 가능하다. `application-prod.yml`이 해당 항목을 `real`로 전환한다.
 
-### Boundaries
+### 경계
 
-- Connectors return **internal DTOs**, never raw HTML, raw JSON, or a
-  `Document` from Jsoup. The "shape of the school's site" stops at the
-  Connector boundary.
-- Connectors throw a typed `ConnectorException` (with subtypes like
-  `ConnectorTimeoutException`, `ConnectorParseException`,
-  `ConnectorUnavailableException`). The Service decides what to do with it
-  — return stale cache, surface a 503, or fall back to mock.
-- Connectors do **not** cache. Caching is a Service-layer concern (see §8).
+- 커넥터는 **내부 DTO**를 반환하며, 원시 HTML·JSON이나 Jsoup의 `Document`를 반환하지 않는다. "학교 사이트의 형태"는 Connector 경계에서 멈춘다.
+- 커넥터는 타입화된 `ConnectorException` (서브타입: `ConnectorTimeoutException`, `ConnectorParseException`, `ConnectorUnavailableException`)을 throw한다. 어떻게 처리할지 결정하는 것은 Service다 — 오래된 캐시 반환, 503 노출, mock으로 폴백.
+- 커넥터는 **캐싱하지 않는다**. 캐싱은 Service 레이어의 역할이다 (§8 참조).
 
 ---
 
-## 6. Standard response & error contract
+## 6. 표준 응답 및 에러 계약
 
-Every REST endpoint returns the same envelope so the frontend, the chatbot,
-and any future client can parse responses uniformly.
+모든 REST 엔드포인트는 동일한 envelope을 반환하므로 프론트엔드, 챗봇, 향후 클라이언트가 응답을 일관되게 파싱할 수 있다.
 
-### Success
+### 성공
 
 ```json
 {
@@ -292,7 +255,7 @@ and any future client can parse responses uniformly.
 }
 ```
 
-### Error
+### 에러
 
 ```json
 {
@@ -305,197 +268,164 @@ and any future client can parse responses uniformly.
 }
 ```
 
-`ApiResponse<T>` lives in `global.response`. A `@RestControllerAdvice` in
-`global.exception` maps exceptions to HTTP status + error code:
+`ApiResponse<T>`는 `global.response`에 있다. `global.exception`의 `@RestControllerAdvice`가 예외를 HTTP 상태 코드 + 에러 코드로 매핑한다:
 
-| Exception                       | HTTP | `error.code`             |
-|---------------------------------|------|--------------------------|
-| `MethodArgumentNotValidException` | 400  | `VALIDATION_FAILED`      |
-| `ApiException` (domain-thrown)  | 4xx  | exception's own code     |
-| `ConnectorTimeoutException`     | 504  | `CONNECTOR_TIMEOUT`      |
-| `ConnectorUnavailableException` | 503  | `CONNECTOR_UNAVAILABLE`  |
-| Anything else                   | 500  | `INTERNAL_ERROR`         |
+| 예외 | HTTP | `error.code` |
+|------|------|--------------|
+| `MethodArgumentNotValidException` | 400 | `VALIDATION_FAILED` |
+| `ApiException` (도메인에서 throw) | 4xx | 예외 자체 코드 |
+| `ConnectorTimeoutException` | 504 | `CONNECTOR_TIMEOUT` |
+| `ConnectorUnavailableException` | 503 | `CONNECTOR_UNAVAILABLE` |
+| 그 외 | 500 | `INTERNAL_ERROR` |
 
-The `traceId` is whatever Micrometer / Spring Boot's observability puts on
-the current request — we propagate it into the response so a user-reported
-error can be looked up in logs.
+`traceId`는 Micrometer·Spring Boot의 관찰성이 현재 요청에 부여한 값이다 — 응답에 포함시켜 사용자가 보고한 에러를 로그에서 조회할 수 있다.
 
 ---
 
-## 7. Caching strategy
+## 7. 캐싱 전략
 
-The cache-aside pattern lives in the **Service layer** (not the
-Connector, not the Controller). Current caches are bounded in-process
-stores suited to the single-JVM deployment; a shared cache may replace
-them only if multi-instance operation requires it.
+캐시-어사이드 패턴은 **Service 레이어** (Connector도, Controller도 아님)에 존재한다. 현재 캐시는 단일 JVM 배포에 적합한 인프로세스 경계 스토어이며, 멀티 인스턴스 운영이 필요해지면 공유 캐시로 교체할 수 있다.
 
-| Data                      | Key                                     | TTL                  | Notes                                                    |
-|---------------------------|-----------------------------------------|----------------------|----------------------------------------------------------|
-| Today's cafeteria meal    | date and restaurant                     | weekly preload/refresh | `WeeklyMealCache`; bulk scrape avoided during chat turns. |
-| Library book search       | normalized query + pagination           | 60 s                  | Public catalog search result cache.                       |
-| Library seat status       | floor + authentication boundary         | 30 s                  | Authenticated data never warms anonymous access.          |
-| SAINT schedule            | student/session scope                   | 1 h                   | Linked personal data only.                                |
+| 데이터 | 키 | TTL | 비고 |
+|--------|-----|-----|------|
+| 오늘 학식 | 날짜 및 식당 | 주간 선적재/갱신 | `WeeklyMealCache`; 채팅 턴 중 대량 스크래핑 방지. |
+| 도서관 도서 검색 | 정규화된 검색어 + 페이지네이션 | 60초 | 공개 카탈로그 검색 결과 캐시. |
+| 도서관 좌석 현황 | 층 + 인증 경계 | 30초 | 인증된 데이터는 익명 접근을 워밍하지 않음. |
+| SAINT 시간표 | 학생/세션 범위 | 1시간 | 연결된 개인 데이터만. |
 
-Keys are namespaced (`<domain>:<entity>:<id>`) so a future bulk-invalidate
-is straightforward.
+키는 네임스페이스(`<domain>:<entity>:<id>`)로 구분되어 향후 일괄 무효화가 간단하다.
 
-Cache misses fall through to the Connector. Connector failures while a stale
-cache value exists are an explicit Service decision; prefer
-returning a 5xx and let the client retry rather than serving stale data
-silently. Reconsider per-feature when real data arrives.
+캐시 미스는 Connector로 연결된다. 오래된 캐시 값이 있는 상태에서 Connector가 실패할 경우, 오래된 데이터를 조용히 제공하는 것보다 5xx를 반환하고 클라이언트가 재시도하도록 하는 것이 명시적인 Service 결정이다. 실제 데이터가 도착하면 기능별로 재검토한다.
 
-### Example implementation — `WeeklyMealCache`
+### 구현 예시 — `WeeklyMealCache`
 
-The cafeteria menu changes once per week. Rather than scrape
-`soongguri.com` on every chat turn or REST request, `WeeklyMealCache`
-preloads the data:
+학식 메뉴는 학교 측에서 주 1회 일괄 갱신된다. 채팅 턴마다 또는 REST 요청마다 `soongguri.com`을 스크래핑하는 대신, `WeeklyMealCache`가 데이터를 선적재한다:
 
-- `@PostConstruct` warms the cache for the current week on application
-  startup (all 6 restaurants × 7 days = 42 entries).
-- `@Scheduled(cron = "0 0 6 ? * MON", zone = "Asia/Seoul")` refreshes
-  the cache every Monday at 06:00 KST.
-- `MealService.getMealForRestaurant(date, restaurant)` is a cache-aside
-  lookup with connector fallback for cache misses (e.g. dates outside
-  the current week).
+- `@PostConstruct`가 애플리케이션 시작 시 현재 주 데이터를 워밍한다 (6개 식당 × 7일 = 42개 항목).
+- `@Scheduled(cron = "0 0 6 ? * MON", zone = "Asia/Seoul")`이 매주 월요일 06:00 KST에 캐시를 갱신한다.
+- `MealService.getMealForRestaurant(date, restaurant)`가 캐시 미스 시 Connector 폴백을 포함한 캐시-어사이드 조회를 수행한다.
 
-Library seat/book and SAINT caching follow the same service-owned boundary.
-For the library seat cache in particular, the key includes whether a request
-is authenticated, so MCP or REST callers without a linked library session
-cannot receive an authenticated caller's cached result.
+도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 특히 도서관 좌석 캐시는 요청이 인증되어 있는지 여부를 키에 포함시켜, MCP나 REST 익명 호출자가 인증된 호출자의 캐시 결과를 받지 못하도록 한다.
 
 ---
 
-## 8. Configuration & profiles
+## 8. 설정 및 프로파일
 
-Three profiles to start:
+세 가지 프로파일:
 
-- `dev` — default for local runs. All connectors `mock`. H2 in-memory by
-  default. Permissive logging.
-- `test` — used by Gradle test tasks. All connectors `mock`. H2 in-memory.
-  No external network.
-- `prod` — real/`rusaint` connectors and deployment-supplied secrets;
-  datasource may be overridden from the H2-compatible default.
+- `dev` — 로컬 실행 기본값. 모든 커넥터 `mock`. H2 인메모리 기본값. 허용적인 로깅.
+- `test` — Gradle 테스트 태스크용. 모든 커넥터 `mock`. H2 인메모리. 외부 네트워크 없음.
+- `prod` — real/`rusaint` 커넥터와 배포에서 공급하는 시크릿. 데이터소스는 H2 호환 기본값에서 오버라이드 가능.
 
-Files: `application.yml` (shared defaults) + `application-{profile}.yml`.
-Secrets are **never** committed. They come from environment variables and
-are referenced as `${ENV_VAR_NAME}` in the YAML.
+파일: `application.yml` (공유 기본값) + `application-{profile}.yml`. 시크릿은 **절대 커밋되지 않는다**. 환경 변수로 제공되며 YAML에서 `${ENV_VAR_NAME}`으로 참조한다.
 
-Personal integrations and LLM providers require secrets. Production supplies
-them as environment variables; development may omit them when using mocks.
+개인 연동과 LLM 프로바이더는 시크릿을 필요로 한다. 프로덕션은 환경 변수로 제공하며, 개발 환경은 mock 사용 시 생략할 수 있다.
 
-| Env var                | Used by         | When           |
-|------------------------|-----------------|----------------|
-| `SSUAI_DB_URL`         | Spring Data JPA | from Task 14 — defaults to in-memory H2 in PostgreSQL mode |
-| `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA | from Task 14 |
-| `SSUAI_REDIS_URL`      | Cache           | reserved for a future distributed cache; current stores are in-process |
-| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9-provider LLM fallback (`LlmProviderConfig`) | live (chat) — each provider optional; chain skips empty keys |
-| `SSUAI_JWT_SECRET`     | `JwtProperties` — HS256 access/refresh signing | from Task 14 — empty default = ephemeral random per restart (dev/test). Prod must set (≥ 32 bytes). |
-| `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | live (prod) |
-| `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | from Task 14 — defaults already point at saint.ssu.ac.kr |
-| `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/library session material | live for stable linked sessions in prod |
+| 환경 변수 | 사용처 | 도입 시점 |
+|-----------|--------|-----------|
+| `SSUAI_DB_URL` | Spring Data JPA | Task 14부터 — 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
+| `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA | Task 14부터 |
+| `SSUAI_REDIS_URL` | 캐시 | 향후 분산 캐시용으로 예약; 현재 스토어는 인프로세스 |
+| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9개 프로바이더 LLM fallback (`LlmProviderConfig`) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
+| `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | Task 14부터 — 빈 기본값 = 재시작마다 임시 랜덤 (dev/test). prod는 반드시 설정 (32바이트 이상). |
+| `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
+| `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
+| `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/도서관 세션 자료 | 프로덕션에서 안정적인 연동 세션을 위해 라이브 |
 
 ---
 
-## 9. Logging & observability
+## 9. 로깅 및 관찰성
 
-What to log on every request:
+모든 요청에서 로깅해야 할 것:
 
-- HTTP method, route, status, latency.
-- `traceId` (same one returned in the response).
-- Connector name and `cache hit | cache miss | connector call` per
-  external interaction.
+- HTTP 메서드, 라우트, 상태 코드, 지연 시간.
+- `traceId` (응답에 반환되는 것과 동일).
+- 커넥터 이름과 `cache hit | cache miss | connector call` per 외부 상호작용.
 
-What **never** to log, ever:
+**절대 로깅하지 않을 것:**
 
-- Student passwords, u-SAINT/LMS credentials, session cookies, tokens.
-- Anything that looks like a student ID, name, or grade.
-- Full request bodies that may contain the above.
+- 학생 비밀번호, u-SAINT·LMS 자격증명, 세션 쿠키, 토큰.
+- 학번, 이름, 성적처럼 보이는 모든 것.
+- 위 내용이 포함될 수 있는 전체 요청 본문.
 
-These rules are repeated in `docs/security.md` — that doc is the source of
-truth; this section is just the architecture-level
-reminder.
+이 규칙은 `docs/security.md`에 반복되어 있다 — 그 문서가 기준 문서이며, 이 섹션은 아키텍처 레벨의 리마인더다.
 
-Liveness check: `/actuator/health` (Spring Boot Actuator). Metrics and
-distributed tracing are deferred until there's something worth measuring.
+상태 확인: `/actuator/health` (Spring Boot Actuator). 메트릭과 분산 트레이싱은 측정할 가치가 생길 때까지 보류.
 
 ---
 
-## 10. End-to-end data flow — `GET /api/meals/today`
+## 10. End-to-end 데이터 흐름 — `GET /api/meals/today`
 
-This shows the service-owned cache pattern used by read endpoints.
+읽기 엔드포인트에서 사용되는 서비스 소유 캐시 패턴을 보여준다.
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (web/chatbot)
+    participant C as 클라이언트 (웹/챗봇)
     participant Ctl as MealController
     participant Svc as MealService
     participant R as WeeklyMealCache
-    participant Conn as MealConnector (mock or real)
-    participant Site as Cafeteria site
+    participant Conn as MealConnector (mock 또는 real)
+    participant Site as 학식 사이트
 
     C->>Ctl: GET /api/meals/today
     Ctl->>Svc: getTodayMeal()
     Svc->>R: GET meal:2026-05-06
-    alt cache hit
+    alt 캐시 히트
         R-->>Svc: DailyMeal JSON
-    else cache miss
+    else 캐시 미스
         Svc->>Conn: fetchMeal(2026-05-06)
-        alt mock profile
-            Conn-->>Svc: fixture DailyMeal
-        else real profile
-            Conn->>Site: HTTP GET menu page
+        alt mock 프로파일
+            Conn-->>Svc: 픽스처 DailyMeal
+        else real 프로파일
+            Conn->>Site: HTTP GET 메뉴 페이지
             Site-->>Conn: HTML
-            Conn-->>Svc: parsed DailyMeal
+            Conn-->>Svc: 파싱된 DailyMeal
         end
-        Svc->>R: SET meal:2026-05-06 TTL=until-midnight
+        Svc->>R: SET meal:2026-05-06 TTL=자정까지
     end
     Svc-->>Ctl: DailyMeal
     Ctl-->>C: ApiResponse<MealResponse>
 ```
 
-Numbered:
+순서:
 
-1. Controller receives the request, validates (nothing to validate here),
-   calls the service.
-2. Service builds the cache key and checks its in-process cache.
-3. On hit, return immediately.
-4. On miss, call the Connector. The Connector is either the mock or the
-   real implementation depending on `ssuai.connector.meal`.
-5. Service stores the result in the service cache with the appropriate refresh policy.
-6. Service returns the internal DTO.
-7. Controller wraps it in `ApiResponse<T>` and returns it.
+1. Controller가 요청을 받고, 검증하며 (여기서는 없음), 서비스를 호출한다.
+2. Service가 캐시 키를 만들고 인프로세스 캐시를 확인한다.
+3. 히트 시 즉시 반환한다.
+4. 미스 시 Connector를 호출한다. Connector는 `ssuai.connector.meal`에 따라 mock 또는 real 구현체다.
+5. Service가 적절한 갱신 정책으로 결과를 캐시에 저장한다.
+6. Service가 내부 DTO를 반환한다.
+7. Controller가 `ApiResponse<T>`로 래핑해 반환한다.
 
-Every later read endpoint should look like this. If a feature can't fit
-the template, that's a signal worth discussing before coding.
+이후의 모든 읽기 엔드포인트는 이 템플릿을 따라야 한다. 기능이 이 템플릿에 맞지 않는다면 코딩 전에 논의할 가치가 있는 신호다.
 
 ---
 
-## 11. MCP integration
+## 11. MCP 연동
 
-The MCP server is a Spring AI feature registered inside the same Spring
-Boot app. Each tool is a method that delegates to a domain Service:
+MCP 서버는 같은 Spring Boot 앱 안에 등록된 Spring AI 기능이다. 각 도구는 도메인 Service에 위임하는 메서드다:
 
 ```
 Claude Desktop / IDE
-        │  (MCP protocol)
+        │  (MCP 프로토콜)
         ▼
-   MCP server (Spring AI)
+   MCP 서버 (Spring AI)
         │
         ▼
-   @Tool methods in domain.mcp.tool
+   domain.mcp.tool의 @Tool 메서드
         │
         ▼
-   Domain Services  ◄───── REST Controllers also call here
+   도메인 서비스  ◄───── REST Controller도 여기를 호출함
         │
         ▼
-   Connectors / Repositories
+   커넥터 / 저장소
 ```
 
-Current tools (23 total — 20 read-only, 3 write):
+현재 도구 (총 23개 — 읽기 전용 20개, 쓰기 3개):
 
-**Public read-only (no auth)**
+**공개 읽기 전용 (인증 불필요)**
 
-| Tool | Domain |
+| 도구 | 도메인 |
 |------|--------|
 | `get_today_meal`, `get_meal_by_date` | `MealService` |
 | `get_dorm_weekly_meal` | `DormMealService` |
@@ -503,18 +433,18 @@ Current tools (23 total — 20 read-only, 3 write):
 | `search_library_book` | `LibraryBookService` |
 | `get_recent_notices`, `search_notices`, `list_notice_categories`, `get_notice_detail`, `get_active_notices`, `get_department_notices` | `NoticeService` |
 
-**Auth management (write — session state)**
+**인증 관리 (쓰기 — 세션 상태)**
 
-| Tool | Notes |
-|------|-------|
-| `get_auth_status` | read-only session check |
-| `start_auth` | creates/looks-up MCP session + issues state token |
-| `logout_provider`, `logout_all` | destructive — invalidates session |
+| 도구 | 비고 |
+|------|------|
+| `get_auth_status` | 읽기 전용 세션 확인 |
+| `start_auth` | MCP 세션 생성/조회 + 상태 토큰 발급 |
+| `logout_provider`, `logout_all` | 파괴적 — 세션 무효화 |
 
-**Private read-only (mcp_session_id required)**
+**개인 읽기 전용 (mcp_session_id 필요)**
 
-| Tool | Provider | Delegates to |
-|------|----------|-------------|
+| 도구 | Provider | 위임 대상 |
+|------|----------|-----------|
 | `get_my_schedule` | SAINT | `SaintScheduleService` |
 | `get_my_grades` | SAINT | `SaintGradesService` |
 | `get_my_chapel_info` | SAINT | `SaintExtendedService` |
@@ -524,103 +454,75 @@ Current tools (23 total — 20 read-only, 3 write):
 | `get_library_seat_status` | LIBRARY | `LibrarySeatService` |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` |
 
-Tool annotations (`McpSchema.ToolAnnotations`) are applied at startup by `McpServerConfig`:
-`readOnlyHint=true` for all 20 read-only tools, `destructiveHint=true` for `logout_provider` / `logout_all`.
-This lets Claude Desktop group tools visually into "Read-only tools" and "Write/delete tools".
+도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 20개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
 
-Rules:
+규칙:
 
-- **MCP tools never bypass the Service layer.** No tool reaches into a
-  Connector or Repository directly. This keeps caching, validation, and
-  error handling consistent across REST and MCP.
-- Tool inputs and outputs are explicit DTOs — no opaque maps, no
-  free-form strings as outputs.
-- Phase 4 write tools (seat reservation, etc.) will follow the
-  `prepare_X` + `confirm_action` two-step pattern with audit logging
-  (see ADR 0015, `docs/mcp-tools.md` §8).
+- **MCP 도구는 절대 Service 레이어를 우회하지 않는다.** 어떤 도구도 Connector나 Repository에 직접 접근하지 않는다. 이를 통해 REST와 MCP에서 캐싱·검증·에러 처리가 일관되게 유지된다.
+- 도구 입력과 출력은 명시적 DTO다 — 불투명한 map이나 출력으로서의 자유 형식 문자열이 없다.
+- Phase 4 쓰기 도구 (좌석 예약 등)는 감사 로깅이 포함된 `prepare_X` + `confirm_action` 2단계 패턴을 따른다 (ADR 0015, `docs/mcp-tools.md` §8 참조).
 
 ---
 
-## 12. Frontend architecture (brief)
+## 12. 프론트엔드 아키텍처 (요약)
 
-- **Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui** for the
-  web dashboard.
-- **TanStack Query** for server state (caching, retries, background
-  revalidation) so the UI stays simple and the backend can stay stateless.
-- Backend URL is read from an env var (`NEXT_PUBLIC_SSUAI_API_BASE`) — no
-  hard-coded hosts.
-- The separate `ssuAI` repository owns dashboard cards, `/chat`, and
-  provider-linking UX for library, SAINT, and LMS data.
-- Product scope and UI decisions live in
-  [ssuAI docs](https://github.com/hoeongj/ssuAI/tree/main/docs); this server
-  document records the server/API boundary.
+- **Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui**로 웹 대시보드를 구현한다.
+- **TanStack Query**로 서버 상태 (캐싱, 재시도, 백그라운드 재검증)를 관리해 UI를 단순하게 유지하고 백엔드를 stateless로 유지한다.
+- 백엔드 URL은 환경 변수(`NEXT_PUBLIC_SSUAI_API_BASE`)에서 읽는다 — 하드코딩된 호스트가 없다.
+- 별도의 `ssuAI` 저장소가 대시보드 카드, `/chat`, 도서관·SAINT·LMS 데이터를 위한 provider 연동 UX를 담당한다.
+- 제품 범위와 UI 결정은 [ssuAI docs](https://github.com/hoeongj/ssuAI/tree/main/docs)에 있으며, 이 서버 문서는 서버/API 경계를 기록한다.
 
 ---
 
-## 13. Testing topology
+## 13. 테스트 토폴로지
 
-Layered tests mirror the layered code:
+레이어드 테스트가 레이어드 코드를 반영한다:
 
-- **Unit tests** — `*Service` classes with Connectors and Repositories
-  mocked. Pure business logic.
-- **Slice tests** — `@WebMvcTest` for Controllers; verifies request
-  validation, response envelope, and HTTP status mapping.
-- **Connector tests** — Jsoup connectors against **fixture HTML** stored
-  under `src/test/resources/fixtures/`. HTTP-based connectors against
-  Spring's `MockRestServiceServer` (RestClient stack) or OkHttp's
-  `MockWebServer` (when raw HTTP / streaming is needed). Tests must be
-  deterministic.
-- **Integration tests** — `@SpringBootTest` with a random web port verifies
-  the Streamable HTTP MCP round trip and auth responses using test-profile
-  mocks.
+- **단위 테스트** — Connector와 Repository를 mock한 `*Service` 클래스. 순수 비즈니스 로직.
+- **슬라이스 테스트** — Controller용 `@WebMvcTest`; 요청 검증, 응답 envelope, HTTP 상태 매핑을 검증한다.
+- **Connector 테스트** — `src/test/resources/fixtures/`에 저장된 **픽스처 HTML**에 대한 Jsoup 커넥터 테스트. HTTP 기반 커넥터는 Spring의 `MockRestServiceServer` (RestClient 스택) 또는 OkHttp의 `MockWebServer` (원시 HTTP·스트리밍이 필요할 때) 사용. 테스트는 결정적이어야 한다.
+- **통합 테스트** — 랜덤 웹 포트의 `@SpringBootTest`가 테스트 프로파일 mock을 사용해 Streamable HTTP MCP 라운드트립과 인증 응답을 검증한다.
 
-Hard rule: **automated tests never call real u-SAINT, real LMS, or any
-authenticated school endpoint.** Manual smoke scripts can, but they live
-outside the CI test suite.
+강제 규칙: **자동화된 테스트는 실제 u-SAINT, 실제 LMS, 또는 인증이 필요한 학교 엔드포인트를 절대 호출하지 않는다.** 수동 스모크 스크립트는 할 수 있지만 CI 테스트 스위트 밖에 있어야 한다.
 
 ---
 
-## 14. Shipped integrations and remaining work
+## 14. 출시된 연동 및 남은 작업
 
-The read and authentication foundation has shipped. Remaining work is
-deliberately limited to new state-changing or delivery capabilities.
+읽기와 인증 기반이 출시되어 있다. 남은 작업은 의도적으로 새로운 상태 변경 또는 전달 기능으로 제한된다.
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-| Capability | Status | Location / contract |
+| 기능 | 상태 | 위치 / 계약 |
 | --- | --- | --- |
-| Library book, seat and loan reads | Shipped | `domain.library`; seat and loans require `LIBRARY` linkage |
-| SAINT academic reads | Shipped | `domain.saint`, `domain.auth.saint`; `SAINT` linkage |
-| LMS assignment reads | Shipped | `domain.lms`, `domain.auth.lms`; `LMS` linkage |
-| MCP browser auth sessions | Shipped | `domain.auth.mcp`; secret `mcp_session_id` handle |
-| **Library seat reservation agent** | Planned | Separate write tools plus confirmation and audit policy |
-| Action MCP infrastructure | Planned | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md) |
-| Notifications / mobile app | Unscheduled | Must reuse current API and security contracts |
+| 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 좌석과 대출은 `LIBRARY` 연동 필요 |
+| SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
+| LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |
+| MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
+| **도서관 좌석 예약 에이전트** | 계획 중 | 별도 write 도구 + 확인 및 감사 정책 |
+| Action MCP 인프라 | 계획 중 | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md) |
+| 알림 / 모바일 앱 | 미정 | 현재 API와 보안 계약 재사용 필요 |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-The **library seat agent is the flagship planned deliverable**. It must not
-ship until confirmation, audit, locking, and secret-handling rules are
-implemented. See
-[ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)
-for the user-facing flow and [`docs/security.md`](security.md) §6 for policy.
+**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. 확인·감사·잠금·시크릿 처리 규칙이 구현되기 전까지 출시할 수 없다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
 
 ---
 
-## 15. MCP auth session (Task 18)
+## 15. MCP 인증 세션 (Task 18)
 
 ### 흐름 개요
 
-외부 MCP client (Claude Desktop, Cursor) 가 private tool 을 호출하면 서버가 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다. 사용자가 브라우저에서 로그인을 완료하면 서버가 provider session 을 저장하고 이후 tool call 이 데이터를 반환한다.
+외부 MCP 클라이언트 (Claude Desktop, Cursor)가 private 도구를 호출하면 서버가 `AUTH_REQUIRED` 응답과 로그인 URL을 반환한다. 사용자가 브라우저에서 로그인을 완료하면 서버가 provider 세션을 저장하고 이후 도구 호출이 데이터를 반환한다.
 
 ```
-MCP client → get_my_schedule(mcp_session_id)
+MCP 클라이언트 → get_my_schedule(mcp_session_id)
                │
                ▼
          McpAuthHelper.principalKey()
                │
        ┌───────┴───────┐
-  session 있음       session 없음
+  세션 있음          세션 없음
        │                  │
   SaintScheduleService    McpAuthHelper.buildAuthRequired()
   .fetchSchedule()        → AUTH_REQUIRED + loginUrl
@@ -669,25 +571,17 @@ domain.mcp.tool
 
 ### 웹 챗봇과의 관계
 
-웹 챗봇 (`LlmChatService`) 은 private tool 을 MCP 경로로 호출하지 않는다.
-SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 session context를
-사용해 해당 service를 직접 호출한다. 외부 MCP client만 `mcp_session_id`를
-tool 인자로 전달한다.
+웹 챗봇 (`LlmChatService`)은 private 도구를 MCP 경로로 호출하지 않는다. SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 세션 컨텍스트를 사용해 해당 서비스를 직접 호출한다. 외부 MCP 클라이언트만 `mcp_session_id`를 도구 인자로 전달한다.
 
-ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`) 은 웹 챗봇 경로에만 남아 있다. MCP private tool 은 ThreadLocal 을 사용하지 않는다 (Task 18 Slice C 이후).
+ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`)은 웹 챗봇 경로에만 남아 있다. MCP private 도구는 ThreadLocal을 사용하지 않는다 (Task 18 Slice C 이후).
 
 ---
 
-## 16. Open questions — resolved
+## 16. 미해결 질문 — 해결됨
 
-All week-1 open questions are now settled (kept here for the design log):
+1주차의 모든 미해결 질문이 정리되었다 (설계 로그를 위해 보존):
 
-- **Response envelope shape** → `{ data, error, traceId }` (`ApiResponse<T>`
-  in `global.response`). Resolved at Task 01.
-- **Trace ID source** → custom `TraceIdFilter` in `global.config`. Resolved
-  at Task 01.
-- **OpenAPI from day 1** → yes, `springdoc-openapi-starter-webmvc-ui` 3.x.
-  Resolved at Task 08; Swagger UI disabled in prod.
-- **`domain.common` package** → not created; duplication has stayed low
-  enough across `meal`/`dorm`/`library`/`campus` that a shared module
-  wasn't worth the indirection.
+- **응답 envelope 형태** → `{ data, error, traceId }` (`global.response`의 `ApiResponse<T>`). Task 01에서 해결.
+- **Trace ID 출처** → `global.config`의 커스텀 `TraceIdFilter`. Task 01에서 해결.
+- **첫날부터 OpenAPI** → 예, `springdoc-openapi-starter-webmvc-ui` 3.x. Task 08에서 해결; Swagger UI는 프로덕션에서 비활성화.
+- **`domain.common` 패키지** → 생성하지 않음; `meal`/`dorm`/`library`/`campus` 전반에 걸쳐 중복이 충분히 낮아 공유 모듈이 간접 참조만 추가할 만한 가치가 없었음.
