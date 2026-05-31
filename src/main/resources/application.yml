@@ -85,6 +85,11 @@ ssuai:
     notice: mock # mock | real
     department-notice: real # mock | real
   library:
+    session:
+      # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream
+      # token survives >1 week without expiry — treating it as effectively
+      # unlimited. 7d covers the common JVM-restart-between-sessions case.
+      ttl: 7d
     seat:
       # Per-floor cache TTL. Short enough that students get fresh data
       # before walking over, long enough that the library page is not

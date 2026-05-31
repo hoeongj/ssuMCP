@@ -67,6 +67,10 @@
   무세션 MCP 응답, 만료 후 재연동, private conversation 유지 테스트를 추가했다.
 - 포트폴리오 포인트: 공개 성격의 집계 데이터라도 upstream 인증 경계와 LLM
   전송 경계를 별도로 검증해야 데이터 노출 경로를 닫을 수 있다.
+- 면접 예상 질문:
+  1. 캐시 키 설계에서 "데이터 동일성"과 "접근 권한 경계"를 어떻게 분리했나요?
+  2. LLM에 전달되는 데이터의 privacy 경계를 서버에서 강제하는 방법을 설명해보세요.
+  3. 공개 집계 데이터가 개인 정보 유출 경로가 될 수 있는 시나리오를 예시로 드세요.
 
 ## 2026-05-24 — MCP transport SSE → Streamable HTTP 후 통합 테스트 CI 실패 (프로퍼티 키 불일치)
 
@@ -92,6 +96,10 @@
     설정 변경은 full-context 통합 테스트 (여기서는 `@SpringBootTest(RANDOM_PORT)`) 가 아니면 잡히지 않는다.
     mock profile 이 CI 의 fast gate 역할을 하지만, 실 transport / 실 MCP 초기화를 검증하는
     smoke test 를 분리 보유하는 이유가 정확히 이 사례다.
+- 면접 예상 질문:
+  1. Spring 설정 변경 시 단위 테스트가 놓칠 수 있는 케이스에는 어떤 것이 있나요?
+  2. mock profile과 실제 컨텍스트 smoke test를 분리 보유해야 하는 이유를 설명하세요.
+  3. @DynamicPropertySource를 사용하는 통합 테스트에서 설정 키 변경이 어떻게 숨겨질 수 있나요?
 
 ---
 
@@ -140,6 +148,10 @@
     팀 합류 면접에서 "framework 의 package-private 를 건드린 적 있나?" 라는 질문에 근거 있는 사례.
   - tool annotation 이 클라이언트 UX (도구 그룹화) 에 직접 영향을 주는 구조 — MCP spec 의
     `annotations` 필드가 실제 Claude 화면에서 어떻게 표현되는지 end-to-end 검증까지 한 사례.
+- 면접 예상 질문:
+  1. @Primary로 auto-configured 빈을 교체할 때 기존 빈의 side-effect를 함께 보존해야 하는 이유는?
+  2. 프레임워크의 package-private 필드를 reflection으로 건드리는 것이 적절한 상황은 언제인가요?
+  3. MCP tool annotations(readOnlyHint, destructiveHint)이 클라이언트 UX에 어떤 영향을 주나요?
 
 ---
 
@@ -160,6 +172,10 @@
 - 포트폴리오 포인트:
   - 대학 보안 장비(WAF)가 세션을 강제 강등시키는 현상을 분석하여 필수 보안 토큰(`WAF`) 누락이 원인임을 밝혀내고 이를 커넥터 헤더에 바인딩하여 우회한 실전 디버깅 사례이다.
   - 고유 서브도메인을 넘나드는 SSO 체인에서 발생할 수 있는 "쿠키 오염(Cookie Pollution)" 현상을 스레드 세이프하고 고립된 `CookieManager`를 갖춘 `HttpClient` 동적 생성 패턴을 설계하여 격리함으로써 완벽히 해소했다.
+- 면접 예상 질문:
+  1. WAF 쿠키 누락이 서버 측에서 세션 강등으로 이어지는 메커니즘을 설명해보세요.
+  2. 멀티 서브도메인 SSO에서 쿠키 오염이 발생하는 원인과 CookieManager 격리로 해결하는 방법은?
+  3. 스레드별로 CookieManager를 분리하는 것이 공유 CookieManager보다 유리한 이유는?
 
 ## 2026-05-21 (정정) — u-SAINT 실패의 실제 원인: 빈 학기 응답을 로그인 실패로 오판
 
@@ -172,6 +188,10 @@
 - 해결: 시간표는 `학년도`/`학기` dropdown 존재를 인증 신호로 사용하고, 성적은 학기별 GPA history 존재를 인증 신호로 사용하도록 변경했다. 실제 데이터 row 유무는 인증 판단에서 분리했다.
 - 검증: 빈 학기 dropdown-only 응답이 gate를 통과하는 테스트와, 로그인 조각처럼 dropdown/history가 없는 응답은 실패하는 테스트를 추가했다. 최종 검증은 Desktop MCP 클라이언트 호출로 `get_my_schedule` / `get_my_grades`가 과거 학기까지 반환하는지 확인해야 한다.
 - 포트폴리오 포인트: stateful WebDynpro 화면에서는 "데이터 컨테이너 존재"가 인증 신호가 아니다. 빈 정상 응답과 로그인 실패 응답을 구분하려면 데이터가 아니라 페이지 구조 신호를 기준으로 삼아야 한다.
+- 면접 예상 질문:
+  1. "데이터 없음"과 "인증 실패"를 구분하기 위한 신호를 어떻게 선정했나요?
+  2. SAP WebDynpro 같은 stateful UI에서 인증 상태를 코드로 판단하는 방법은?
+  3. 빈 정상 응답이 에러처럼 보이는 상황을 재현하는 테스트를 어떻게 작성하나요?
 
 ---
 
@@ -191,6 +211,10 @@
   3. wrapper 이상의 가치: ssuAI가 직접 책임지는 부분은 encrypted session store, cache, DTO normalization, cross-source tools, observability다.
   4. 실패 기록 보존: 이전 Java WebDynpro 시도는 silent rewrite하지 않고 troubleshooting과 ADR에 남긴다.
 - 최종 검증: 2026-05-22 prod 배포 후 `get_my_schedule` / `get_my_grades` 모두 정상 응답 확인.
+- 면접 예상 질문:
+  1. 직접 구현 vs. 검증된 upstream 라이브러리 활용을 결정하는 기준은 무엇인가요?
+  2. Rust 라이브러리를 JVM에서 JNA로 연동할 때 주의해야 할 사항은?
+  3. "무한 추측 fix"를 중단하고 upstream을 채택하기로 결정한 시점의 판단 기준을 설명해보세요.
 
 ## 2026-05-22 — rusaint 배포 후 "Illegal cookie name" — Helm values.yaml connector 값 미변경
 
@@ -200,6 +224,10 @@
 - 해결: `values.yaml`에서 `connectorSaintSchedule: rusaint`, `connectorSaintGrades: rusaint`로 변경 후 commit/push. k8s ConfigMap 직접 패치 + `kubectl rollout restart`로 즉시 적용.
 - 검증: `kubectl get configmap … -o jsonpath='{.data.SSUAI_CONNECTOR_SAINT_SCHEDULE}'` → `rusaint`. 재배포 후 `get_my_grades` / `get_my_schedule` 모두 정상 응답.
 - 포트폴리오 포인트: Spring Boot application.yml 기본값은 k8s ConfigMap env var에 의해 덮어씌워진다. connector를 코드에서 바꿔도 Helm values.yaml을 같이 바꾸지 않으면 prod에서 다른 connector가 로드된다. "새 기능 배포 시 Helm values도 함께 업데이트" 를 체크리스트에 추가해야 한다.
+- 면접 예상 질문:
+  1. Spring Boot application.yml 기본값과 k8s ConfigMap env var의 우선순위 관계를 설명하세요.
+  2. GitOps에서 코드 변경과 Helm values 변경을 동기화하지 않을 때 발생하는 문제 유형은?
+  3. connector 타입 불일치 시 "Illegal cookie name" 같은 전혀 다른 에러로 나타나는 이유는?
 
 ## 2026-05-18 — MCP auth tools 구현 후 서버 등록 누락
 
@@ -222,6 +250,10 @@
 - 포트폴리오 포인트: MCP 서버는 "구현된 class"가 아니라 "클라이언트가 발견 가능한 tool
   contract"가 제품 표면이다. 새 도구를 추가할 때는 service/tool unit test뿐 아니라 MCP
   registry smoke 또는 config regression test를 acceptance criteria에 포함해야 한다.
+- 면접 예상 질문:
+  1. Spring AI MCP tool 등록이 component scan만으로 끝나지 않는 이유를 설명해보세요.
+  2. "구현은 있지만 등록이 누락된" 유형의 버그를 사전에 방지하는 방법은?
+  3. MCP tool list regression test를 acceptance criteria에 포함하는 이유가 무엇인가요?
 
 ---
 
@@ -250,6 +282,10 @@
     수동 추적이 유일한 안전한 선택.
   - 증상이 phase 2 훨씬 뒤인 ECC 403 으로 나타나 원인 위치 특정이 어려웠음. 단계별 진단
     로깅 (MYSAPSSO2 prefix, 4xx 응답 body) 을 추가해가며 범위를 좁히는 과정 자체가 실전 디버깅 사례.
+- 면접 예상 질문:
+  1. HTTP 클라이언트의 "투명한 redirect 추적"이 쿠키 수집 관점에서 불투명한 이유를 설명하세요.
+  2. Redirect.NEVER + 수동 추적이 필요한 경우와 자동 redirect가 안전한 경우를 어떻게 구분하나요?
+  3. 302 체인 중간 hop에서 Set-Cookie가 최종 응답에서 사라지는 메커니즘을 설명하세요.
 
 ---
 
@@ -281,6 +317,10 @@
     드러나는 구조라 각 단계를 커밋으로 격리해 추적.
   - Vercel + Next.js 16 에서 SSO callback 쿠키를 안정적으로 내리는 유일한 패턴: middleware/proxy
     에서 `response.cookies.set()` API 사용. 다른 방법은 전부 Next.js 또는 Vercel 의 어느 레이어가 조용히 제거.
+- 면접 예상 질문:
+  1. Next.js App Router에서 Set-Cookie가 조용히 제거되는 상황과 올바른 API는 무엇인가요?
+  2. 같은 증상이 CORS/redirect/route intercept/framework cookie API 네 개 레이어에 분산된 경우 어떻게 레이어를 격리해서 디버깅하나요?
+  3. Vercel + Next.js에서 SSO 콜백 쿠키를 안정적으로 내리기 위한 필수 패턴은 무엇인가요?
 
 ---
 
@@ -305,6 +345,10 @@
     실서버 smoke test 를 mock 테스트와 별도 단계로 강제해야 한다는 교훈 반복 확인.
   - SAP WebDynpro 패턴: GET → JS bootstrap → Form_Request POST → 렌더 HTML → 이후 SAPEVENTQUEUE
     POST 반복. 이 흐름을 알면 다른 WDA 앱에도 동일하게 적용 가능.
+- 면접 예상 질문:
+  1. User-Agent에 따라 서버가 다른 응답을 반환하는 상황에서 테스트 픽스처의 한계는 무엇인가요?
+  2. SAP WebDynpro의 GET → JS bootstrap → Form_Request POST 흐름을 Java에서 재현하는 방법은?
+  3. "HTML fixture 테스트 모두 통과"가 prod 동작을 보장하지 않는 이유를 사례로 설명하세요.
 
 ---
 
@@ -328,6 +372,10 @@
     TTL 은 데이터 신선도 요구 (시간표는 학기 중 거의 불변) 에서 역산.
   - single-flight 없이 TTL 캐시만 두면 cold start / 캐시 만료 순간 동시 요청이 thundering herd 를
     만들어 외부 서버에 N 배 부하. 단순 캐시와 single-flight 의 차이를 면접에서 설명하기 좋은 사례.
+- 면접 예상 질문:
+  1. single-flight 패턴이 TTL 캐시만 두는 것보다 thundering herd 방지에 효과적인 이유는?
+  2. SaintSessionExpiredException을 캐시에 poison하지 않아야 하는 이유를 설명하세요.
+  3. 외부 시스템이 stateful navigate 구조일 때 요청 수를 N → 1로 줄이기 위한 전략은?
 
 ---
 
@@ -353,6 +401,10 @@
     response field 를 DTO 로 직접 매핑. "문서가 없으면 못한다" 가 아니라 브라우저가 곧 API 문서.
   - 헤더 기반 인증 (`Pyxis-Auth-Token`) 과 쿠키 기반 인증 (`JSESSIONID`) 을 같은 도메인 내에서
     분리 운영하는 구조 이해 — 좌석/검색은 공개 헤더 토큰, 대출/예약은 로그인 세션 쿠키.
+- 면접 예상 질문:
+  1. API 문서가 없는 내부 시스템의 endpoint를 역공학하는 구체적인 방법은?
+  2. 헤더 기반 인증과 쿠키 기반 인증이 같은 도메인에서 공존하는 설계의 의미는?
+  3. needLogin / noRecord처럼 성격이 다른 "비인증" 응답을 코드에서 어떻게 분리하나요?
 
 ---
 
@@ -422,6 +474,10 @@
   - "ConfigMap 누락 + `:latest` 이미지 자동 pull 의 조합으로 prod 가
     CrashLoopBackOff 됐을 때, fail-fast 로그 한 줄로 root cause 즉시
     식별. fail-fast 가 prod 에서 의도대로 의미 있게 동작한 첫 사례."
+- 면접 예상 질문:
+  1. ArgoCD 없이 kubectl apply 수동 운영 시 ConfigMap 누락이 CrashLoopBackOff로 이어지는 과정을 설명하세요.
+  2. 외부 사이트의 HTML 구조 변경에 robust한 파서를 설계하는 방법은? (positional index vs key-based lookup)
+  3. fail-fast 패턴이 실제로 운영에서 도움이 된 구체적인 사례를 설명해보세요.
 
 ---
 
@@ -483,6 +539,10 @@
     파이프라인 (특히 envelope validation 단계) 으로 시선을 옮기는 게
     빠른 진단의 핵심. CORS console error 는 "Network 200, JS catch
     block" 패턴의 정석 단서.
+- 면접 예상 질문:
+  1. CORS preflight 통과, 200 응답, set-cookie 동작임에도 JS에서 response body를 읽을 수 없는 이유는?
+  2. allowCredentials(true)가 반드시 explicit origin과 함께 와야 하는 이유를 브라우저 보안 모델로 설명하세요.
+  3. 백엔드 로그에 흔적이 없는 상황에서 200 응답 + JS catch block 패턴을 어떻게 진단하나요?
 
 ---
 
@@ -522,6 +582,10 @@
     명령 실행 *전에* `kubectl get deployment … -o yaml | grep envFrom`
     을 한 번 돌린 게 정확히 그 cross-check. handoff doc 작성 시
     "확인 명령 한 줄 + 본 명령 한 줄" 패턴이 default.
+- 면접 예상 질문:
+  1. secretRef.optional: true의 보안 장단점을 설명하고 prod에서 적절한 사용 방법은?
+  2. handoff 문서의 명령을 실제 cluster manifest와 cross-check 하지 않으면 어떤 문제가 생기나요?
+  3. k8s Secret 이름 오타가 startup 오류 없이 조용히 통과되는 이유와 이를 잡는 방법은?
 
 ---
 
@@ -542,6 +606,10 @@
   - `MealServiceTests`, `MealMcpToolsTests`, `WeeklyMealCacheTests` 모두 통과.
   - 라이브 배포 후 `오늘 학식 뭐야?` (전체) vs `학생식당 오늘 메뉴` (단일 식당) 두 케이스 모두 정상 응답 확인.
 - 포트폴리오 포인트: "데이터 갱신 주기와 호출 주기를 맞춰 (주 1회 vs 분당 N건) 외부 의존성 RTT 를 응답 경로에서 제거. DB 없이도 cache-aside 패턴으로 회복력 + 응답 속도 동시에 개선. 식당별 도구 분기로 LLM 호출 페이로드 축소 → 모델 응답 품질도 향상."
+- 면접 예상 질문:
+  1. 데이터 갱신 주기와 조회 주기를 분리해서 얻는 구체적인 이점은 무엇인가요?
+  2. @Scheduled + @PostConstruct 패턴으로 캐시를 초기화하는 이유는?
+  3. Redis 없이 in-memory 캐시만으로 외부 의존성 RTT를 응답 경로에서 제거하는 설계를 설명해보세요.
 
 ---
 
@@ -562,6 +630,10 @@
   3. `application.yml` 에 `spring.ai.mcp.client.initialized: false` + `spring.ai.mcp.client.toolcallback.enabled: false`. 첫 chat 요청 시점에 `LlmChatService.discoverChatTools()` 가 `client.initialize() + listTools()` 를 직접 호출 (이미 ADR 0011 구현). `LlmChatService` 생성자 파라미터 `List<McpSyncClient>` 에 `@Lazy` 추가하고 `mcpClient()` 헬퍼 도입 — 빈 자체의 첫 사용 시점도 보수적으로 지연.
 - 검증: `gradlew.bat test` 전체 통과 (LlmChatServiceTests / McpSelfDogfoodTests 회귀 없음). 실서버 `bootRun` 8.6s 에 startup 완료. `POST /api/chat` 에 "오늘 학식 뭐야?" 보내면 실제 학식 메뉴 ("오늘 점심은 학생식당에서 모듬순대국밥...") 한국어 응답 정상.
 - 포트폴리오 포인트: (1) 단위 테스트 100% 통과가 "production 부팅 가능" 을 의미하지 않는 전형적 사례. mock 이 가린 의존성 누락이 3중으로 드러남. (2) Self-dogfood architecture 의 본질적 함정 — 같은 JVM 안에서 client 가 server 를 동기 호출하는 패턴은 SmartLifecycle 순서를 거스르면 deadlock. 해결은 init 을 모두 lazy 로 미루는 것 (Spring AI 의 `initialized` flag + `@Lazy` 주입 + 명시적 ADR 0011 listTools cache). (3) Spring Boot 4 / Spring AI 1.1 같은 신버전 조합은 autoconfig diff 가 크다 — Boot 3.x 에서 당연하던 빈 (`RestClient.Builder`) 이 묵묵히 사라질 수 있음. 모든 신버전 의존성 업그레이드에는 "실서버 부팅 1회 + 핵심 path smoke" 를 mock 테스트와 별도로 강제하는 게 옳다.
+- 면접 예상 질문:
+  1. Spring AI MCP client가 같은 JVM의 서버에 연결할 때 deadlock이 생기는 이유와 @Lazy로 해결하는 방법은?
+  2. Spring Boot 4에서 RestClient.Builder가 자동 등록되지 않는 이유는?
+  3. "단위 테스트 전부 통과 = production 부팅 가능"이 아닌 이유를 이 3중 장애 사례로 설명하세요.
 
 ## 2026-05-13 — chatbot이 자기 MCP server를 HTTP/SSE로 self-dogfood 하도록 전환
 
@@ -571,6 +643,10 @@
 - 해결: `spring-ai-starter-mcp-client` (Spring AI 1.1.6, HttpClient + SSE) 추가. `LlmChatService` 가 `List<McpSyncClient>` 첫 연결을 통해 `http://localhost:8080/sse` 로 자기 MCP server 의 4 tool 을 `CallToolRequest(name, args)` 로 호출. 응답 `TextContent` 를 `JsonNode` 기반으로 compact + 8KB cap. `application-test.yml` 에서 `spring.ai.mcp.client.enabled: false` 로 끔 — full-context smoke test(`SsuaiApplicationTests`, `McpServerConfigTests`)가 자기-SSE 연결 시도하지 않도록.
 - 검증: `gradlew.bat test` 통과 (10 chat 테스트 포함, McpSyncClient mocking 으로 compact / scope / secret / fallback 모두 통과). 수동 `bootRun` + `curl /api/chat` 은 LLM provider api key 환경변수 필요라 별도.
 - 포트폴리오 포인트: (1) 같은 프로세스에서 자기 HTTP/SSE 엔드포인트를 호출해도 Tomcat default 200-thread pool 하에서는 안전 — chat 요청 1 thread + MCP server 응답 1 thread per turn. (2) Spring AI 1.1.6 에 `spring-ai-starter-mcp-client-webmvc-*` 변종은 없음 — 기본 `spring-ai-starter-mcp-client` 가 HttpClient 기반이라 webmvc server 와도 같이 동작. (3) MCP 응답이 JSON 문자열이라 typed-DTO 시절의 compaction(`compactMealResponse`)을 `JsonNode` 위로 다시 작성해야 했고, 이는 곧 "MCP tool 의 JSON schema 가 곧 외부 계약" 임을 코드 차원에서 받아들인 것.
+- 면접 예상 질문:
+  1. same JVM에서 MCP client가 MCP server를 HTTP로 self-dogfood 호출하는 것이 안전한 이유는?
+  2. MCP tool 응답이 JSON 문자열이기 때문에 typed-DTO compaction을 다시 작성해야 했던 이유는?
+  3. self-dogfood 아키텍처의 장점과 chicken-and-egg 초기화 문제를 어떻게 해결했나요?
 
 ## 2026-05-13 — chat CORS preflight가 POST를 막아 chatbot이 브라우저에서 실패
 
@@ -580,6 +656,10 @@
 - 해결: `WebCorsConfig`와 `WebCorsProdConfig`의 `/api/**` allowed methods를 `GET`, `POST`, `OPTIONS`로 맞추고, 두 config 모두 `CorsRegistry` 등록 결과에 `POST`가 포함되는지 단위 테스트로 고정했습니다.
 - 검증: `gradlew.bat test --tests "*WebCors*"`와 `gradlew.bat test`로 확인했습니다.
 - 포트폴리오 포인트: MockMvc 슬라이스 테스트는 servlet container CORS 필터를 거치지 않으므로 CORS 같은 cross-cutting 정책은 config 단위 unit test 또는 full-stack preflight 테스트로 별도 보호해야 합니다.
+- 면접 예상 질문:
+  1. MockMvc 슬라이스 테스트가 servlet container CORS 필터를 통과하지 않는 이유는?
+  2. CORS allowedMethods 목록에서 POST를 빠뜨릴 때 어떤 증상이 나타나나요?
+  3. CORS 정책 변경에 대한 regression test를 어떻게 구성하면 효과적인가요?
 
 ## 2026-05-12 — chatbot tool-call fan-out과 출력 토큰 budget 보강
 
@@ -589,6 +669,10 @@
 - 해결: `SSUAI_LLM_MAX_TOKENS` 기본값을 400으로 낮추고 env/Helm 값으로 노출했습니다. `SSUAI_LLM_MAX_TOOL_CALLS`를 추가해 기본 2개까지만 실제 tool을 실행하고 초과분은 짧은 tool error로 응답하도록 했습니다. Tool schema는 static으로 재사용하고, 시설 검색 tool 설명을 빈 query 금지로 맞췄습니다.
 - 검증: `backend/gradlew.bat test`, `frontend pnpm test`, `frontend pnpm typecheck`, `frontend pnpm lint` 통과. Helm lint는 로컬 Windows 환경에 `helm`이 없어 실행하지 못했습니다.
 - 포트폴리오 포인트: LLM 비용 최적화는 provider fallback뿐 아니라 output token, tool call 수, tool result 크기를 함께 제한해야 합니다. 모델이 과하게 tool을 호출해도 backend가 request-level budget을 강제하는 구조로 바꾼 사례입니다.
+- 면접 예상 질문:
+  1. LLM 호출 비용 최적화에서 output token, tool call 수, tool result 크기를 함께 제한해야 하는 이유는?
+  2. max-tool-calls 같은 request-level budget을 환경변수로 노출하는 이점은?
+  3. LLM이 과하게 tool을 호출하는 상황에서 backend가 budget을 강제하는 패턴을 설명하세요.
 
 ## 2026-05-12 — Claude/Codex hand-off가 비어 있으면 작업 루프가 멈춤
 
@@ -598,6 +682,10 @@
 - 해결: `AGENTS.md`와 `CLAUDE.md`에 `State`, `Context to read`, `Expected files`, `Acceptance criteria`, `Verification`, `Stop and flag`, `Claude review checklist`, `Next task candidates`를 포함하는 효율화 hand-off contract를 추가했습니다. 이후 Codex가 `.codex/last-result.md`를 남기고 Claude가 이를 검증하도록 result hand-off도 추가했습니다.
 - 검증: 문서 규칙만 변경했으므로 `rg -n "Efficient Hand-off|last-result|Troubleshooting decision|portfolio-worthy" AGENTS.md CLAUDE.md TROUBLESHOOTING.md .github/pull_request_template.md`로 새 규칙이 양쪽 역할 문서와 로그에 반영된 것을 확인합니다.
 - 포트폴리오 포인트: AI 협업 workflow도 interface contract처럼 관리해야 합니다. 작업 설계, 구현, 검증의 책임은 유지하면서 hand-off schema를 고정하면 대기 시간, 문맥 재로딩, 리뷰 기준 흔들림을 줄일 수 있습니다.
+- 면접 예상 질문:
+  1. AI 협업 workflow에서 hand-off 스키마를 고정하는 것이 왜 중요한가요?
+  2. 구현 결과를 last-result.md에 남기는 패턴이 없을 때 어떤 문제가 생기나요?
+  3. 역할 분리된 AI 협업(설계 + 구현)의 실제 장단점을 경험 기반으로 설명해보세요.
 
 ## 2026-05-12 — ArgoCD Image Updater helmvalues 경로와 CRD dry-run 한계
 
@@ -607,6 +695,10 @@
 - 해결: `write-back-target`을 chart 내부 파일 기준인 `helmvalues:values.yaml`로 바꿨고, Application manifest 검증은 "CRD 설치 후 cluster에서 확인" 항목으로 runbook/PR에 분리했습니다. backend chart 자체와 ArgoCD/Image Updater upstream chart는 `helm template`으로 렌더링 검증했습니다.
 - 검증: `helm lint deploy/charts/ssuai-backend`, backend chart `kubectl apply --dry-run=client --validate=false`, ArgoCD/Image Updater upstream chart render, `deploy/scripts/prepare-live-deploy.ps1` temp render, GitHub PR #43 CI/gitleaks가 모두 통과했습니다.
 - 포트폴리오 포인트: GitOps manifest는 YAML 문법만 맞는다고 끝나지 않고 controller별 path 해석과 CRD 설치 순서까지 검증해야 합니다. 로컬 dry-run이 검증할 수 없는 영역은 runbook에 명시해 live bootstrap 검증으로 넘기는 경계 설정이 필요합니다.
+- 면접 예상 질문:
+  1. ArgoCD Image Updater의 helmvalues write-back target 경로가 repo root 기준이 아닌 이유는?
+  2. kubectl apply --dry-run=client가 ArgoCD Application 같은 CRD를 검증하지 못하는 이유는?
+  3. GitOps manifest 변경 중 "로컬 검증"과 "cluster 검증" 경계를 어떻게 나누나요?
 
 ## 2026-05-12 — chatbot fallback이 한 질문에서 과도한 LLM 호출을 만들 수 있음
 
@@ -616,6 +708,10 @@
 - 해결: API key가 없는 provider는 순회하지 않도록 하고, `SSUAI_LLM_MAX_PROVIDER_ATTEMPTS`, `SSUAI_LLM_MAX_MODELS_PER_PROVIDER`, `SSUAI_LLM_AVAILABILITY_VERIFICATION_PASSES`로 fallback 폭을 제한했습니다. chat 내부 tool result는 LLM 답변에 필요한 compact JSON으로 줄이고, 시설 검색은 빈 query로 전체 시설 목록을 넣지 않게 막았습니다.
 - 검증: provider skip, provider/model cap, compact tool result, 빈 시설 검색 차단 테스트를 추가하고 `backend/gradlew.bat test`로 확인했습니다.
 - 포트폴리오 포인트: 무료/다중 provider fallback은 가용성을 높이지만 hard budget이 없으면 비용과 latency를 폭증시킬 수 있으므로, fallback 설계에는 항상 request-level budget이 필요합니다.
+- 면접 예상 질문:
+  1. 무료 multi-provider fallback에서 hard budget이 없을 때 발생하는 비용 문제를 설명하세요.
+  2. availability-verification-passes를 너무 높게 설정하면 어떤 문제가 생기나요?
+  3. tool result compaction이 LLM 호출 비용에 미치는 영향은?
 
 ## 2026-05-12 — OpenRouter free/ZDR fallback만으로는 chatbot 가용성이 부족함
 
@@ -625,6 +721,10 @@
 - 해결: chatbot LLM 호출을 `LlmProvider` abstraction으로 분리하고 Gemini/Groq/OpenRouter 외에 Groq, Cerebras, DeepInfra, SambaNova, Nscale, Fireworks, Hugging Face, Mistral direct provider fallback을 추가했습니다. 일반 요청은 public pool을 먼저 쓰고, 모두 실패하면 private pool까지 이어서 사용하도록 했습니다. 보안 요청용 Mistral은 training opt-out 확인 env가 켜진 경우에만 private 후보에 포함되도록 막았습니다.
 - 검증: `backend/gradlew.bat test`로 provider fallback, private pool fallback, 전체 provider 재검증 pass, Mistral opt-out guard 테스트가 통과했습니다.
 - 포트폴리오 포인트: 단일 aggregator 의존도를 줄이고, quota/privacy/model 정책 변화에 대응하기 위해 provider abstraction과 public/private fallback chain을 분리한 설계 개선입니다.
+- 면접 예상 질문:
+  1. OpenRouter aggregator 단일 의존도를 줄이기 위해 direct provider를 추가할 때의 트레이드오프는?
+  2. privacy 조건(ZDR, data_collection=deny)과 tool calling 지원을 동시에 만족하는 모델이 적은 이유는?
+  3. public/private provider pool을 분리하는 설계에서 보안 경계를 어떻게 정의했나요?
 
 ## 2026-05-12 — LLM API key를 모델별이 아니라 provider별 secret으로 관리
 
@@ -634,6 +734,10 @@
 - 해결: key는 모델별이 아니라 provider별 env var로만 관리하도록 정리했습니다. `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY`를 `.env.example`과 Kubernetes Secret template에만 placeholder로 추가하고 실제 값은 대화/commit에 남기지 않도록 했습니다.
 - 검증: 실제 key 없이도 mock profile과 test profile이 동작하며, `backend/gradlew.bat test`가 통과했습니다. 배포 쪽은 `envFrom.secretRef`를 통해 Secret 값을 주입하는 기존 패턴을 유지했습니다.
 - 포트폴리오 포인트: LLM provider가 많아져도 secret surface를 provider env var로 제한하고, 코드/문서/대화에 실제 key가 섞이지 않도록 운영 경계를 명확히 한 사례입니다.
+- 면접 예상 질문:
+  1. LLM 모델별 API key와 provider별 API key의 차이를 설명하세요.
+  2. 실제 API key가 코드/문서/대화에 섞이지 않도록 운영 경계를 설정하는 방법은?
+  3. env var 방식의 secret 주입이 하드코딩보다 유리한 이유를 k8s 관점에서 설명하세요.
 
 ## 2026-05-12 — 일반 요청 fallback이 public pool에서 멈출 수 있던 설계 보완
 
@@ -643,6 +747,10 @@
 - 해결: `LlmChatService`의 fallback 대상을 `ProviderAttempt(provider, privacyMode)` 목록으로 바꿨습니다. 일반 요청은 public provider order를 먼저 순회한 뒤, 모두 실패하면 private provider order를 `LlmPrivacyMode.PRIVATE`로 이어서 순회합니다. 보안 요청은 처음부터 private order만 사용합니다.
 - 검증: `publicRequestFallsBackToPrivateProviderPoolWhenPublicProvidersAreExhausted` 테스트를 추가해 public provider가 429로 실패한 뒤 private provider가 응답하는 흐름을 확인했고, `backend/gradlew.bat test`가 통과했습니다.
 - 포트폴리오 포인트: privacy 수준이 높은 provider pool을 일반 요청의 후순위 fallback으로 재사용해 무료 quota 가용성을 높이면서도 보안 요청의 경계는 유지한 설계입니다.
+- 면접 예상 질문:
+  1. ProviderAttempt(provider, privacyMode) 추상화로 얻는 이점은?
+  2. 일반 요청이 private provider pool을 후순위로 사용해도 보안 경계를 유지할 수 있는 이유는?
+  3. privacy 수준이 높은 pool을 일반 요청의 fallback으로 재사용할 때 고려해야 할 점은?
 
 ## 2026-05-12 — fallback 재검증 pass가 provider 내부에만 적용되던 문제
 
@@ -652,6 +760,10 @@
 - 해결: model fallback은 `OpenAiCompatibleProvider`가 한 번만 담당하게 하고, `availability-verification-passes`는 `LlmChatService`의 전체 provider attempt loop 바깥으로 옮겼습니다. 이제 전체 provider/model 후보를 한 바퀴 돈 뒤 설정된 횟수만큼 처음 후보부터 다시 확인합니다.
 - 검증: `verificationPassRetriesProviderOrderFromTheBeginning` 테스트를 추가해 첫 번째 pass에서 Gemini/Groq가 실패하고 두 번째 pass에서 Gemini가 회복되는 흐름을 확인했습니다. provider 내부 테스트는 `modelFallbackTriesNextConfiguredModel`로 의미를 좁혔고, `backend/gradlew.bat test`가 통과했습니다.
 - 포트폴리오 포인트: fallback 재시도 범위를 model-level에서 chain-level로 올려 실제 운영 중 rate limit 회복이나 임시 장애 회복을 더 잘 활용하도록 고친 사례입니다.
+- 면접 예상 질문:
+  1. model-level fallback과 chain-level fallback recheck의 차이를 설명하세요.
+  2. rate limit 회복이나 임시 장애 회복을 더 잘 활용하기 위한 재검증 전략은?
+  3. fallback 재검증 범위를 provider 내부에서 전체 chain 수준으로 올릴 때의 장단점은?
 
 ## 2026-05-12 — LLM fallback 설계 변경 기록이 즉시 남지 않았음
 
@@ -661,6 +773,10 @@
 - 해결: OpenRouter free/ZDR 한계, provider별 secret 관리, public/private fallback 연결, 전체 provider 재검증 로직을 각각 troubleshooting 항목으로 분리해 추가했습니다.
 - 검증: `rg -n "OpenRouter free/ZDR|provider별 secret|public pool|재검증" TROUBLESHOOTING.md`로 오늘 추가한 항목들이 검색되는 것을 확인했습니다.
 - 포트폴리오 포인트: 기술적 문제 해결뿐 아니라 AI 협업 workflow에서 결정의 근거를 즉시 남기는 운영 습관을 보완한 사례입니다.
+- 면접 예상 질문:
+  1. 코드 구현과 troubleshooting 기록을 같은 turn에서 완료해야 하는 이유는?
+  2. AI 협업에서 결정의 근거를 즉시 남기지 않으면 어떤 문제가 생기나요?
+  3. 포트폴리오 관점에서 "왜 이 결정을 했는가"를 기록하는 것이 중요한 이유는?
 
 ## 2026-05-11 — local pre-commit hook이 gitleaks 미설치로 실패
 
@@ -670,6 +786,10 @@
 - 해결: 먼저 `rg`로 private key, bearer token, DuckDNS token 실값, `SSUAI_*` secret 패턴을 수동 점검했고 실제 secret은 없었습니다. 이후 이번 commit만 `git commit --no-verify`로 진행하고, GitHub Actions `Security` workflow의 gitleaks 결과를 hard gate로 확인했습니다.
 - 검증: push 후 `Security` workflow가 success로 완료됐습니다.
 - 포트폴리오 포인트: local hook은 개발자 편의 계층이고 CI secret scanning이 최종 gate입니다. local 도구 미설치로 작업이 막혀도 수동 점검 + CI hard gate를 분리해 안전하게 처리했습니다.
+- 면접 예상 질문:
+  1. local pre-commit hook과 CI secret scanning 중 어느 것이 최종 보안 gate이어야 하는 이유는?
+  2. --no-verify를 사용하기 전에 수동 secret 점검을 해야 하는 이유는?
+  3. gitleaks 같은 local 도구가 없을 때 commit 전 secret 확인하는 대안적인 방법은?
 
 ## 2026-05-11 — OpenAPI 추가 중 Spring Boot 4 테스트 API 변경
 
@@ -679,6 +799,10 @@
 - 해결: `TestRestTemplate` 방식 대신 기존 controller tests와 맞는 `MockMvc` 기반으로 바꾸고, Boot 4 패키지인 `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc`를 사용했습니다.
 - 검증: `backend/gradlew.bat test` 통과, GitHub `CI` success, live `/v3/api-docs`에서 `openapi=3.1.0`, title `ssuAI Backend API`, path 4개 확인.
 - 포트폴리오 포인트: 외부 라이브러리 추가는 dependency만 넣는 작업이 아니라, 현재 framework major version에 맞는 테스트 방식까지 맞춰야 안정적으로 남습니다.
+- 면접 예상 질문:
+  1. Spring Boot major 버전 업그레이드 시 자동으로 바뀌는 auto-config에서 주의해야 할 항목은?
+  2. TestRestTemplate 대신 MockMvc를 선택한 이유를 Boot 4 맥락에서 설명하세요.
+  3. 외부 라이브러리 추가 시 dependency 외에 반드시 확인해야 할 사항은?
 
 ## 2026-05-11 — 주간 식단 조회의 7일 순차 호출 병목
 
@@ -688,6 +812,10 @@
 - 해결: 날짜 단위 전용 `weeklyMealFanOutExecutor`를 추가하고, 기존 식당별 `mealFanOutExecutor`와 분리했습니다. 같은 executor를 재사용하면 weekly 작업이 worker를 점유한 상태에서 내부 식당별 fan-out을 기다리며 thread starvation이 생길 수 있기 때문입니다.
 - 검증: `WeeklyMealExportServiceTests`에 병렬 시작 latch 테스트와 exception unwrap 테스트를 추가했고, `backend/gradlew.bat test`, `pnpm --dir frontend test`, `typecheck`, `lint`, `build`가 통과했습니다.
 - 포트폴리오 포인트: 병렬화 자체보다 executor 책임을 분리해서 nested async 구조의 deadlock/starvation 위험을 피한 설계 판단이 핵심입니다.
+- 면접 예상 질문:
+  1. 두 레벨의 병렬 fan-out(날짜 × 식당)에서 executor를 분리해야 하는 이유는?
+  2. 같은 executor를 nested async에서 재사용하면 thread starvation이 생기는 메커니즘은?
+  3. CompletableFuture 기반 병렬화에서 exception을 안전하게 unwrap하는 방법은?
 
 ## 2026-05-11 — GitHub Actions polling으로 인한 AI token 과다 소모 위험
 
@@ -710,6 +838,10 @@
 - 포트폴리오 포인트: AI coding workflow에서도 CI 관찰 방식은 비용/성능 문제를
   만들 수 있으므로, one-shot status check와 짧은 로그 요약이 운영 규칙으로
   필요합니다.
+- 면접 예상 질문:
+  1. gh run watch 대신 one-shot 조회를 써야 하는 이유를 AI workflow 비용 관점에서 설명하세요.
+  2. CI 실패 로그를 전체가 아닌 마지막 50~100줄만 읽는 것이 효과적인 이유는?
+  3. AI coding workflow에서 "long-running polling"을 피해야 하는 구체적인 이유는?
 
 ## 2026-05-11 — Public Live Rollout 완료
 
@@ -733,6 +865,10 @@
   - Claude connector에서 MCP tool 4개가 모두 보였습니다.
 - 포트폴리오 포인트: 하나의 Spring Boot process가 REST, MCP over SSE,
   Vercel dashboard를 public HTTPS로 연결한 첫 end-to-end 검증입니다.
+- 면접 예상 질문:
+  1. MCP server가 올바르게 배포됐는지 확인하기 위한 end-to-end 검증 항목은?
+  2. 체크리스트의 placeholder와 실제 운영 값이 다를 때 생기는 문제를 어떻게 방지하나요?
+  3. Spring Boot 단일 프로세스에서 REST, MCP, 웹 대시보드를 동시에 서빙하는 아키텍처의 장단점은?
 
 ## 2026-05-11 — Vercel frontend는 열렸지만 backend/CORS 검증이 필요했음
 
@@ -749,6 +885,10 @@
   dashboard endpoint가 모두 `200 OK`를 반환했습니다.
 - 포트폴리오 포인트: CORS는 origin 없는 직접 curl이 아니라 실제 배포
   브라우저 origin으로 검증해야 합니다.
+- 면접 예상 질문:
+  1. static HTML 배포 후 client-side loading만 보일 때 확인해야 할 항목들은?
+  2. CORS 검증을 Origin 없는 curl이 아닌 실제 배포 origin으로 해야 하는 이유는?
+  3. NEXT_PUBLIC_ 환경변수가 번들에 올바르게 포함됐는지 확인하는 방법은?
 
 ## 2026-05-11 — HEAD 기반 CORS 검증이 false negative를 만들었음
 
@@ -764,6 +904,10 @@
   allow-origin header를 반환했습니다.
 - 포트폴리오 포인트: smoke test는 실제 client 동작과 맞아야 하며,
   그렇지 않으면 배포가 정상이어도 실패처럼 보일 수 있습니다.
+- 면접 예상 질문:
+  1. smoke test가 실제 client 동작과 일치해야 하는 이유를 구체적인 사례로 설명하세요.
+  2. HEAD 요청과 GET 요청에 대한 CORS 처리 방식이 다를 수 있는 이유는?
+  3. 배포 검증 스크립트가 실제 프로덕션 트래픽과 달라서 false negative를 낼 수 있는 케이스는?
 
 ## 2026-05-11 — PowerShell `$Host` parameter 충돌
 
@@ -779,6 +923,10 @@
   directory를 넣어 script를 실행했고 manifest 생성이 성공했습니다.
 - 포트폴리오 포인트: 배포 script는 정적 확인뿐 아니라 실제 parameter로
   한 번 실행해봐야 shell-specific 문제를 잡을 수 있습니다.
+- 면접 예상 질문:
+  1. PowerShell automatic variable($Host, $Error 등)과 충돌하는 parameter 이름을 피하는 방법은?
+  2. refactoring 중 rename이 부분적으로만 적용됐을 때 어떻게 검증하나요?
+  3. 배포 script를 작성할 때 "정적 문법 확인" 외에 반드시 해야 하는 것은?
 
 ## 2026-05-11 — Claude MCP connector 등록 의미 정리
 
@@ -795,6 +943,10 @@
   `search_campus_facilities` 4개 tool이 모두 표시됐습니다.
 - 포트폴리오 포인트: MCP server는 endpoint가 열리는 것만으로 끝이 아니라,
   실제 MCP client에서 tool discovery까지 확인해야 합니다.
+- 면접 예상 질문:
+  1. MCP tool discovery 검증이 단순 endpoint health check와 다른 이유는?
+  2. "배포 목적"과 "smoke test 목적"의 MCP client 등록 단계를 어떻게 구분하나요?
+  3. MCP server의 tool 목록이 client에 올바르게 노출됐는지 확인하는 방법은?
 
 ## 2026-05-11 — 스낵코너가 generic `메뉴` row 때문에 parse failure로 보였음
 
@@ -812,6 +964,10 @@
 - 포트폴리오 포인트: scraping 문제는 selector가 틀려서만 생기지 않습니다.
   같은 HTML 구조 안에서도 source가 다른 의미 라벨을 쓰면 domain model을
   조정해야 합니다.
+- 면접 예상 질문:
+  1. scraping에서 "selector 실패"와 "source 측의 의미 있는 다른 구조"를 어떻게 구분하나요?
+  2. 도메인 모델에 ALL_DAY 같은 예외 케이스를 추가할 때 고려해야 할 하위 호환성 이슈는?
+  3. 여러 식당 소스에서 동일한 DTO로 데이터를 정규화하는 전략은?
 
 ## 2026-05-11 — Dependabot Tailwind major PR이 CI에서 실패
 
@@ -826,6 +982,10 @@
   `tailwind.config.ts` 타입 오류로 fail임을 확인했습니다.
 - 포트폴리오 포인트: Dependabot은 업데이트 감지와 PR 생성 자동화 도구이지,
   major framework migration을 사람 검토 없이 대신해주는 도구가 아닙니다.
+- 면접 예상 질문:
+  1. Dependabot이 자동 머지하기 안전한 업데이트와 그렇지 않은 업데이트를 구분하는 기준은?
+  2. major framework 버전 업그레이드를 별도 task로 분리해야 하는 이유는?
+  3. CI를 "automatic merge safety gate"로 활용할 때의 한계는?
 
 ## 2026-05-09 — 실제 API key 도입 전 secret scanning 추가
 
@@ -839,6 +999,10 @@
   설치되어 있지 않아 local hook 검증은 환경 의존으로 남았습니다.
 - 포트폴리오 포인트: 실제 AI provider key가 들어오기 전에 보안 guardrail을
   먼저 깔아둔 순서가 중요합니다.
+- 면접 예상 질문:
+  1. secret 방지 guardrail을 "실제 key가 생기기 전"에 추가해야 하는 이유는?
+  2. gitleaks .toml에서 false positive를 줄이는 방법은?
+  3. local hook과 CI pipeline secret scanning 중 어느 것을 최종 gate로 설계해야 하나요?
 
 ## 2026-05-09 — frontend component test infrastructure 부족
 
@@ -853,6 +1017,10 @@
   통과했습니다.
 - 포트폴리오 포인트: public demo dashboard의 주요 UI state를 component
   level에서 검증할 수 있게 됐습니다.
+- 면접 예상 질문:
+  1. Vitest에서 React + jsdom 환경 설정이 필요한 이유는?
+  2. React Query를 사용하는 컴포넌트를 테스트할 때 provider 래핑이 필요한 이유는?
+  3. loading/success/error state를 컴포넌트 레벨에서 테스트하는 것이 중요한 이유는?
 
 ## 2026-05-07 — Meal fan-out 성능 병목
 
@@ -865,6 +1033,10 @@
 - 검증: export 시간이 약 26초로 줄었습니다.
 - 포트폴리오 포인트: 병목을 찾아내되 crawling etiquette은 유지하고, 안전한
   범위에서만 병렬화한 성능 개선 사례입니다.
+- 면접 예상 질문:
+  1. rate-limit state를 식당 code 단위로 분리하는 것이 전체 synchronized 방식보다 나은 이유는?
+  2. crawling etiquette을 유지하면서 병렬화하는 안전한 범위를 결정하는 기준은?
+  3. fan-out 정책을 connector에서 service layer로 올리는 것의 의미는?
 
 ## 2026-05-07 — Connector exception log의 디버깅 정보 부족
 
@@ -878,6 +1050,10 @@
   보존하게 됐습니다.
 - 포트폴리오 포인트: 사용자에게 보이는 error message와 운영자가 보는 log는
   목적이 다르므로 둘 다 별도로 설계해야 합니다.
+- 면접 예상 질문:
+  1. 사용자에게 보이는 error message와 서버 운영 log가 목적이 다른 이유를 설명하세요.
+  2. connector 로그에 restaurant, date 같은 context를 항상 포함해야 하는 이유는?
+  3. "충분한 debug context"와 "개인 정보 제외"를 logging에서 동시에 달성하는 방법은?
 
 ## 2026-05-07 — 일부 식당 실패가 전체 학식 API를 비우던 구조
 
@@ -892,6 +1068,10 @@
   표시하고, 모든 식당이 실패할 때만 error를 올립니다.
 - 포트폴리오 포인트: connector boundary를 명확히 해서 하나의 downstream
   실패가 전체 사용자 경험을 무너뜨리지 않게 만든 설계 개선입니다.
+- 면접 예상 질문:
+  1. partial failure를 전체 실패처럼 표현하는 것의 UX 문제는?
+  2. connector를 (date, restaurant) 단일 조회 contract로 만드는 것의 장점은?
+  3. aggregation/partial failure 정책을 service layer에서 관리하는 이유는?
 
 ## 2026-05-07 — 기숙사 식단 사이트는 별도 connector 전략이 필요했음
 
@@ -905,6 +1085,10 @@
   HTTP failure mapping을 검증합니다.
 - 포트폴리오 포인트: premature abstraction을 피해서 connector를 단순하고
   testable하게 유지한 사례입니다.
+- 면접 예상 질문:
+  1. "도메인이 같아도 source가 다르면 connector를 분리해야 한다"는 원칙의 실제 이유는?
+  2. EUC-KR 인코딩 처리가 필요한 legacy 사이트를 scraping할 때 주의사항은?
+  3. premature abstraction을 피하면서 connector를 단순하게 유지하는 설계 원칙은?
 
 ## 2026-05-07 — Export runner가 API server를 실수로 종료할 위험
 
@@ -918,6 +1102,10 @@
 - 검증: 일반 dev/prod API profile에서는 one-shot runner가 등록되지 않습니다.
 - 포트폴리오 포인트: process를 종료하는 batch job은 단일 boolean보다 강한
   실행 gate가 필요합니다.
+- 면접 예상 질문:
+  1. Spring Boot에서 API server와 batch runner를 같은 프로세스에서 격리하는 전략은?
+  2. @Profile + enabled flag 이중 gate가 단일 boolean보다 안전한 이유는?
+  3. process를 종료하는 one-shot runner의 실행 조건을 얼마나 엄격하게 설정해야 하나요?
 
 ## 2026-05-07 — Windows MockWebServer timeout flake
 
@@ -932,6 +1120,10 @@
   machine speed에 덜 의존하게 됐습니다.
 - 포트폴리오 포인트: test 이름이 검증하는 실패 모드와 실제 먼저 발생하는
   실패 모드가 일치해야 합니다.
+- 면접 예상 질문:
+  1. 테스트 이름이 검증하는 실패 모드와 실제로 먼저 발생하는 실패 모드가 불일치하면 어떤 문제가 생기나요?
+  2. Windows에서 MockWebServer cold start가 느려 timeout flake가 생기는 이유와 대응 방법은?
+  3. 타이밍에 의존하는 테스트를 flaky하지 않게 만드는 방법은?
 
 ## 2026-05-07 — 학식 HTML defensive parsing 필요
 
@@ -947,6 +1139,10 @@
   empty HTML parse failure, HTTP failure를 검증합니다.
 - 포트폴리오 포인트: connector boundary 덕분에 messy source-specific parsing이
   controller, service, MCP tool, frontend로 새지 않았습니다.
+- 면접 예상 질문:
+  1. CMS형 HTML에서 selector 기반 파싱의 한계와 보완 방법은?
+  2. connector boundary 덕분에 messy parsing이 상위 레이어로 새지 않는 이유는?
+  3. metadata 제거, 가격 suffix 제거, closure keyword 탐지를 token cleanup으로 분리하는 이유는?
 
 상세 historical writeup:
 [`docs/troubleshooting/cafeteria-connector.md`](docs/troubleshooting/cafeteria-connector.md).
@@ -969,6 +1165,10 @@
 - 포트폴리오 포인트: 외부 시스템 통합 시 HTTP 응답 코드만 믿으면 안 됩니다.
   JS redirect는 HTTP 레벨에서 투명하므로, DevTools Network 탭으로 최종 도달 호스트를
   직접 확인해야 합니다.
+- 면접 예상 질문:
+  1. DevTools Network 탭에서 "최종 도달 호스트"를 확인하는 것이 중요한 이유는?
+  2. HTTP 200 응답이 실제로는 라우터 HTML일 때 어떻게 구분하나요?
+  3. Java HttpClient가 HTTP redirect는 따라가지만 JS redirect는 따라가지 않는 이유는?
 
 ## 2026-05-20 — SAP Lightspeed Form_Request 전 초기화 이벤트 3개 누락으로 403
 
@@ -992,6 +1192,10 @@
   DevTools → Network → SAPEVENTQUEUE payload 캡처 → 하나씩 역분석하는 것이
   유일한 방법입니다. 403 empty body는 SAP에서 "CSRF 또는 세션 상태 불일치"를
   의미하므로, body가 비어있을수록 서버가 요청 자체를 거부한 것입니다.
+- 면접 예상 질문:
+  1. SAP WebDynpro의 세션 상태 머신이 특정 이벤트 시퀀스를 요구하는 이유는?
+  2. 403 empty body가 SAP에서 의미하는 것을 어떻게 분석했나요?
+  3. 브라우저 DevTools SAPEVENTQUEUE payload를 분석해서 필수 이벤트를 역공학하는 방법은?
 
 ---
 
@@ -1016,40 +1220,44 @@
   바인딩 토큰이다. "최소한의 필드만 보내면 안전하다"는 직관이 stateful 프로토콜에서는
   틀릴 수 있다. 어떤 필드가 403 의 원인인지 개별적으로 특정하지 않고 묶어서 제거하면
   다른 문제가 생긴다 — 하나씩 제거하며 테스트해야 한다.
+- 면접 예상 질문:
+  1. SAP WebDynpro hidden input 필드를 "최소한만 보내면 안전하다"는 직관이 틀린 이유는?
+  2. 여러 필드를 묶어서 제거했다가 500이 난 경우, 원인 필드를 특정하는 방법은?
+  3. _external_session_ 같은 서버 세션 바인딩 토큰이 POST body에 포함되어야 하는 이유는?
 
 ---
 
-## 2026-05-20 SAINT direct HANA URL created ANON sessions
+## 2026-05-20 — SAINT WebDynpro HANA 직접 접속이 ANON 세션을 만든 문제
 
-- Mistake: PR #156 changed WebDynpro defaults from `ecc.ssu.ac.kr` to
-  `hana-prd-ap-4.ssu.ac.kr:8443` to bypass an assumed JavaScript redirect issue.
-- Symptom: production logs showed `sap-contextid: SID:ANON:hana-prd-ap-4_SSP_00:...-NEW`.
-  Schedule POST responses looked like a logon redirect and grades returned 500.
-- Cause: direct HANA does not trust the MYSAPSSO2 ticket issued by the u-SAINT
-  portal path, so it creates an anonymous SAP session. `ecc.ssu.ac.kr` on standard
-  HTTPS accepts that ticket and creates the authenticated USER session.
-- Fix: restore `SaintScheduleProperties.timetableUrl` and
-  `SaintGradesProperties.gradesUrl` defaults to
-  `https://ecc.ssu.ac.kr/sap/bc/webdynpro/SAP/...`.
-- Verify: deployment logs should include `SAP_SESSIONID_SSP_100` plus successful
-  `saint schedule fetched` and `saint grades fetched` lines.
+- 맥락: PR #156에서 JS redirect 문제를 우회하려고 WebDynpro 기본 URL을 `ecc.ssu.ac.kr`에서 `hana-prd-ap-4.ssu.ac.kr:8443`으로 직접 변경했다.
+- 증상: prod 로그에 `sap-contextid: SID:ANON:hana-prd-ap-4_SSP_00:...-NEW`가 찍혔다. 시간표 POST는 로그인 리다이렉트처럼 보이는 응답을 반환하고, 성적 API는 500을 냈다.
+- 처음 세운 가설 (틀린 방향): `ecc.ssu.ac.kr`이 JS redirect 라우터이므로 실제 앱 서버인 `hana-prd-ap-4`를 직접 호출하면 더 안정적일 것이라 가정했다.
+- 실제 원인: HANA 앱 서버는 u-SAINT 포털 경로가 발급한 MYSAPSSO2 티켓을 신뢰하지 않아 익명 SAP 세션을 생성한다. `ecc.ssu.ac.kr`은 표준 HTTPS에서 그 티켓을 수락하고 인증된 USER 세션을 만든다. JS redirect인 줄 알았던 것이 실제로는 MYSAPSSO2 신뢰 체인의 일부였다.
+- 해결: `SaintScheduleProperties.timetableUrl`과 `SaintGradesProperties.gradesUrl` 기본값을 `https://ecc.ssu.ac.kr/sap/bc/webdynpro/SAP/...`로 복원했다.
+- 핵심 파일: `SaintScheduleProperties.java`, `SaintGradesProperties.java`
+- 검증: 배포 후 pod 로그에 `SAP_SESSIONID_SSP_100`이 포함되고 `saint schedule fetched` / `saint grades fetched`가 정상 기록되는 것으로 확인.
+- 포트폴리오 포인트: SAP NetWeaver는 SSO 신뢰 체인이 도메인별로 다르게 구성된다. "더 짧은 경로 = 더 빠른 접근"이라는 직관이 보안 인프라 앞에서는 틀릴 수 있다. MYSAPSSO2 세션 ID에 `ANON`이 보이는 즉시 SSO 신뢰 체인 문제로 가설을 세워야 한다.
+- 면접 예상 질문:
+  1. SAP SSO 티켓(MYSAPSSO2)의 신뢰 체인 구조를 어떻게 분석했나요?
+  2. ANON 세션과 USER 세션을 로그만으로 구분하려면 무엇을 봐야 하나요?
+  3. 외부 시스템 통합에서 "더 직접적인 경로"가 실제로 더 안전하지 않은 사례를 설명해보세요.
 
 ---
 
-## 2026-05-20 LMS gw-cb.php Location must start the Canvas auth chain
+## 2026-05-20 — LMS gw-cb.php Location 헤더 누락으로 xn_api_token 미발급
 
-- Symptom: LMS assignment API calls returned 401 and auth logs showed merged
-  cookies such as `WAF,laravel_session` without `xn_api_token`.
-- Cause: `callGwCallback()` captured only Set-Cookie headers from the gw-cb.php
-  302 response and discarded its Location header. Starting phase 2 directly at
-  `/learningx/dashboard?user_login=...` skips the one-time auth callback that
-  issues `xn_api_token`.
-- Fix: return both cookies and Location from `callGwCallback()`. When Location is
-  present, use it as the first Canvas URL; otherwise fall back to the dashboard
-  URL for old flows.
-- Verify: `gwCbLocationIsFollowedAsCanvasAuthStartUrl` covers the auth callback
-  path, and production logs should show `xn_api_token` in
-  `lms auth phase2 merged cookie names`.
+- 맥락: LMS Canvas 인증 2단계에서 gw-cb.php 콜백 처리 중 문제가 발생했다.
+- 증상: LMS 과제 API 호출이 401을 반환하고, 인증 로그의 merged cookie names에 `WAF,laravel_session`만 있고 `xn_api_token`이 없었다.
+- 처음 세운 가설 (틀린 방향): gw-cb.php의 Set-Cookie를 수집하면 Canvas 세션이 완성된다고 가정해 Location 헤더는 무시했다.
+- 실제 원인: `callGwCallback()`이 gw-cb.php 302 응답의 Set-Cookie만 수집하고 Location 헤더를 버렸다. Phase 2를 `/learningx/dashboard?user_login=...`에서 직접 시작하면 `xn_api_token`을 발급하는 일회성 auth callback을 건너뛰게 된다. Location이 가리키는 URL이 바로 그 callback 시작점이었다.
+- 해결: `callGwCallback()`에서 쿠키와 Location을 함께 반환하도록 수정했다. Location이 있으면 그것을 Canvas auth 시작 URL로 사용하고, 없을 때만 dashboard URL로 폴백한다.
+- 핵심 파일: `LmsSsoService.java` (`callGwCallback()` 메서드)
+- 검증: `gwCbLocationIsFollowedAsCanvasAuthStartUrl` 테스트로 auth callback 경로를 커버했고, prod 로그의 `lms auth phase2 merged cookie names`에 `xn_api_token`이 포함되는 것으로 확인.
+- 포트폴리오 포인트: OAuth 유사 흐름에서 302 Location은 단순 리다이렉트가 아니라 토큰 발급 로직의 일부일 수 있다. Set-Cookie만 보고 Location을 버리면 인증 흐름이 조용히 반쪽만 완성된다. 401 증상이 쿠키 문제처럼 보여도 실제로는 URL 체인 단절일 수 있다.
+- 면접 예상 질문:
+  1. 302 redirect 응답에서 Set-Cookie와 Location을 동시에 처리해야 하는 경우를 어떻게 구분하나요?
+  2. `xn_api_token`이 없는 것을 어떻게 발견했나요? (로그 분석 방법)
+  3. SSO 체인에서 "일회성 auth callback"이 필요한 이유가 무엇인지 설명해보세요.
 
 ---
 
@@ -1070,3 +1278,42 @@
   확인했다. GitHub Actions 장애 해소 후 `gh workflow run ci.yml --ref main`으로
   현재 `main` tree를 실행하고, `CI`의 backend/frontend/image-build 성공과
   이어지는 `Deploy` workflow 성공을 확인한다.
+- 포트폴리오 포인트: GitHub Actions major outage는 push event는 기록해도 workflow run 생성을 누락한다. workflow_dispatch 없는 저장소는 이 상황에서 수동 복구 방법이 없다. CI에 workflow_dispatch를 추가하는 것은 outage 대응뿐 아니라 특정 commit을 선택적으로 재실행할 수 있는 운영 유연성을 준다.
+- 면접 예상 질문:
+  1. GitHub Actions major outage 시 workflow_dispatch 없는 저장소에서 복구 방법은?
+  2. push event는 기록됐지만 workflow run이 생성되지 않는 상황을 어떻게 진단하나요?
+  3. CI workflow에 workflow_dispatch를 추가하는 것이 운영상 어떤 이점을 주나요?
+
+---
+
+## 2026-05-31 — 도서관 인증 방식 전환: Manual Paste → Credential Login
+
+- 맥락: TASK 1(도서관 세션 캡처) 구현 과정에서 초기 설계와 다른 인증 방식으로 전환됐다. ADR 0013 §12에서 5가지 캡처 방식을 검토한 결과 Manual Paste(사용자가 DevTools에서 Pyxis-Auth-Token을 복사)로 결정했었다.
+- 증상: 없음 (pre-emptive 설계 전환).
+- 처음 세운 가설 (틀린 방향): Manual Paste가 보안과 구현 난이도 균형상 최적이라 판단. ssuAI 서버가 비밀번호를 일체 다루지 않고, 사용자가 토큰을 직접 제어한다는 점을 강점으로 봤다.
+- 실제 원인: Pyxis API가 `/pyxis-api/api/login` endpoint를 통한 credential 직접 로그인을 지원함을 확인. oasis 웹이 사용하는 AES 암호화 방식을 프론트에서 그대로 재현할 수 있어(`encryptLibraryPassword()`), 비밀번호를 평문으로 서버에 노출하지 않으면서도 Credential Login이 가능했다. Manual Paste보다 UX가 압도적으로 단순함.
+- 해결: `LibraryCredentialLoginService`를 신규 구현해 oasis API 직접 호출. `LibraryLoginModal.tsx`를 학번/비밀번호 폼으로 구현. 기존 Manual Paste endpoint(`POST /api/library/session`)는 하위 호환 유지.
+- 핵심 파일: `LibraryCredentialLoginService.java`, `LibrarySessionController.java`, `LibraryLoginModal.tsx`, `lib/crypto.ts`, `lib/api/library.ts`
+- 검증: `LibraryLoansCard`·`LibrarySeatCard` LIBRARY_SESSION_REQUIRED → 모달 → Credential Login → 쿼리 무효화 흐름 완성. `mcp/auth/library/page.tsx` MCP 클라이언트용 standalone 페이지도 동일 방식으로 완성.
+- 포트폴리오 포인트: "보안을 위해 불편함을 감수하는" 설계가 반드시 최선이 아님. 플랫폼이 지원하는 API를 먼저 탐색했더니 더 안전하고(비밀번호 AES 암호화 전달, 평문 노출 없음) 더 편리한(DevTools 조작 불필요) 방식이 존재했다. API 리버스 엔지니어링이 UX 설계 방향 자체를 바꾼 사례.
+- 면접 예상 질문:
+  1. oasis 웹의 AES 암호화 방식을 프론트엔드에서 재현한 이유와 그 보안적 의미는?
+  2. Manual Paste보다 Credential Login이 보안적으로 나은 이유를 비밀번호 노출 관점에서 설명하세요.
+  3. 초기 설계 결정(Manual Paste)을 번복하는 것이 올바른 판단이었는지 설명해보세요.
+
+---
+
+## 2026-05-31 — Pyxis-Auth-Token TTL 스파이크: 예상과 달리 사실상 무제한
+
+- 맥락: `LibrarySessionStore`의 기본 TTL이 2h로 설정되어 있어, Pyxis 토큰의 실제 만료 시간을 측정해 적절한 TTL을 결정해야 했다.
+- 증상: 도서관 로그인 후 매 2시간마다 LIBRARY_SESSION_REQUIRED 오류 → 재로그인 필요. 사용자 경험 저하.
+- 처음 세운 가설 (틀린 방향): Pyxis-Auth-Token이 브라우저 세션 기반이라 수 시간 단위로 만료될 것으로 예상. 2h TTL이 보수적이지만 적절하다고 가정.
+- 실제 원인: `ssuMCP/scripts/spike-ssotoken-ttl.ps1` 실행 결과, 1주일 이상 경과 후에도 토큰이 만료되지 않았다. Pyxis 토큰은 short-lived session token이 아닌 사실상 permanent access token에 가깝다.
+- 해결: `application.yml`에 `ssuai.library.session.ttl: 7d` 명시 추가. JVM 재시작 시에만 재인증이 필요하도록 설정. `LibrarySessionProperties` 기본값(2h)은 유지하되 yml에서 덮어쓴다.
+- 핵심 파일: `LibrarySessionProperties.java`, `ssuMCP/src/main/resources/application.yml`(`ssuai.library.session` 섹션), `ssuMCP/scripts/spike-ssotoken-ttl.ps1`
+- 검증: `application.yml` 업데이트 완료. 실제 oasis 계정 E2E 테스트는 시험 후 진행 예정.
+- 포트폴리오 포인트: 세션 TTL은 "짧게 설정 = 안전"이 아니라 "upstream 실제 TTL에 맞게"가 맞다. 너무 짧으면 불필요한 재인증으로 UX가 나빠지고, 너무 길면 토큰 탈취 시 노출 시간이 길어진다. 실측 스파이크로 근거를 만들고 결정하는 접근이 ad-hoc 추정보다 낫다.
+- 면접 예상 질문:
+  1. 세션 TTL을 "짧게 설정하는 것이 항상 안전하다"는 가정이 틀릴 수 있는 이유는?
+  2. upstream 시스템의 실제 토큰 TTL을 코드 변경 없이 측정하는 방법은?
+  3. in-memory 세션 스토어에서 JVM 재시작 시 세션이 사라지는 것을 감수하는 설계의 트레이드오프는?
