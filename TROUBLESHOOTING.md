@@ -1317,3 +1317,54 @@
   1. 세션 TTL을 "짧게 설정하는 것이 항상 안전하다"는 가정이 틀릴 수 있는 이유는?
   2. upstream 시스템의 실제 토큰 TTL을 코드 변경 없이 측정하는 방법은?
   3. in-memory 세션 스토어에서 JVM 재시작 시 세션이 사라지는 것을 감수하는 설계의 트레이드오프는?
+
+---
+
+## 2026-06-02 — ArgoCD selfHeal이 수동 kubectl patch를 즉시 되돌림
+
+- 맥락: Wave 3 Postgres 전환 중 `SSUAI_DB_URL`, `SSUAI_DB_USERNAME` env var를 k3s ConfigMap에 주입해야 했다. `kubectl patch configmap ssuai-backend-config`로 직접 패치했다.
+- 증상: 백엔드 pod 재시작 후에도 H2로 연결. 로그에 `url=jdbc:h2:mem:...` 유지.
+- 처음 세운 가설 (틀린 방향): `kubectl patch`로 ConfigMap을 수정하면 pod 재시작 시 반영된다고 가정.
+- 실제 원인: ArgoCD Application에 `syncPolicy.automated.selfHeal: true`가 설정되어 있어, ArgoCD가 30초 이내에 ConfigMap을 Helm chart의 Git 상태(`values.yaml`의 빈 문자열)로 되돌린다. GitOps에서 `kubectl patch`는 ArgoCD에 의해 즉시 무효화된다.
+- 해결: `deploy/charts/ssuai-backend/values.yaml`의 `dbUrl`, `dbUsername` 필드를 실제 값으로 수정 후 Git push. ArgoCD가 변경을 감지해 ConfigMap 자동 업데이트.
+- 핵심 파일: `deploy/charts/ssuai-backend/values.yaml`, `deploy/charts/ssuai-backend/templates/configmap.yaml`, commit `5ab7b07`
+- 검증: ArgoCD Synced Healthy, `kubectl logs`에서 `url=jdbc:postgresql://postgres-service:5432/ssuai` 확인.
+- 포트폴리오 포인트: GitOps 환경에서 클러스터 리소스를 직접 수정하는 명령은 ArgoCD `selfHeal`에 의해 자동 롤백된다. "Single source of truth는 Git"이라는 원칙의 실제 동작을 직접 경험한 사례. 환경별 설정 주입은 반드시 Git → ArgoCD 경로를 통해야 한다.
+- 면접 예상 질문:
+  1. GitOps 환경에서 `kubectl apply/patch`로 설정을 변경했는데 적용이 안 되는 이유는?
+  2. ArgoCD의 `selfHeal`과 `prune` 옵션의 역할과 위험성은?
+  3. 민감하지 않은 env var(DB URL, username)과 민감한 env var(DB password)를 각각 어떻게 GitOps로 관리했는가?
+
+---
+
+## 2026-06-02 — 이미지에 하드코딩된 driver-class-name이 Postgres 전환을 막음
+
+- 맥락: Postgres URL을 ConfigMap에 정상 주입했으나 새 pod이 CrashLoopBackOff.
+- 증상: `Driver org.h2.Driver claims to not accept jdbcUrl, jdbc:postgresql://postgres-service:5432/ssuai` — HikariCP가 H2 드라이버로 Postgres URL에 연결 시도.
+- 처음 세운 가설 (틀린 방향): ConfigMap에 올바른 Postgres URL이 들어있으면 Spring Boot가 자동으로 Postgres 드라이버를 감지할 것이라 가정.
+- 실제 원인: 배포 중이던 Docker 이미지(`sha-a95e532d...`)는 PR #10(Flyway/Postgres 지원) 이전에 빌드된 것이라, `application.yml`에 `driver-class-name: org.h2.Driver`가 JAR 내부에 하드코딩되어 있었다. env var로 URL을 바꿔도 드라이버 클래스는 여전히 H2였다.
+- 해결: PR #10 merge 이후 CI가 빌드한 새 이미지(`sha-fbf3fd61...`)를 ArgoCD Image Updater가 자동 감지해 배포. 새 이미지는 `driver-class-name` 제거 → Spring Boot URL 자동 감지.
+- 핵심 파일: `src/main/resources/application.yml`(`driver-class-name` 제거, PR #10), `deploy/charts/ssuai-backend/values.yaml`(image.tag)
+- 검증: 새 pod 로그에 `Added connection org.postgresql.jdbc.PgConnection`, `Successfully applied 1 migration to schema "public"` 확인.
+- 포트폴리오 포인트: JAR 빌드 시점에 확정되는 설정(`application.yml` 내 `driver-class-name`)과 런타임 env var의 우선순위 관계. 이미지를 업데이트해도 JAR 내부 설정이 env var를 덮어쓰는 케이스. CI/CD 파이프라인에서 "코드 변경 → 새 이미지 빌드 → 배포"의 순서가 중요한 이유.
+- 면접 예상 질문:
+  1. Spring Boot의 외부 설정 우선순위(env var vs application.yml)에서 `driver-class-name`이 env var로 오버라이드가 안 되는 이유는?
+  2. 실행 중인 pod의 이미지를 교체하지 않고 env var만 바꿔서 해결할 수 없는 설정의 예시는?
+  3. GitOps + Image Updater 환경에서 새 코드가 prod에 반영되기까지의 흐름을 설명하세요.
+
+---
+
+## 2026-06-02 — ArgoCD Image Updater v1.x CRD 방식 전환
+
+- 맥락: ArgoCD Image Updater를 Helm으로 설치했는데 ArgoCD Application의 `argocd-image-updater.argoproj.io/image-list` annotation을 인식하지 못함.
+- 증상: 2분 주기 로그에 "No ImageUpdater CRs to process" 반복. Application annotation 무시.
+- 처음 세운 가설 (틀린 방향): `argo/argocd-image-updater` Helm chart가 기존 annotation 기반 방식을 그대로 지원할 것이라 가정.
+- 실제 원인: `argo/argocd-image-updater` v1.2.x는 완전히 새로운 CRD 기반 아키텍처. 기존 annotation 방식(argoproj-labs/argocd-image-updater v0.x)과 다른 프로젝트. "No ImageUpdater CRs"는 `ImageUpdater` CRD 인스턴스가 없다는 의미였다.
+- 해결: `ImageUpdater` CRD에 `useAnnotations: true` 옵션 발견 → Application의 기존 annotation을 그대로 위임하는 CR 생성. annotation 재작성 없이 기존 설정 재사용.
+- 핵심 파일: `deploy/argocd/image-updater/imageupdater-cr.yaml`, commit `463f1ce`
+- 검증: 다음 2분 사이클에 "Setting new image to ghcr.io/hoeongj/ssumcp:sha-...", "images_updated=1 errors=0" 로그 확인.
+- 포트폴리오 포인트: 오픈소스 툴의 메이저 버전 아키텍처 전환을 직접 마주친 사례. 공식 문서보다 CRD 스키마(`kubectl get crd ... -o jsonpath`)를 직접 읽어 `useAnnotations` 옵션을 발견한 디버깅 방식. Helm chart 이름이 같아도 내부 아키텍처가 완전히 다를 수 있다.
+- 면접 예상 질문:
+  1. ArgoCD Image Updater의 annotation 방식과 CRD 방식의 차이점과 각각의 장단점은?
+  2. 오픈소스 툴 업그레이드 시 breaking change를 사전에 감지하는 방법은?
+  3. `kubectl get crd -o jsonpath`로 CRD 스키마를 읽어 옵션을 파악한 과정을 설명하세요.
