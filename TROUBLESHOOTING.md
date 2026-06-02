@@ -1523,3 +1523,63 @@ LLM이 도구 호출 형식을 잘못 이해했거나 시스템 프롬프트가 
 1. LLM에서 tool-use를 구현할 때 "도구 호출 한도"를 설정하는 이유와, 한도 초과 시 어떻게 처리해야 하는가?
 2. 챗봇에서 환각(hallucination)이 발생하는 주요 원인과 시스템 프롬프트 레벨에서 완화할 수 있는 방법은?
 3. Few-shot 예시를 시스템 프롬프트에 넣는 것과 파인튜닝의 차이, 각각 언제 선택하는가?
+
+---
+
+## LLM 챗봇 응답 품질 저하 — 3개 레이어 동시 원인 (2026-06-03)
+
+### 증상
+
+Claude Desktop(MCP 직접 연결)에서 "졸업하려면 뭐 해야해?"를 물으면
+graduation + grades + chapel 3개 도구를 동시 호출해 "현재 89학점, 44학점 더 필요"
+수준의 맞춤형 답변이 나왔다. 반면 ssuAI 챗봇은 같은 질문에
+"6가지 요건이 부족합니다" 에서 끝나고, 수치 없이 이름만 나열했다.
+
+### 처음 세운 가설 (틀린 방향)
+
+프롬프트 설계가 부족해서 LLM이 도구 선택을 잘못 하는 문제라고 생각했다.
+→ 프롬프트만 고치면 해결된다고 가정.
+
+### 실제 원인 (3개 레이어)
+
+1. **Config 레이어** — `application.yml`의 `max-tool-calls: 2`
+   동시 도구 호출 상한이 2개라 graduation + grades + chapel 3개를 동시에 못 씀.
+
+2. **프롬프트 레이어** — `SystemPromptBuilder.java` 규칙 3·4
+   "여러 도구가 필요한 요청은 하나씩 물어봐줘요" 라고 명시해서
+   LLM이 스스로 단일 도구만 호출하도록 유도됐음. 보호 목적으로 넣은 규칙이 오히려 핵심 기능을 막았다.
+
+3. **데이터 레이어** — `ToolResultCompactor.compactGraduationNode()`
+   `GraduationRequirementItem`에는 `required(133)`, `completed(89)`, `remaining(44)` 가 있었지만
+   압축 메서드가 이를 모두 버리고 미충족 요건의 **이름만** LLM에 전달했다.
+   LLM은 "133학점 필요"는 알았지만 "현재 89학점, 44 더 필요"는 계산 불가.
+   이 원인이 가장 비직관적이었다 — 도구 호출은 성공하고 데이터는 정상 반환됐지만
+   압축 단계에서 핵심 수치가 조용히 소실됐다.
+
+### 해결
+
+- `max-tool-calls` 기본값 2 → 20
+- 규칙 3·4: 졸업 질문은 3개 도구 동시 호출 명시
+- `compactGraduationNode`: `required/completed/remaining` 수치 보존,
+  satisfied 항목은 제외하고 미충족 항목만 `{name, required, completed, remaining}` 구조로 반환
+
+### 핵심 파일·커밋
+
+- `src/main/java/com/ssuai/domain/chat/service/ToolResultCompactor.java`
+- `src/main/java/com/ssuai/domain/chat/service/SystemPromptBuilder.java`
+- `src/main/resources/application.yml`
+- PR #14 (`feat/improve-graduation-chat-response`)
+
+### 포트폴리오 포인트
+
+Claude Desktop vs ssuAI 챗봇의 응답 품질 차이를 재현 가능한 방식으로 비교하고,
+단일 원인이 아닌 config · prompt · data 압축 3개 레이어에 걸친 복합 원인을
+체계적으로 디버깅했다.
+특히 "도구 응답은 정상인데 LLM이 수치를 모르는" 상황의 원인이
+압축 레이어에 있었다는 발견은 LLM 시스템 특유의 디버깅 난이도를 보여준다.
+
+### 면접 예상 질문
+
+1. LLM 응답 품질이 낮을 때 어떻게 원인을 추적하는가? config / 프롬프트 / 데이터 레이어를 어떻게 분리해서 디버깅했는가?
+2. tool result를 LLM에 넘기기 전에 압축(compaction)하는 이유는 무엇이고, 과도한 압축이 품질에 미치는 영향은?
+3. 시스템 프롬프트에 "보호 규칙"을 넣을 때 기능 제한과의 트레이드오프를 어떻게 판단하는가?
