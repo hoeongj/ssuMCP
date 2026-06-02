@@ -984,6 +984,42 @@ class LlmChatServiceTests {
     }
 
     @Test
+    void graduationCompactKeepsUnmetRequirementNumbers() {
+        LlmChatService chatService = chatService(
+                List.of(new FakeProvider("noop").reply("noop", "noop")),
+                List.of("noop"));
+        String rawGraduationJson = """
+                {
+                  "isGraduatable":false,
+                  "requirements":[
+                    {"name":"학부-졸업학점","required":133,"completed":89,"remaining":44,"satisfied":false},
+                    {"name":"전공필수+전선","required":66,"completed":42,"remaining":18,"satisfied":false},
+                    {"name":"교양필수","required":12,"completed":12,"remaining":0,"satisfied":true}
+                  ]
+                }
+                """;
+
+        String compact = chatService.compactAndCap("check_graduation_requirements", rawGraduationJson);
+
+        assertThat(compact)
+                .contains("\"isGraduatable\":false")
+                .contains("\"unmetCount\":2")
+                .contains("\"unmet\"")
+                .contains("\"name\":\"학부-졸업학점\"")
+                .contains("\"required\":133.0")
+                .contains("\"completed\":89.0")
+                .contains("\"remaining\":44.0")
+                .contains("\"name\":\"전공필수+전선\"")
+                .contains("\"required\":66.0")
+                .contains("\"completed\":42.0")
+                .contains("\"remaining\":18.0")
+                .doesNotContain("교양필수")
+                .doesNotContain("unmetRequirements")
+                .doesNotContain("unmetRequirementCount")
+                .doesNotContain("\"satisfied\"");
+    }
+
+    @Test
     void librarySeatCompactKeepsCountsAndDropsIndividualSeatData() {
         LlmChatService chatService = chatService(
                 List.of(new FakeProvider("noop").reply("noop", "noop")),
