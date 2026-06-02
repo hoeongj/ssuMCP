@@ -26,6 +26,7 @@ env:
   # already connect to this origin for SSE, and this avoids relying on the
   # Vercel /api proxy for SmartID returns.
   mcpApiBaseUrl: https://ssumcp.duckdns.org
+  tavilyMcpUrl: ""
   javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
   connectorMeal: real
   connectorDormMeal: real

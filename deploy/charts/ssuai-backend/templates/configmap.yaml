@@ -14,6 +14,7 @@ data:
   SSUAI_DB_USERNAME: {{ .Values.env.dbUsername | quote }}
   SSUAI_API_BASE_URL: {{ .Values.env.apiBaseUrl | quote }}
   SSUAI_MCP_API_BASE_URL: {{ .Values.env.mcpApiBaseUrl | quote }}
+  SSUAI_TAVILY_MCP_URL: {{ .Values.env.tavilyMcpUrl | quote }}
   JAVA_OPTS: {{ .Values.env.javaOpts | quote }}
   SSUAI_CONNECTOR_MEAL: {{ .Values.env.connectorMeal | quote }}
   SSUAI_CONNECTOR_DORM_MEAL: {{ .Values.env.connectorDormMeal | quote }}
