@@ -8,7 +8,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.Date;
 
+import javax.crypto.SecretKey;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 
 import com.ssuai.domain.user.entity.Student;
@@ -32,6 +37,7 @@ class JwtProviderTests {
         assertThat(claims.studentId()).isEqualTo("20210001");
         assertThat(claims.name()).isEqualTo("홍길동");
         assertThat(claims.type()).isEqualTo(JwtTokenType.ACCESS);
+        assertThat(claims.jti()).isNull();
         assertThat(claims.issuedAt()).isEqualTo(NOW);
         assertThat(claims.expiresAt()).isEqualTo(NOW.plus(Duration.ofMinutes(15)));
     }
@@ -45,7 +51,40 @@ class JwtProviderTests {
         JwtClaims claims = provider.parse(token, JwtTokenType.REFRESH);
 
         assertThat(claims.type()).isEqualTo(JwtTokenType.REFRESH);
+        assertThat(claims.jti()).isNotBlank();
         assertThat(claims.expiresAt()).isEqualTo(NOW.plus(Duration.ofDays(14)));
+    }
+
+    @Test
+    void issueRefreshGeneratesUniqueJti() {
+        JwtProvider provider = new JwtProvider(properties(), FIXED_CLOCK);
+        Student student = new Student("20210001", "student", "major", "active", NOW);
+
+        JwtClaims first = provider.parse(provider.issueRefresh(student), JwtTokenType.REFRESH);
+        JwtClaims second = provider.parse(provider.issueRefresh(student), JwtTokenType.REFRESH);
+
+        assertThat(first.jti()).isNotBlank();
+        assertThat(second.jti()).isNotBlank();
+        assertThat(first.jti()).isNotEqualTo(second.jti());
+    }
+
+    @Test
+    void refreshTokenWithoutJtiIsRejected() {
+        JwtProvider provider = new JwtProvider(properties(), FIXED_CLOCK);
+        SecretKey key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(BASE64_SECRET));
+        String token = Jwts.builder()
+                .issuer("ssuai-test")
+                .subject("20210001")
+                .claim(JwtProvider.CLAIM_NAME, "student")
+                .claim(JwtProvider.CLAIM_TYPE, JwtTokenType.REFRESH.name())
+                .issuedAt(Date.from(NOW))
+                .expiration(Date.from(NOW.plus(Duration.ofDays(14))))
+                .signWith(key, Jwts.SIG.HS256)
+                .compact();
+
+        assertThatThrownBy(() -> provider.parse(token, JwtTokenType.REFRESH))
+                .isInstanceOf(InvalidJwtException.class)
+                .hasMessageContaining("missing refresh jti");
     }
 
     @Test
