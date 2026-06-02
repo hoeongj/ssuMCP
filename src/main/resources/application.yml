@@ -181,7 +181,7 @@ ssuai:
       availability-verification-passes: ${SSUAI_LLM_AVAILABILITY_VERIFICATION_PASSES:0}
       max-provider-attempts: ${SSUAI_LLM_MAX_PROVIDER_ATTEMPTS:6}
       max-models-per-provider: ${SSUAI_LLM_MAX_MODELS_PER_PROVIDER:2}
-      max-tool-calls: ${SSUAI_LLM_MAX_TOOL_CALLS:2}
+      max-tool-calls: ${SSUAI_LLM_MAX_TOOL_CALLS:20}
       provider-order:
         - gemini
         - groq
