@@ -84,6 +84,10 @@ ssuai:
     chat: ${SSUAI_CONNECTOR_CHAT:mock} # mock | llm
     notice: mock # mock | real
     department-notice: real # mock | real
+  monitoring:
+    discord:
+      webhook-url: ${SSUAI_DISCORD_ALERT_WEBHOOK_URL:}
+      dedupe-window: 60s
   library:
     session:
       # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream
