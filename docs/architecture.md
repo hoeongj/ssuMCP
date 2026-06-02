@@ -143,7 +143,7 @@ com.ssuai
     │       └── llm  // LlmProvider (인터페이스), LlmProviderConfig, LlmCompletionRequest/Result
     ├── dorm            // connector / controller / service — 레지던스홀 기숙사 식단
     ├── library
-    │   ├── auth        // LibrarySessionStore (AES-256-GCM, 24h TTL), LibraryCredentialLoginService
+    │   ├── auth        // LibrarySessionStore (AES-256-GCM, 7d TTL), LibraryCredentialLoginService
     │   │   └── dto
     │   ├── connector   // LibraryBookConnector (mock / real Pyxis JSON API)
     │   │               // LibrarySeatConnector (mock / real oasis 스크래핑)

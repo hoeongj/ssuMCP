@@ -3,10 +3,15 @@ package com.ssuai.domain.library.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +26,44 @@ class LibrarySessionStoreTests {
 
         assertThat(store.token("session-a")).hasValue("ssotoken-aaaaaa");
         assertThat(store.has("session-a")).isTrue();
+    }
+
+    @Test
+    void tokenIsEncryptedAtRest() throws Exception {
+        LibrarySessionProperties props = properties(Duration.ofHours(2));
+        props.setEncryptionKey("0123456789abcdef0123456789abcde!");
+        LibrarySessionStore store = new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+        store.put("session-a", "ssotoken-aaaaaa");
+
+        Object entry = entries(store).get("session-a");
+        byte[] ciphertext = recordBytes(entry, "ciphertext");
+
+        assertThat(entry.toString()).doesNotContain("ssotoken-aaaaaa");
+        assertThat(recordBytes(entry, "iv")).hasSize(12);
+        assertThat(containsSubsequence(ciphertext, "ssotoken-aaaaaa".getBytes(StandardCharsets.UTF_8))).isFalse();
+        assertThat(store.token("session-a")).hasValue("ssotoken-aaaaaa");
+    }
+
+    @Test
+    void configuredBase64EncryptionKeyRoundTrips() {
+        LibrarySessionProperties props = properties(Duration.ofHours(2));
+        props.setEncryptionKey(Base64.getEncoder()
+                .encodeToString("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
+        LibrarySessionStore store = new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+
+        store.put("session-a", "ssotoken-aaaaaa");
+
+        assertThat(store.token("session-a")).hasValue("ssotoken-aaaaaa");
+    }
+
+    @Test
+    void shortEncryptionKeyFailsFast() {
+        LibrarySessionProperties props = properties(Duration.ofHours(2));
+        props.setEncryptionKey("short");
+
+        assertThatThrownBy(() -> new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("at least 32 bytes");
     }
 
     @Test
@@ -117,6 +160,38 @@ class LibrarySessionStoreTests {
         LibrarySessionProperties props = new LibrarySessionProperties();
         props.setTtl(ttl);
         return props;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, ?> entries(LibrarySessionStore store) throws Exception {
+        Field field = LibrarySessionStore.class.getDeclaredField("entries");
+        field.setAccessible(true);
+        return (Map<String, ?>) field.get(store);
+    }
+
+    private static byte[] recordBytes(Object entry, String accessorName) throws Exception {
+        Method accessor = entry.getClass().getDeclaredMethod(accessorName);
+        accessor.setAccessible(true);
+        return (byte[]) accessor.invoke(entry);
+    }
+
+    private static boolean containsSubsequence(byte[] bytes, byte[] candidate) {
+        if (candidate.length == 0 || candidate.length > bytes.length) {
+            return false;
+        }
+        for (int start = 0; start <= bytes.length - candidate.length; start++) {
+            boolean matches = true;
+            for (int offset = 0; offset < candidate.length; offset++) {
+                if (bytes[start + offset] != candidate[offset]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static final class MutableClock extends Clock {

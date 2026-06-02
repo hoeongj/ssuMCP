@@ -10,8 +10,8 @@
 #   SSUAI_JWT_SECRET         — HS256 key for ssuAI access/refresh JWTs (>= 32 bytes)
 #
 # Recommended env vars in prod (silent fallback to ephemeral per-restart values otherwise):
-#   SSUAI_CREDENTIAL_ENCRYPTION_KEY — AES-256 key for SaintSessionStore (Task 16);
-#                                     unset = stored SAINT sessions vanish on JVM restart,
+#   SSUAI_CREDENTIAL_ENCRYPTION_KEY — AES-256 key for SAINT/LMS/library session stores;
+#                                     unset = stored school sessions vanish on JVM restart,
 #                                     forcing every user to redo SSO.
 ssuai:
   connector:

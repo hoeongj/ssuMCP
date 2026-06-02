@@ -90,6 +90,7 @@ ssuai:
       # token survives >1 week without expiry — treating it as effectively
       # unlimited. 7d covers the common JVM-restart-between-sessions case.
       ttl: 7d
+      encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
     seat:
       # Per-floor cache TTL. Short enough that students get fresh data
       # before walking over, long enough that the library page is not

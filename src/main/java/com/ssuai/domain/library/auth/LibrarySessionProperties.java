@@ -12,6 +12,7 @@ public class LibrarySessionProperties {
     private Duration ttl = Duration.ofHours(2);
     private int maxSessions = 1000;
     private int maxTokenLength = 4096;
+    private String encryptionKey = "";
 
     public Duration getTtl() {
         return ttl;
@@ -35,5 +36,13 @@ public class LibrarySessionProperties {
 
     public void setMaxTokenLength(int maxTokenLength) {
         this.maxTokenLength = maxTokenLength;
+    }
+
+    public String getEncryptionKey() {
+        return encryptionKey;
+    }
+
+    public void setEncryptionKey(String encryptionKey) {
+        this.encryptionKey = encryptionKey;
     }
 }
