@@ -1398,3 +1398,128 @@ JWT secret이 pod 재시작마다 바뀌어서 refresh token이 무효화되는 
 1. JWT access token / refresh token 분리 설계의 이유와 각각의 적절한 TTL 기준은?
 2. SPA에서 "조용한 자동 갱신(silent refresh)"을 구현할 때 고려해야 할 경쟁 조건(race condition)은?
 3. Vercel rewrite proxy가 Set-Cookie를 302 응답에서 제거하는 이유와, 이를 우회한 방법은?
+
+---
+
+## [2026-06-03] Vercel Root Directory 설정 오류 + 엣지 캐시 6일 stale
+
+### 증상
+5월 13일 이후 모든 Vercel 배포가 실패. `gh api deployments`로 확인하면 전부 `state: failure`. 프론트엔드 신기능(챗봇 로그인 버튼, 세션 만료 자동 로그아웃 등)이 배포됐다고 생각했지만 실제로는 구버전이 계속 서빙됨.
+
+### 처음 세운 가설 (틀림)
+코드 변경이 Vercel 빌드를 깨트렸을 거다 → `pnpm build` 로컬 통과 확인 → GitHub Actions CI 통과 확인 → 여기까지는 문제 없음. "Vercel CDN 캐시가 오래됐겠지"라고 가볍게 생각했지만 실제로는 Vercel 빌드 자체가 실패 중이었음.
+
+### 실제 원인 (2개 중첩)
+1. **Vercel Root Directory 설정 오류**: Vercel 프로젝트가 `frontend/` 폴더를 루트로 바라보고 있었음. 이전에 모노레포였을 때 설정이 그대로 남아 있어서 빌드 로그에 `"The specified Root Directory 'frontend' does not exist."` 메시지 출력 후 1초 만에 실패. GitHub Actions CI는 별도 환경이라 이 설정과 무관하게 통과.
+2. **엣지 캐시 6일 stale**: Root Directory 설정을 고쳐도 한국 Vercel 엣지(icn1)가 구버전 HTML을 캐싱 중. `curl -sI` 로 확인하면 `Age: 531311`, `X-Vercel-Cache: HIT`. 새 배포가 되더라도 CDN이 오래된 캐시를 계속 서빙. 해결: `export const dynamic = "force-dynamic"` 을 `/` 와 `/chat` 페이지에 추가 → 매 요청마다 서버 렌더링, CDN 캐시 우회.
+
+### 핵심 파일/커밋
+- Vercel 대시보드 Settings → Root Directory: `frontend` → 빈 값으로 수정
+- `ssuAI/app/page.tsx`, `ssuAI/app/chat/page.tsx`: `export const dynamic = "force-dynamic"` 추가
+
+### 포트폴리오 포인트
+- GitHub Actions CI 통과 ≠ Vercel 빌드 통과. Vercel은 자체 빌드 환경을 사용하며 프로젝트 설정(Root Directory, Build Command 등)의 영향을 받음.
+- `curl -sI` + `Age` + `X-Vercel-Cache` 헤더로 CDN 캐시 상태를 진단한 방법.
+- Next.js `force-dynamic`이 서버 컴포넌트 캐싱에 미치는 영향과, CDN 엣지 캐시와의 관계.
+
+### 면접 예상 질문
+1. Vercel 배포가 성공했는데 사용자가 구버전을 보는 이유와 진단 방법은?
+2. Next.js `force-dynamic`, `revalidate`, 캐시 태그의 차이와 언제 어떤 것을 쓰는가?
+3. CI 파이프라인과 실제 프로덕션 빌드 환경이 달라 문제가 생기는 상황을 어떻게 예방하는가?
+
+---
+
+## [2026-06-03] Spring RestClient 청크 인코딩 → Content-Length 없어서 Cerebras 411
+
+### 증상
+Groq가 429(rate limit)를 반환하면 Fallback 체인이 Cerebras를 시도하는데, Cerebras가 `411 Length Required: "Content-Length header must be specified"` 를 반환. 최종적으로 `CHAT_UNAVAILABLE` 로 사용자에게 에러 노출. "개발자 누구야" 같은 단순 질문에도 에러가 발생해 질문 내용이 문제라고 오해.
+
+### 처음 세운 가설 (틀림)
+챗봇이 "개발자 누구야" 같은 질문 내용을 처리 못하는 거다 → 시스템 프롬프트 문제일 것 → 실제로는 프로바이더 네트워크 레이어 문제.
+
+### 실제 원인
+Spring `RestClient.post().body(object)` 는 Jackson으로 직렬화할 때 `Content-Length` 를 설정하지 않고 chunked transfer encoding을 사용함. Cerebras API는 `Content-Length` 헤더가 없으면 무조건 411 반환. 해결: 요청 본문을 `objectMapper.writeValueAsBytes(body)` 로 먼저 직렬화 후 `byte[]` 로 전달 → Spring이 길이를 알고 `Content-Length` 자동 설정.
+
+### 핵심 파일/커밋
+- `OpenAiCompatibleProvider.java`: `.body(body)` → `byte[] bodyBytes = BODY_MAPPER.writeValueAsBytes(body); .body(bodyBytes)` 로 변경
+- `BODY_MAPPER = new ObjectMapper()` static 필드 추가 (thread-safe, 생성자 변경 없이 처리)
+
+### 포트폴리오 포인트
+- HTTP 411이 발생하는 상황: 서버가 `Content-Length` 를 요구하지만 클라이언트가 chunked 방식으로 전송하는 경우. 이는 Spring RestClient의 기본 동작이며 API마다 요구사항이 다름.
+- `ObjectMapper` 가 thread-safe 싱글턴이기 때문에 static 필드로 선언해도 안전하다는 점.
+- 동일한 코드가 다른 프로바이더(Groq, Gemini 등)에서는 문제없던 이유: 해당 프로바이더들은 chunked 인코딩을 허용함.
+
+### 면접 예상 질문
+1. HTTP Transfer-Encoding: chunked 와 Content-Length 방식의 차이와 각각의 장단점은?
+2. Spring RestClient vs WebClient vs RestTemplate에서 요청 본문 직렬화 방식의 차이는?
+3. 동일한 클라이언트 코드가 특정 API에서만 실패할 때 진단하는 방법은?
+
+---
+
+## [2026-06-03] Multi-MCP 클라이언트 라우팅: mcpClients.get(0)만 사용하는 문제
+
+### 증상
+Spring AI MCP 클라이언트를 여러 개 설정해도 (`self` + `tavily`) Tavily 도구가 LLM에게 노출되지 않거나, 노출되더라도 호출 시 "지원하지 않는 도구입니다" 에러 반환.
+
+### 처음 세운 가설 (틀림)
+Spring AI가 `List<McpSyncClient>` 를 자동으로 합쳐서 사용할 것이다 → 실제로는 `LlmChatService` 가 `mcpClients.get(0)` 만 사용하고, switch 의 `default` 케이스가 에러를 반환하는 구조였음.
+
+### 실제 원인 (구조적 문제)
+```java
+// 기존
+private McpSyncClient mcpClient() { return mcpClients.get(0); }
+default -> toolError("지원하지 않는 도구입니다: " + toolName);
+```
+도구 목록 수집도 첫 번째 클라이언트만, 도구 호출 라우팅도 첫 번째만, unknown 도구는 에러. 두 번째 MCP 서버를 아무리 추가해도 완전히 무시됨.
+
+**해결 구조:**
+- `toolClientIndex: Map<String, McpSyncClient>` — lazy init, double-checked locking, 모든 클라이언트의 도구명→클라이언트 매핑
+- `discoverChatTools()` — 모든 클라이언트에서 도구 합산 (실패한 클라이언트 graceful skip)
+- `callMcp()` — `clientFor(toolName)` 으로 올바른 클라이언트 라우팅
+- `default ->` — 에러 대신 `callMcp(toolName, rawArgs)` 로 포워딩
+- `TavilyMcpEnvironmentPostProcessor` — `SSUAI_TAVILY_MCP_URL` 없으면 Tavily 연결 자체를 Spring context에 등록하지 않음 (빈 URL로 startup fail 방지)
+
+### 핵심 파일/커밋
+- `LlmChatService.java`: toolClientIndex, discoverChatTools, getToolClientIndex, clientFor, rawArguments 추가
+- `TavilyMcpEnvironmentPostProcessor.java`: EnvironmentPostProcessor로 조건부 등록
+- `spring.factories`: EnvironmentPostProcessor 등록
+
+### 포트폴리오 포인트
+- Spring AI 1.1의 `@Lazy List<McpSyncClient>` 주입은 자동 라우팅을 제공하지 않음. 프레임워크가 주입해주는 것과 실제로 사용하는 것은 별개.
+- `EnvironmentPostProcessor` 패턴: Spring context 생성 전에 환경 변수를 동적으로 조작해 선택적으로 Bean을 활성화/비활성화하는 방법. `@ConditionalOnProperty` 보다 유연함.
+- double-checked locking으로 lazy init 구현 시 `volatile` 필드가 필수인 이유 (CPU 명령 재정렬 방지).
+
+### 면접 예상 질문
+1. Spring의 `@Lazy` 주입이 실제 초기화를 언제 트리거하는지, 이를 활용하는 패턴은?
+2. `EnvironmentPostProcessor` 와 `@ConditionalOnProperty` 의 차이와 각각 언제 사용하는가?
+3. Volatile double-checked locking에서 volatile이 없으면 어떤 문제가 발생하는가?
+
+---
+
+## [2026-06-03] LLM 멀티도구 초과 시 JSON 환각 출력
+
+### 증상
+"나의 모든 정보를 전부 다 보여줘" 질문 시 챗봇이 `{"tool":"get_my_grades","params":{}}` 같은 JSON을 그대로 텍스트로 출력하고, `"totalCredits":120`, `"creditsEarned":115` 같은 완전히 가짜 데이터를 생성. 실제 성적 데이터(GPA 3.22 제외)와 전혀 맞지 않음.
+
+### 처음 세운 가설 (틀림)
+LLM이 도구 호출 형식을 잘못 이해했거나 시스템 프롬프트가 부족해서다 → 실제로는 도구 호출 한도(2개) 초과 시 발생하는 구조적 실패 모드.
+
+### 실제 원인
+`llmMaxToolCalls: 2` 설정인데 "모든 정보"는 5~7개 도구가 필요. LLM이 2개 호출 후 나머지를 실행할 수 없게 되자, 내부 계획(chain-of-thought)을 JSON 형식으로 텍스트 답변에 그대로 출력하는 실패 모드로 전락. 일부 값(GPA 3.22)은 직전 대화 컨텍스트에서 가져와 맞게 나오지만, 나머지는 완전히 환각.
+
+**해결:**
+- 시스템 프롬프트에 명시적 규칙 추가: "한 번에 도구 2개 한도", "모든 정보 요청 시 나눠서 물어봐달라고 안내", "절대로 JSON 형식을 텍스트에 출력하지 마"
+- XML 구조화 + few-shot 예시로 LLM이 한도 초과 상황을 정상적으로 처리하도록 패턴 학습
+
+### 핵심 파일/커밋
+- `SystemPromptBuilder.java`: XML 구조(`<role>`, `<tools>`, `<guidelines>`, `<examples>`, `<off_limits>`), 규칙 7·8 추가, few-shot 3개 예시
+
+### 포트폴리오 포인트
+- LLM의 실패 모드(failure mode): 도구 호출 한도 초과 시 내부 추론 과정을 텍스트로 직접 출력하는 현상. 이를 "사고 누출(reasoning leak)"이라고도 함.
+- MCP/tool-use 기반 챗봇에서 시스템 프롬프트는 단순한 말투 설정이 아니라 "언제 도구를 쓰고 쓰지 말아야 하는지"를 명확히 정의하는 오케스트레이션 가이드.
+- XML 태그 구조화가 Claude 계열뿐 아니라 Llama 계열 모델에서도 프롬프트 파싱 품질을 높이는 이유.
+
+### 면접 예상 질문
+1. LLM에서 tool-use를 구현할 때 "도구 호출 한도"를 설정하는 이유와, 한도 초과 시 어떻게 처리해야 하는가?
+2. 챗봇에서 환각(hallucination)이 발생하는 주요 원인과 시스템 프롬프트 레벨에서 완화할 수 있는 방법은?
+3. Few-shot 예시를 시스템 프롬프트에 넣는 것과 파인튜닝의 차이, 각각 언제 선택하는가?
