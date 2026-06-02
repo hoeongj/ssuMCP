@@ -348,8 +348,9 @@ class RusaintUniFfiClient : RusaintClient {
         }
 
     private fun periodFromTimeRange(timeRange: String): Int {
-        val start = timeRange.substringBefore("-").trim()
+        val start = TIME_START_PATTERN.find(timeRange)?.value ?: return 0
         return when (start) {
+            "08:00" -> 0
             "09:00" -> 1
             "10:00" -> 2
             "10:30" -> 3
@@ -388,4 +389,8 @@ class RusaintUniFfiClient : RusaintClient {
         } finally {
             close()
         }
+
+    private companion object {
+        private val TIME_START_PATTERN = Regex("""\d{2}:\d{2}""")
+    }
 }
