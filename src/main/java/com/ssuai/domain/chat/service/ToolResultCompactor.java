@@ -230,22 +230,25 @@ public class ToolResultCompactor {
     private ObjectNode compactGraduationNode(JsonNode node) {
         ObjectNode compact = objectMapper.createObjectNode();
         copyBooleanIfPresent(node, compact, "isGraduatable");
-        ArrayNode unmetRequirements = objectMapper.createArrayNode();
+        ArrayNode unmetItems = objectMapper.createArrayNode();
         int unmetCount = 0;
         JsonNode requirements = node.get("requirements");
         if (requirements != null && requirements.isArray()) {
-            for (JsonNode requirement : requirements) {
-                if (!requirement.path("satisfied").asBoolean(false)) {
+            for (JsonNode req : requirements) {
+                if (!req.path("satisfied").asBoolean(true)) {
                     unmetCount++;
-                    JsonNode name = requirement.get("name");
-                    if (name != null && !name.isNull() && !name.asText("").isBlank()) {
-                        unmetRequirements.add(name.asText());
-                    }
+                    ObjectNode item = objectMapper.createObjectNode();
+                    copyTextIfPresent(req, item, "name");
+                    // Keep progress numbers so the answer can say "89 credits done, 44 remaining".
+                    copyDoubleIfPresent(req, item, "required");
+                    copyDoubleIfPresent(req, item, "completed");
+                    copyDoubleIfPresent(req, item, "remaining");
+                    unmetItems.add(item);
                 }
             }
         }
-        compact.put("unmetRequirementCount", unmetCount);
-        compact.set("unmetRequirements", unmetRequirements);
+        compact.put("unmetCount", unmetCount);
+        compact.set("unmet", unmetItems);
         return compact;
     }
 
