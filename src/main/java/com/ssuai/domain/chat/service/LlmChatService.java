@@ -892,20 +892,39 @@ public class LlmChatService implements ChatService {
     }
 
     /**
-     * Grades NEVER cross into LLM prompts (Task 16 spec §6 #6 locked-in
-     * decision + security checklist §8). The chat path answers grade
-     * questions with a citation — "성적 페이지에서 N과목 확인 가능합니다"
-     * + a link — never the rows themselves. This compact branch enforces
-     * that: regardless of what the upstream tool returned, only
-     * {@code count} (total course rows across every term) and {@code link}
-     * (the deep link the controller serves on) reach the LLM. Per-term
-     * GPA, course names, scores, grade letters, professor names — all
-     * dropped here, by design.
+     * Passes cumulative GPA and per-term GPA history to the LLM so it can
+     * answer "내 학점 평균이 뭐야" type questions directly. Per-course data
+     * (course names, scores, letter grades, professor names) is still
+     * excluded — those require the /grades page.
      */
     private ObjectNode compactGradesNode(JsonNode node) {
         ObjectNode compact = objectMapper.createObjectNode();
         compact.put("count", countGradeCourses(node));
         compact.put("link", "/grades");
+
+        JsonNode academic = node.path("academicRecord");
+        if (!academic.isMissingNode() && !academic.isNull()) {
+            ObjectNode gpaNode = objectMapper.createObjectNode();
+            copyDoubleIfPresent(academic, gpaNode, "gpa");
+            copyDoubleIfPresent(academic, gpaNode, "earnedCredits");
+            compact.set("academicRecord", gpaNode);
+        }
+
+        JsonNode history = node.path("history");
+        if (history.isArray() && !history.isEmpty()) {
+            ArrayNode compactHistory = objectMapper.createArrayNode();
+            int limit = Math.min(history.size(), 12);
+            for (int i = 0; i < limit; i++) {
+                JsonNode term = history.get(i);
+                ObjectNode termNode = objectMapper.createObjectNode();
+                copyIntIfPresent(term, termNode, "year");
+                copyTextIfPresent(term, termNode, "term");
+                copyDoubleIfPresent(term, termNode, "gpa");
+                compactHistory.add(termNode);
+            }
+            compact.set("history", compactHistory);
+        }
+
         return compact;
     }
 
@@ -1124,6 +1143,13 @@ public class LlmChatService implements ChatService {
         JsonNode value = source.get(field);
         if (value != null && !value.isNull() && value.isBoolean()) {
             target.put(field, value.asBoolean());
+        }
+    }
+
+    private static void copyDoubleIfPresent(JsonNode source, ObjectNode target, String field) {
+        JsonNode value = source.get(field);
+        if (value != null && !value.isNull() && value.isNumber()) {
+            target.put(field, value.asDouble());
         }
     }
 
