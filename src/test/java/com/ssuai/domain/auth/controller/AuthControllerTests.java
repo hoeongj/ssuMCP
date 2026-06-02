@@ -2,8 +2,11 @@ package com.ssuai.domain.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,6 +37,7 @@ import com.ssuai.global.auth.JwtClaims;
 import com.ssuai.global.auth.JwtProperties;
 import com.ssuai.global.auth.JwtProvider;
 import com.ssuai.global.auth.JwtTokenType;
+import com.ssuai.global.auth.RefreshTokenDenylist;
 
 @ActiveProfiles("test")
 @WebMvcTest(AuthController.class)
@@ -55,6 +59,9 @@ class AuthControllerTests {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+
+    @MockitoBean
+    private RefreshTokenDenylist refreshTokenDenylist;
 
     @Autowired
     AuthControllerTests(MockMvc mockMvc) {
@@ -116,9 +123,11 @@ class AuthControllerTests {
         JwtClaims claims = new JwtClaims(
                 "20231234", "홍길동",
                 JwtTokenType.REFRESH,
-                Instant.now(), Instant.now().plusSeconds(86_400));
+                Instant.now(), Instant.now().plusSeconds(86_400),
+                "refresh-jti-1");
 
         when(jwtProvider.parse("old.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
+        when(refreshTokenDenylist.isDenied("refresh-jti-1")).thenReturn(false);
         when(studentService.findById("20231234")).thenReturn(Optional.of(student));
         when(jwtProvider.issueAccess(student)).thenReturn("new.access.jwt");
         when(jwtProvider.issueRefresh(student)).thenReturn("new.refresh.jwt");
@@ -135,6 +144,29 @@ class AuthControllerTests {
                 .andExpect(header().string("Set-Cookie", containsString("Secure")))
                 .andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")))
                 .andExpect(header().string("Set-Cookie", containsString("Path=/api/auth")));
+
+        verify(refreshTokenDenylist).deny("refresh-jti-1", claims.expiresAt());
+    }
+
+    @Test
+    void refreshReturns401WhenRefreshJtiDenied() throws Exception {
+        JwtClaims claims = new JwtClaims(
+                "20231234", "student",
+                JwtTokenType.REFRESH,
+                Instant.now(), Instant.now().plusSeconds(86_400),
+                "reused-jti");
+        when(jwtProvider.parse("old.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
+        when(refreshTokenDenylist.isDenied("reused-jti")).thenReturn(true);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(new Cookie("ssuai_refresh", "old.refresh.jwt")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+
+        verifyNoInteractions(studentService);
+        verify(jwtProvider, never()).issueAccess(any());
+        verify(jwtProvider, never()).issueRefresh(any());
+        verify(refreshTokenDenylist, never()).deny(anyString(), any());
     }
 
     @Test
@@ -174,8 +206,10 @@ class AuthControllerTests {
         JwtClaims claims = new JwtClaims(
                 "20231234", "홍길동",
                 JwtTokenType.REFRESH,
-                Instant.now(), Instant.now().plusSeconds(86_400));
+                Instant.now(), Instant.now().plusSeconds(86_400),
+                "missing-student-jti");
         when(jwtProvider.parse("ok.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
+        when(refreshTokenDenylist.isDenied("missing-student-jti")).thenReturn(false);
         when(studentService.findById("20231234")).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/auth/refresh")
@@ -199,7 +233,38 @@ class AuthControllerTests {
                 .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
                 .andExpect(header().string("Set-Cookie", containsString("Path=/api/auth")));
 
-        verifyNoInteractions(jwtProvider, studentService);
+        verifyNoInteractions(jwtProvider, studentService, refreshTokenDenylist);
+    }
+
+    @Test
+    void logoutDeniesValidRefreshCookieAndReturns200() throws Exception {
+        JwtClaims claims = new JwtClaims(
+                "20231234", "student",
+                JwtTokenType.REFRESH,
+                Instant.now(), Instant.now().plusSeconds(86_400),
+                "logout-jti");
+        when(jwtProvider.parse("logout.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .cookie(new Cookie("ssuai_refresh", "logout.refresh.jwt")))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Set-Cookie", containsString("Max-Age=0")));
+
+        verify(refreshTokenDenylist).deny("logout-jti", claims.expiresAt());
+        verifyNoInteractions(studentService);
+    }
+
+    @Test
+    void logoutIgnoresInvalidRefreshCookieAndReturns200() throws Exception {
+        when(jwtProvider.parse("tampered.refresh.jwt", JwtTokenType.REFRESH))
+                .thenThrow(new InvalidJwtException("tampered"));
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .cookie(new Cookie("ssuai_refresh", "tampered.refresh.jwt")))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Set-Cookie", containsString("Max-Age=0")));
+
+        verifyNoInteractions(refreshTokenDenylist, studentService);
     }
 
     @Test

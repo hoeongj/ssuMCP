@@ -23,6 +23,7 @@ import com.ssuai.global.auth.JwtClaims;
 import com.ssuai.global.auth.JwtProperties;
 import com.ssuai.global.auth.JwtProvider;
 import com.ssuai.global.auth.JwtTokenType;
+import com.ssuai.global.auth.RefreshTokenDenylist;
 import com.ssuai.global.exception.UnauthorizedException;
 import com.ssuai.global.response.ApiResponse;
 
@@ -41,16 +42,19 @@ public class AuthController {
     private final JwtProvider jwtProvider;
     private final JwtProperties jwtProperties;
     private final AuthProperties authProperties;
+    private final RefreshTokenDenylist refreshTokenDenylist;
 
     public AuthController(
             StudentService studentService,
             JwtProvider jwtProvider,
             JwtProperties jwtProperties,
-            AuthProperties authProperties) {
+            AuthProperties authProperties,
+            RefreshTokenDenylist refreshTokenDenylist) {
         this.studentService = studentService;
         this.jwtProvider = jwtProvider;
         this.jwtProperties = jwtProperties;
         this.authProperties = authProperties;
+        this.refreshTokenDenylist = refreshTokenDenylist;
     }
 
     @GetMapping("/me")
@@ -84,11 +88,15 @@ public class AuthController {
         } catch (InvalidJwtException exception) {
             throw new UnauthorizedException();
         }
+        if (refreshTokenDenylist.isDenied(claims.jti())) {
+            throw new UnauthorizedException();
+        }
         Student student = studentService.findById(claims.studentId())
                 .orElseThrow(UnauthorizedException::new);
 
         String accessToken = jwtProvider.issueAccess(student);
         String rotatedRefresh = jwtProvider.issueRefresh(student);
+        refreshTokenDenylist.deny(claims.jti(), claims.expiresAt());
         response.addHeader(HttpHeaders.SET_COOKIE, buildRefreshCookie(rotatedRefresh).toString());
 
         return ApiResponse.success(new RefreshResponse(
@@ -113,17 +121,14 @@ public class AuthController {
 
     /**
      * Clears the refresh cookie by overwriting it with an empty
-     * {@code Max-Age=0} cookie. Always returns 200 so a logout call from
-     * an already-anonymous browser is a no-op rather than an error.
-     *
-     * <p>This is best-effort revocation: ssuAI's refresh JWTs are
-     * stateless, so a copy of the old refresh token sitting in another
-     * tab or stolen elsewhere stays valid until its 14-day TTL expires.
-     * Future "force-logout-all-devices" support would need a refresh-jti
-     * allowlist table; tracked as TODO in ADR 0014.
+     * {@code Max-Age=0} cookie. If a valid refresh cookie is present, its
+     * jti is also denied so a copied token cannot be reused on this JVM.
      */
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(HttpServletResponse response) {
+    public ApiResponse<Void> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        denyRefreshCookieIfPresent(request);
         AuthProperties.RefreshCookie cookieConfig = authProperties.getRefreshCookie();
         ResponseCookie cleared = ResponseCookie.from(cookieConfig.getName(), "")
                 .httpOnly(true)
@@ -134,6 +139,19 @@ public class AuthController {
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cleared.toString());
         return ApiResponse.success(null);
+    }
+
+    private void denyRefreshCookieIfPresent(HttpServletRequest request) {
+        String refreshToken = readRefreshCookie(request);
+        if (refreshToken == null) {
+            return;
+        }
+        try {
+            JwtClaims claims = jwtProvider.parse(refreshToken, JwtTokenType.REFRESH);
+            refreshTokenDenylist.deny(claims.jti(), claims.expiresAt());
+        } catch (InvalidJwtException ignored) {
+            // Logout remains idempotent; an invalid cookie is just cleared.
+        }
     }
 
     private ResponseCookie buildRefreshCookie(String refreshToken) {
