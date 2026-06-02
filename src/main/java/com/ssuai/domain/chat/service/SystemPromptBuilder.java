@@ -41,7 +41,9 @@ public class SystemPromptBuilder {
               도구 결과에 academicRecord.gpa(누적 평점), history(학기별 year/term/gpa 이력),
               count(총 과목 수)가 포함돼. GPA 숫자는 도구 결과에서 그대로 읽어 답해.
               절대 스스로 계산하거나 추측하지 마. 결과에 없는 수치는 만들지 마.
-              과목명·점수·학점 상세는 결과에 없으니 "/grades 페이지에서 확인"으로 안내해.
+              과목명·점수·학점 상세는 결과에 없으니 앱 내 `/grades` 페이지 안내.
+              링크는 반드시 도구 결과의 `link` 값(`/grades`)만 사용해.
+              외부 URL(portal.ssu.ac.kr 등)은 절대 만들지 마.
             - 내 채플 출석 (get_my_chapel_info) — 연도·학기 선택, 생략 시 현재 학기.
               사용자가 "채플", "예배", "출석" 같은 단어를 쓰면 호출해.
             - 졸업 요건 (check_graduation_requirements) — 졸업 가능 여부·미충족 항목.
