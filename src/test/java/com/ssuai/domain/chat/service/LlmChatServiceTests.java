@@ -641,13 +641,14 @@ class LlmChatServiceTests {
         assertThat(toolContent)
                 .contains("\"count\":1")
                 .contains("\"link\":\"/grades\"")
-                .doesNotContain("3.50")
+                .contains("\"academicRecord\"")
+                .contains("\"history\"")
+                // per-course detail (scores, grades, names) never reaches LLM
                 .doesNotContain("95")
                 .doesNotContain("A0")
                 .doesNotContain("운영체제")
                 .doesNotContain("김교수")
                 .doesNotContain("21500001")
-                .doesNotContain("history")
                 .doesNotContain("detailsByTerm");
     }
 
@@ -749,7 +750,7 @@ class LlmChatServiceTests {
      * count + a deep link reach the LLM.
      */
     @Test
-    void gradesCompactStripsAllGradeRowsAndKeepsOnlyCountAndLink() {
+    void gradesCompactExposesGpaAndHistoryButBlocksPerCourseDetail() {
         LlmChatService chatService = chatService(
                 List.of(new FakeProvider("noop").reply("noop", "noop")),
                 List.of("noop"));
@@ -778,18 +779,22 @@ class LlmChatServiceTests {
 
         String compact = chatService.compactAndCap("get_my_grades", rawGradesJson);
 
-        // 본문 누출 절대 금지 — GPA, 과목명, 점수, 등급, 교수명, 학점, 석차 어느 것도 통과 X
+        // 허용 — count, link, 누적 GPA, 학기별 GPA 이력 (year/term/gpa만)
         assertThat(compact)
-                .doesNotContain("3.50")
-                .doesNotContain("3.5")
-                .doesNotContain("262.50")
-                .doesNotContain("85.00")
-                .doesNotContain("75.0")
-                .doesNotContain("18.0")
-                .doesNotContain("95")
-                .doesNotContain("88")
-                .doesNotContain("A0")
-                .doesNotContain("B+")
+                .contains("\"count\":2")
+                .contains("\"link\":\"/grades\"")
+                .contains("\"academicRecord\"")
+                .contains("\"history\"");
+
+        // 여전히 차단 — per-course 데이터, 집계 필드, certificate, 석차
+        assertThat(compact)
+                .doesNotContain("262.50")       // gpaSum
+                .doesNotContain("85.00")        // arithmeticAverage
+                .doesNotContain("18.0")         // history earnedCredits (gpa만 노출)
+                .doesNotContain("95")           // score
+                .doesNotContain("88")           // score
+                .doesNotContain("A0")           // letter grade
+                .doesNotContain("B+")           // letter grade
                 .doesNotContain("운영체제")
                 .doesNotContain("알고리즘")
                 .doesNotContain("21500001")
@@ -798,14 +803,8 @@ class LlmChatServiceTests {
                 .doesNotContain("이교수")
                 .doesNotContain("50/100")
                 .doesNotContain("60/100")
-                .doesNotContain("history")
-                .doesNotContain("academicRecord")
                 .doesNotContain("certificate")
                 .doesNotContain("detailsByTerm");
-        // 허용 — 코스 수 + deep link 만
-        assertThat(compact)
-                .contains("\"count\":2")
-                .contains("\"link\":\"/grades\"");
     }
 
     @Test
@@ -834,8 +833,8 @@ class LlmChatServiceTests {
         assertThat(compact)
                 .contains("\"count\":0")
                 .contains("\"link\":\"/grades\"")
-                .doesNotContain("3.50")
-                .doesNotContain("history");
+                .contains("\"academicRecord\"")
+                .contains("\"history\"");
     }
 
     /**
