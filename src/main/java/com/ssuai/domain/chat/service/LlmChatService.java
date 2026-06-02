@@ -3,11 +3,8 @@ package com.ssuai.domain.chat.service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.TextStyle;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -21,8 +18,6 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
@@ -91,13 +86,7 @@ public class LlmChatService implements ChatService {
             "도서관 세션 연동이 필요한 정보예요. 대시보드의 도서관 카드에서 '도서관 연동' 버튼을 누르고 학번과 비밀번호를 입력해 주세요.";
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    private static final Locale KOREAN = Locale.KOREAN;
 
-    private static final int MAX_CHAT_TOOL_FACILITY_RESULTS = 10;
-    private static final int MAX_CHAT_TOOL_LIST_RESULTS = 20;
-    private static final int MAX_NOTICE_DETAIL_CHARS = 2_000;
-    private static final int MAX_TOOL_CONTENT_BYTES = 8 * 1024;
-    private static final String TOOL_TRUNCATION_MARKER = "...[truncated]";
     private static final Set<String> CHAT_EXCLUDED_TOOLS = Set.of(
             "start_auth", "get_auth_status", "logout_provider", "logout_all");
     private static final Set<String> PRIVATE_RESULT_TOOLS = Set.of(
@@ -123,6 +112,7 @@ public class LlmChatService implements ChatService {
     private final LibrarySeatService librarySeatService;
     private final LibraryLoansService libraryLoansService;
     private final Clock clock;
+    private ToolResultCompactor toolResultCompactor;
     private volatile List<OpenAiChatCompletionRequest.Tool> cachedChatTools;
     private volatile Map<String, McpSyncClient> toolClientIndex;
 
@@ -144,12 +134,14 @@ public class LlmChatService implements ChatService {
             SaintChapelService chapelService,
             SaintGraduationService graduationService,
             SaintScholarshipService scholarshipService,
-            SystemPromptBuilder systemPromptBuilder
+            SystemPromptBuilder systemPromptBuilder,
+            ToolResultCompactor toolResultCompactor
     ) {
         this(properties, providers, objectMapper, conversationStore,
                 scheduleService, gradesService, lmsAssignmentsService, librarySeatService, libraryLoansService,
                 mcpClients, Clock.system(KST), chapelService, graduationService, scholarshipService);
         this.systemPromptBuilder = systemPromptBuilder;
+        this.toolResultCompactor = toolResultCompactor;
     }
 
     // Constructor for backward compatibility in tests
@@ -205,6 +197,7 @@ public class LlmChatService implements ChatService {
         this.mcpClients = mcpClients;
         this.clock = clock;
         this.systemPromptBuilder = new SystemPromptBuilder(clock);
+        this.toolResultCompactor = new ToolResultCompactor(objectMapper);
     }
 
     /**
@@ -704,7 +697,7 @@ public class LlmChatService implements ChatService {
             Object response = serviceCall.get();
             String json = objectMapper.writeValueAsString(response);
             log.info("chat private tool completed: tool={} studentFp={}", toolName, studentFp);
-            return compactAndCap(toolName, json);
+            return toolResultCompactor.compactAndCap(toolName, json);
         } catch (SaintSessionExpiredException exception) {
             log.info("chat private tool expired: tool={} studentFp={}", toolName, studentFp);
             return toolError(SAINT_SESSION_EXPIRED_GUIDANCE);
@@ -728,7 +721,7 @@ public class LlmChatService implements ChatService {
             Object response = serviceCall.get();
             String json = objectMapper.writeValueAsString(response);
             log.info("chat private tool completed: tool={} studentFp={}", toolName, studentFp);
-            return compactAndCap(toolName, json);
+            return toolResultCompactor.compactAndCap(toolName, json);
         } catch (LmsSessionExpiredException exception) {
             log.info("chat private tool expired: tool={} studentFp={}", toolName, studentFp);
             return toolError(LMS_SESSION_EXPIRED_GUIDANCE);
@@ -752,7 +745,7 @@ public class LlmChatService implements ChatService {
             Object response = serviceCall.get();
             String json = objectMapper.writeValueAsString(response);
             log.info("chat private tool completed: tool={} sessionFp={}", toolName, sessionFp);
-            return compactAndCap(toolName, json);
+            return toolResultCompactor.compactAndCap(toolName, json);
         } catch (LibraryAuthRequiredException exception) {
             log.info("chat private tool auth: tool={} sessionFp={}", toolName, sessionFp);
             return toolError(LIBRARY_SESSION_GUIDANCE);
@@ -789,7 +782,7 @@ public class LlmChatService implements ChatService {
         if (text.isBlank()) {
             return toolError("도구 응답이 비어 있습니다.");
         }
-        return compactAndCap(toolName, text);
+        return toolResultCompactor.compactAndCap(toolName, text);
     }
 
     private static String extractText(List<McpSchema.Content> contents) {
@@ -806,436 +799,7 @@ public class LlmChatService implements ChatService {
     }
 
     String compactAndCap(String toolName, String rawJsonText) {
-        try {
-            JsonNode tree = objectMapper.readTree(rawJsonText);
-            JsonNode compacted = switch (toolName) {
-                case "get_today_meal", "get_meal_by_date" -> compactMealNode(tree);
-                case "get_dorm_weekly_meal" -> compactWeeklyMealNode(tree);
-                case "search_campus_facilities" -> compactFacilityListNode(tree);
-                case "get_library_seat_status" -> compactLibrarySeatNode(tree);
-                case "search_library_book" -> compactLibraryBookSearchNode(tree);
-                case "get_my_schedule" -> compactScheduleNode(tree);
-                case "get_my_grades" -> compactGradesNode(tree);
-                case "get_my_chapel_info" -> compactChapelNode(tree);
-                case "check_graduation_requirements" -> compactGraduationNode(tree);
-                case "get_my_scholarships" -> compactScholarshipsNode(tree);
-                case "get_my_assignments" -> compactAssignmentsNode(tree);
-                case "get_my_library_loans" -> compactLoansNode(tree);
-                case "get_recent_notices", "search_notices", "get_active_notices",
-                     "get_department_notices" -> compactNoticeListNode(tree);
-                case "get_notice_detail" -> compactNoticeDetailNode(tree);
-                case "list_notice_categories" -> tree;
-                default -> tree;
-            };
-            return capLength(objectMapper.writeValueAsString(compacted));
-        } catch (JsonProcessingException exception) {
-            return capLength(rawJsonText);
-        }
-    }
-
-    private static String capLength(String value) {
-        if (value.length() <= MAX_TOOL_CONTENT_BYTES) {
-            return value;
-        }
-        return value.substring(0, MAX_TOOL_CONTENT_BYTES) + TOOL_TRUNCATION_MARKER;
-    }
-
-    private ObjectNode compactMealNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "date");
-        compact.set("meals", filterArray(node.get("meals"), this::compactMealItemNode));
-        JsonNode closures = node.get("closures");
-        if (closures != null && closures.isArray() && !closures.isEmpty()) {
-            compact.set("closures", filterArray(closures, this::compactClosureNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactWeeklyMealNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "startDate");
-        copyTextIfPresent(node, compact, "endDate");
-        compact.set("days", filterArray(node.get("days"), this::compactMealNode));
-        return compact;
-    }
-
-    private ObjectNode compactFacilityListNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        JsonNode facilities = node.get("facilities");
-        int total = facilities != null && facilities.isArray() ? facilities.size() : 0;
-        compact.put("resultCount", total);
-        compact.put("truncated", total > MAX_CHAT_TOOL_FACILITY_RESULTS);
-        ArrayNode trimmed = objectMapper.createArrayNode();
-        if (facilities != null && facilities.isArray()) {
-            int limit = Math.min(total, MAX_CHAT_TOOL_FACILITY_RESULTS);
-            for (int index = 0; index < limit; index++) {
-                trimmed.add(compactFacilityNode(facilities.get(index)));
-            }
-        }
-        compact.set("facilities", trimmed);
-        return compact;
-    }
-
-    private ObjectNode compactMealItemNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "restaurant");
-        copyTextIfPresent(node, compact, "type");
-        copyTextIfPresent(node, compact, "corner");
-        if (node.hasNonNull("menu")) {
-            compact.set("menu", node.get("menu"));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactClosureNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "restaurant");
-        copyTextIfPresent(node, compact, "reason");
-        return compact;
-    }
-
-    private ObjectNode compactLibrarySeatNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "floor");
-        copyTextIfPresent(node, compact, "floorLabel");
-        copyIntIfPresent(node, compact, "totalSeats");
-        copyIntIfPresent(node, compact, "availableSeats");
-        copyIntIfPresent(node, compact, "reservedSeats");
-        copyIntIfPresent(node, compact, "outOfServiceSeats");
-        JsonNode zones = node.get("zones");
-        if (zones != null && zones.isArray() && !zones.isEmpty()) {
-            compact.set("zones", filterArray(zones, this::compactLibrarySeatZoneNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactLibrarySeatZoneNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "label");
-        copyIntIfPresent(node, compact, "total");
-        copyIntIfPresent(node, compact, "available");
-        return compact;
-    }
-
-    /**
-     * Schedule rows are allowed in LLM prompts in a compact row format
-     * (Task 16 spec §6 #6 — "월 1교시 알고리즘 / 정보과학관 401"). Strip
-     * fields the chat answer never needs (dayLabel — derivable from
-     * dayOfWeek, timeRange — derivable from period, professor — not
-     * required to answer "내일 1교시 뭐야?"). Keeping the input format
-     * tight makes the LLM prompt budget predictable and limits the
-     * cross-trust-boundary surface area.
-     */
-    private ObjectNode compactScheduleNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "enrollmentYear");
-        copyIntIfPresent(node, compact, "currentYear");
-        copyIntIfPresent(node, compact, "currentTerm");
-        JsonNode terms = node.get("terms");
-        if (terms != null && terms.isArray()) {
-            compact.set("terms", filterArray(terms, this::compactTermScheduleNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactTermScheduleNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "year");
-        copyIntIfPresent(node, compact, "term");
-        JsonNode entries = node.get("entries");
-        if (entries != null && entries.isArray()) {
-            compact.set("entries", filterArray(entries, this::compactScheduleEntryNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactScheduleEntryNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "dayOfWeek");
-        copyIntIfPresent(node, compact, "period");
-        copyTextIfPresent(node, compact, "course");
-        copyTextIfPresent(node, compact, "room");
-        return compact;
-    }
-
-    /**
-     * Passes cumulative GPA and per-term GPA history to the LLM so it can
-     * answer "내 학점 평균이 뭐야" type questions directly. Per-course data
-     * (course names, scores, letter grades, professor names) is still
-     * excluded — those require the /grades page.
-     */
-    private ObjectNode compactGradesNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        compact.put("count", countGradeCourses(node));
-        compact.put("link", "/grades");
-
-        JsonNode academic = node.path("academicRecord");
-        if (!academic.isMissingNode() && !academic.isNull()) {
-            ObjectNode gpaNode = objectMapper.createObjectNode();
-            copyDoubleIfPresent(academic, gpaNode, "gpa");
-            copyDoubleIfPresent(academic, gpaNode, "earnedCredits");
-            compact.set("academicRecord", gpaNode);
-        }
-
-        JsonNode history = node.path("history");
-        if (history.isArray() && !history.isEmpty()) {
-            ArrayNode compactHistory = objectMapper.createArrayNode();
-            int limit = Math.min(history.size(), 12);
-            for (int i = 0; i < limit; i++) {
-                JsonNode term = history.get(i);
-                ObjectNode termNode = objectMapper.createObjectNode();
-                copyIntIfPresent(term, termNode, "year");
-                copyTextIfPresent(term, termNode, "term");
-                copyDoubleIfPresent(term, termNode, "gpa");
-                compactHistory.add(termNode);
-            }
-            compact.set("history", compactHistory);
-        }
-
-        return compact;
-    }
-
-    private ObjectNode compactChapelNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "year");
-        copyTextIfPresent(node, compact, "semester");
-        copyIntIfPresent(node, compact, "absenceAllowedMinutes");
-        copyIntIfPresent(node, compact, "absenceUsedMinutes");
-        copyTextIfPresent(node, compact, "result");
-        return compact;
-    }
-
-    private ObjectNode compactGraduationNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyBooleanIfPresent(node, compact, "isGraduatable");
-        ArrayNode unmetRequirements = objectMapper.createArrayNode();
-        int unmetCount = 0;
-        JsonNode requirements = node.get("requirements");
-        if (requirements != null && requirements.isArray()) {
-            for (JsonNode requirement : requirements) {
-                if (!requirement.path("satisfied").asBoolean(false)) {
-                    unmetCount++;
-                    JsonNode name = requirement.get("name");
-                    if (name != null && !name.isNull() && !name.asText("").isBlank()) {
-                        unmetRequirements.add(name.asText());
-                    }
-                }
-            }
-        }
-        compact.put("unmetRequirementCount", unmetCount);
-        compact.set("unmetRequirements", unmetRequirements);
-        return compact;
-    }
-
-    private ArrayNode compactScholarshipsNode(JsonNode node) {
-        ArrayNode compact = objectMapper.createArrayNode();
-        if (node == null || !node.isArray()) {
-            return compact;
-        }
-        int limit = Math.min(node.size(), MAX_CHAT_TOOL_LIST_RESULTS);
-        for (int index = 0; index < limit; index++) {
-            JsonNode item = node.get(index);
-            ObjectNode entry = objectMapper.createObjectNode();
-            copyTextIfPresent(item, entry, "name");
-            copyIntIfPresent(item, entry, "year");
-            copyTextIfPresent(item, entry, "semester");
-            copyLongIfPresent(item, entry, "receivedAmount");
-            compact.add(entry);
-        }
-        return compact;
-    }
-
-    private static int countGradeCourses(JsonNode node) {
-        if (node == null) {
-            return 0;
-        }
-        JsonNode detailsByTerm = node.get("detailsByTerm");
-        if (detailsByTerm == null || !detailsByTerm.isObject()) {
-            return 0;
-        }
-        int total = 0;
-        for (Iterator<JsonNode> iterator = detailsByTerm.elements(); iterator.hasNext(); ) {
-            JsonNode rows = iterator.next();
-            if (rows != null && rows.isArray()) {
-                total += rows.size();
-            }
-        }
-        return total;
-    }
-
-    private ObjectNode compactAssignmentsNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        compact.put("termId", node.path("termId").asLong());
-        JsonNode items = node.path("items");
-        if (items.isArray()) {
-            ArrayNode compacted = objectMapper.createArrayNode();
-            for (JsonNode item : items) {
-                ObjectNode ci = objectMapper.createObjectNode();
-                copyTextIfPresent(item, ci, "courseName");
-                copyTextIfPresent(item, ci, "title");
-                copyTextIfPresent(item, ci, "type");
-                if (item.hasNonNull("dueDate")) {
-                    copyTextIfPresent(item, ci, "dueDate");
-                }
-                compacted.add(ci);
-            }
-            compact.set("items", compacted);
-        }
-        return compact;
-    }
-
-    private ObjectNode compactLoansNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        compact.put("total", node.path("total").asInt(0));
-        JsonNode loans = node.path("loans");
-        if (loans.isArray()) {
-            compact.set("loans", filterArray(loans, this::compactLoanItemNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactNoticeListNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "currentPage");
-        copyIntIfPresent(node, compact, "totalPages");
-        ArrayNode items = objectMapper.createArrayNode();
-        JsonNode sourceItems = node.get("items");
-        if (sourceItems != null && sourceItems.isArray()) {
-            int limit = Math.min(sourceItems.size(), MAX_CHAT_TOOL_LIST_RESULTS);
-            for (int index = 0; index < limit; index++) {
-                JsonNode item = sourceItems.get(index);
-                ObjectNode notice = objectMapper.createObjectNode();
-                copyTextIfPresent(item, notice, "title");
-                copyTextIfPresent(item, notice, "category");
-                copyTextIfPresent(item, notice, "date");
-                copyTextIfPresent(item, notice, "link");
-                copyTextIfPresent(item, notice, "department");
-                items.add(notice);
-            }
-        }
-        compact.set("items", items);
-        return compact;
-    }
-
-    private ObjectNode compactNoticeDetailNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "title");
-        JsonNode bodyText = node.get("bodyText");
-        if (bodyText != null && !bodyText.isNull() && !bodyText.asText("").isBlank()) {
-            String text = bodyText.asText();
-            compact.put("bodyText", text.length() <= MAX_NOTICE_DETAIL_CHARS
-                    ? text
-                    : text.substring(0, MAX_NOTICE_DETAIL_CHARS) + "...");
-        }
-        return compact;
-    }
-
-    private ObjectNode compactLoanItemNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "title");
-        copyTextIfPresent(node, compact, "dueDate");
-        JsonNode overdue = node.get("isOverdue");
-        if (overdue != null && !overdue.isNull()) {
-            compact.put("isOverdue", overdue.asBoolean(false));
-        }
-        JsonNode renewable = node.get("isRenewable");
-        if (renewable != null && !renewable.isNull()) {
-            compact.put("isRenewable", renewable.asBoolean(false));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactLibraryBookSearchNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyIntIfPresent(node, compact, "total");
-        copyIntIfPresent(node, compact, "page");
-        copyIntIfPresent(node, compact, "size");
-        JsonNode items = node.get("items");
-        if (items != null && items.isArray() && !items.isEmpty()) {
-            compact.set("items", filterArray(items, this::compactLibraryBookItemNode));
-        }
-        return compact;
-    }
-
-    private ObjectNode compactLibraryBookItemNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "title");
-        copyTextIfPresent(node, compact, "author");
-        copyTextIfPresent(node, compact, "publication");
-        copyTextIfPresent(node, compact, "callNumber");
-        copyTextIfPresent(node, compact, "location");
-        copyTextIfPresent(node, compact, "status");
-        return compact;
-    }
-
-    private ObjectNode compactFacilityNode(JsonNode node) {
-        ObjectNode compact = objectMapper.createObjectNode();
-        copyTextIfPresent(node, compact, "name");
-        if (node.hasNonNull("categoryLabel")) {
-            compact.put("category", node.get("categoryLabel").asText());
-        } else if (node.hasNonNull("category")) {
-            compact.put("category", node.get("category").asText());
-        }
-        copyTextIfPresent(node, compact, "location");
-        copyTextIfPresent(node, compact, "phone");
-        copyTextIfPresent(node, compact, "extension");
-        copyNonEmptyArray(node, compact, "weekdayHours");
-        copyNonEmptyArray(node, compact, "weekendHours");
-        copyNonEmptyArray(node, compact, "notes");
-        return compact;
-    }
-
-    private static void copyTextIfPresent(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && !value.isNull() && !value.asText("").isBlank()) {
-            target.put(field, value.asText());
-        }
-    }
-
-    private static void copyIntIfPresent(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && !value.isNull() && value.isNumber()) {
-            target.put(field, value.asInt());
-        }
-    }
-
-    private static void copyLongIfPresent(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && !value.isNull() && value.isNumber()) {
-            target.put(field, value.asLong());
-        }
-    }
-
-    private static void copyBooleanIfPresent(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && !value.isNull() && value.isBoolean()) {
-            target.put(field, value.asBoolean());
-        }
-    }
-
-    private static void copyDoubleIfPresent(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && !value.isNull() && value.isNumber()) {
-            target.put(field, value.asDouble());
-        }
-    }
-
-    private static void copyNonEmptyArray(JsonNode source, ObjectNode target, String field) {
-        JsonNode value = source.get(field);
-        if (value != null && value.isArray() && !value.isEmpty()) {
-            target.set(field, value);
-        }
-    }
-
-    private ArrayNode filterArray(JsonNode source, Function<JsonNode, ObjectNode> mapper) {
-        ArrayNode array = objectMapper.createArrayNode();
-        if (source == null || !source.isArray()) {
-            return array;
-        }
-        for (Iterator<JsonNode> iterator = source.elements(); iterator.hasNext(); ) {
-            array.add(mapper.apply(iterator.next()));
-        }
-        return array;
+        return toolResultCompactor.compactAndCap(toolName, rawJsonText);
     }
 
     private String requiredArgument(OpenAiToolCall toolCall, String fieldName) {
