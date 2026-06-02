@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +21,8 @@ import com.ssuai.domain.chat.dto.OpenAiChatCompletionResponse;
 abstract class OpenAiCompatibleProvider implements LlmProvider {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleProvider.class);
+    // ObjectMapper is thread-safe; shared static instance avoids constructor propagation.
+    private static final ObjectMapper BODY_MAPPER = new ObjectMapper();
 
     private final String name;
     private final LlmChatProperties properties;
@@ -91,6 +95,13 @@ abstract class OpenAiCompatibleProvider implements LlmProvider {
                 request.toolChoice()
         );
 
+        byte[] bodyBytes;
+        try {
+            bodyBytes = BODY_MAPPER.writeValueAsBytes(body);
+        } catch (JsonProcessingException e) {
+            throw new LlmProviderException(name, "Failed to serialize request body", true);
+        }
+
         try {
             OpenAiChatCompletionResponse response = restClient()
                     .post()
@@ -98,7 +109,7 @@ abstract class OpenAiCompatibleProvider implements LlmProvider {
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .headers(headers())
-                    .body(body)
+                    .body(bodyBytes)
                     .retrieve()
                     .body(OpenAiChatCompletionResponse.class);
             if (response == null) {
