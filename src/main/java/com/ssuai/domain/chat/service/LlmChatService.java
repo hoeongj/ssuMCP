@@ -158,7 +158,7 @@ public class LlmChatService implements ChatService {
             "LMS 세션이 만료됐어요. LMS(SmartID)로 다시 로그인하고 물어봐 주세요.";
 
     private static final String LIBRARY_SESSION_GUIDANCE =
-            "도서관 세션 연동이 필요한 정보예요. 도서관 좌석 현황 카드에서 '도서관 연동' 버튼을 누르고 Pyxis-Auth-Token 을 붙여넣어 주세요.";
+            "도서관 세션 연동이 필요한 정보예요. 대시보드의 도서관 카드에서 '도서관 연동' 버튼을 누르고 학번과 비밀번호를 입력해 주세요.";
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final Locale KOREAN = Locale.KOREAN;

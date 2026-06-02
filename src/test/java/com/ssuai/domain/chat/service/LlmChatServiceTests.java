@@ -558,6 +558,32 @@ class LlmChatServiceTests {
     }
 
     @Test
+    void privateLibraryToolReturnsCredentialLoginGuidanceWhenLibrarySessionMissing() {
+        FakeProvider provider = new FakeProvider("gemini")
+                .toolCall("gemini-model", new OpenAiToolCall(
+                        "call-1",
+                        "function",
+                        new OpenAiToolCall.FunctionCall("get_library_seat_status", "{\"floor\":2}")))
+                .reply("gemini-model", "도서관 세션 연동이 필요해요.");
+        LlmChatService chatService = chatService(List.of(provider), List.of("gemini"), List.of(), 0);
+
+        ChatResponse response = chatService.reply("c-test", "도서관 자리 있어?", null);
+
+        assertThat(response.reply()).contains("도서관 세션");
+        verify(librarySeatService, never()).getSeatStatusForSession(any(), any());
+        String toolContent = provider.request(1).messages().stream()
+                .filter(message -> "tool".equals(message.role()))
+                .findFirst()
+                .orElseThrow()
+                .content();
+        assertThat(toolContent)
+                .contains("학번과 비밀번호")
+                .contains("도서관 연동")
+                .doesNotContain("Pyxis-Auth-Token")
+                .doesNotContain("붙여넣");
+    }
+
+    @Test
     void noticeSearchToolRequiresKeywordBeforeCallingMcp() {
         FakeProvider provider = new FakeProvider("gemini")
                 .toolCall("gemini-model", new OpenAiToolCall(
