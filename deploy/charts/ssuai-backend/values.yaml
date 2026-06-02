@@ -1,15 +1,11 @@
 namespace: ssuai-prod
-
 replicaCount: 1
-
 image:
   repository: ghcr.io/ghdtjdwn/ssumcp
-  tag: latest
+  tag: sha-a95e532d8e898d412fda8d9c16f86fd8b9143f36
   pullPolicy: Always
-
 nameOverride: ""
 fullnameOverride: ""
-
 env:
   springProfilesActive: prod
   frontendOrigin: https://ssuai.vercel.app
@@ -44,12 +40,10 @@ env:
   llmMaxProviderAttempts: "6"
   llmMaxModelsPerProvider: "2"
   llmMaxToolCalls: "2"
-
 secretRef:
   enabled: true
   name: ssuai-backend-secrets
   optional: true
-
 secretTemplate:
   enabled: false
   stringData:
@@ -63,11 +57,9 @@ secretTemplate:
     SSUAI_HUGGINGFACE_API_KEY: "<replace-me>"
     SSUAI_MISTRAL_API_KEY: "<replace-me>"
     SSUAI_OPENROUTER_API_KEY: "<replace-me>"
-
 service:
   type: ClusterIP
   port: 8080
-
 ingress:
   enabled: true
   className: traefik
@@ -77,7 +69,6 @@ ingress:
   middlewares:
     redirectHttps: redirect-https
     hsts: hsts
-
 resources:
   requests:
     cpu: 100m
@@ -85,7 +76,6 @@ resources:
   limits:
     cpu: 1000m
     memory: 1Gi
-
 probes:
   readiness:
     path: /actuator/health/readiness
@@ -99,10 +89,8 @@ probes:
     periodSeconds: 30
     timeoutSeconds: 5
     failureThreshold: 5
-
 podSecurityContext:
   terminationGracePeriodSeconds: 30
-
 containerSecurityContext:
   runAsNonRoot: true
   runAsUser: 1001
@@ -110,4 +98,4 @@ containerSecurityContext:
   readOnlyRootFilesystem: false
   capabilities:
     drop:
-      - ALL
+    - ALL
