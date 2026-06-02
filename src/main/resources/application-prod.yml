@@ -4,10 +4,14 @@
 # session cookies, API tokens etc. belong in environment variables and are
 # read via ${ENV_VAR:default} in this file or supplied at deploy time.
 #
-# Required env vars in prod (each fails fast at startup if blank):
+# Required/operational env vars in prod:
+#   SSUAI_DB_URL             — Postgres JDBC URL supplied by k3s ConfigMap
+#   SSUAI_DB_USERNAME        — Postgres username supplied by k3s ConfigMap
+#   SSUAI_DB_PASSWORD        — Postgres password supplied by k3s Secret
 #   SSUAI_FRONTEND_ORIGIN    — WebCorsProdConfig + SSO callback redirect target
 #   SSUAI_API_BASE_URL       — SmartID apiReturnUrl built in SaintSsoCallbackController
-#   SSUAI_JWT_SECRET         — HS256 key for ssuAI access/refresh JWTs (>= 32 bytes)
+#   SSUAI_JWT_SECRET         — HS256 key for ssuAI access/refresh JWTs (>= 32 bytes);
+#                               blank falls back to an ephemeral key and expires all tokens on restart.
 #
 # Recommended env vars in prod (silent fallback to ephemeral per-restart values otherwise):
 #   SSUAI_CREDENTIAL_ENCRYPTION_KEY — AES-256 key for SAINT/LMS/library session stores;

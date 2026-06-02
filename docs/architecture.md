@@ -323,11 +323,11 @@ class MockMealConnector implements MealConnector { ... }
 
 | 환경 변수 | 사용처 | 도입 시점 |
 |-----------|--------|-----------|
-| `SSUAI_DB_URL` | Spring Data JPA | Task 14부터 — 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
-| `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA | Task 14부터 |
+| `SSUAI_DB_URL` | Spring Data JPA + Flyway | prod Postgres 연결. dev/test 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
+| `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA + Flyway | prod Postgres 연결 |
 | `SSUAI_REDIS_URL` | 캐시 | 향후 분산 캐시용으로 예약; 현재 스토어는 인프로세스 |
 | `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9개 프로바이더 LLM fallback (`LlmProviderConfig`) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
-| `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | Task 14부터 — 빈 기본값 = 재시작마다 임시 랜덤 (dev/test). prod는 반드시 설정 (32바이트 이상). |
+| `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | 빈 기본값 = 재시작마다 임시 랜덤. prod는 토큰 유지를 위해 반드시 설정 (32바이트 이상). |
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
 | `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/도서관 세션 자료 | 프로덕션에서 안정적인 연동 세션을 위해 라이브 |

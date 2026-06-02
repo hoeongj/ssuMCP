@@ -3,20 +3,22 @@ spring:
     name: ssuai
   profiles:
     default: dev
-  # H2 in-memory database. Production should override via SSUAI_DB_URL
-  # (file mode or external Postgres once user count grows beyond MVP).
+  # Dev/test fallback is H2 in-memory. Production should override via
+  # SSUAI_DB_URL/SSUAI_DB_USERNAME/SSUAI_DB_PASSWORD to use Postgres.
   datasource:
     url: ${SSUAI_DB_URL:jdbc:h2:mem:ssuai;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
-    driver-class-name: org.h2.Driver
     username: ${SSUAI_DB_USERNAME:sa}
     password: ${SSUAI_DB_PASSWORD:}
   jpa:
     hibernate:
-      ddl-auto: ${SSUAI_JPA_DDL_AUTO:update}
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   ai:
     mcp:
       server:
