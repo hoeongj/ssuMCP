@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ public class DiscordAlertService {
     private final WebhookSender webhookSender;
     private final Map<String, Instant> lastSentAt = new ConcurrentHashMap<>();
 
+    @Autowired
     public DiscordAlertService(
             @Value("${ssuai.monitoring.discord.webhook-url:}") String webhookUrl,
             @Value("${ssuai.monitoring.discord.dedupe-window:60s}") Duration dedupeWindow) {

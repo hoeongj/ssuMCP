@@ -9,6 +9,8 @@ fullnameOverride: ""
 env:
   springProfilesActive: prod
   frontendOrigin: https://ssuai.vercel.app
+  dbUrl: ""
+  dbUsername: ""
   # Public HTTPS origin that SmartID can call back to. In prod this is the
   # Vercel frontend origin, whose Next.js rewrite proxies /api/* to the
   # backend so refresh/session cookies land as first-party browser cookies.
@@ -47,6 +49,7 @@ secretRef:
 secretTemplate:
   enabled: false
   stringData:
+    SSUAI_DB_PASSWORD: "<replace-me>"
     SSUAI_GEMINI_API_KEY: "<replace-me>"
     SSUAI_GROQ_API_KEY: "<replace-me>"
     SSUAI_CEREBRAS_API_KEY: "<replace-me>"

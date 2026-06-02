@@ -10,6 +10,8 @@ metadata:
 data:
   SPRING_PROFILES_ACTIVE: {{ .Values.env.springProfilesActive | quote }}
   SSUAI_FRONTEND_ORIGIN: {{ .Values.env.frontendOrigin | quote }}
+  SSUAI_DB_URL: {{ .Values.env.dbUrl | quote }}
+  SSUAI_DB_USERNAME: {{ .Values.env.dbUsername | quote }}
   SSUAI_API_BASE_URL: {{ .Values.env.apiBaseUrl | quote }}
   SSUAI_MCP_API_BASE_URL: {{ .Values.env.mcpApiBaseUrl | quote }}
   JAVA_OPTS: {{ .Values.env.javaOpts | quote }}

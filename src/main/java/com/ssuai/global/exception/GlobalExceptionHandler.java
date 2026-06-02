@@ -6,6 +6,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,7 @@ public class GlobalExceptionHandler {
 
     private final DiscordAlertService discordAlertService;
 
+    @Autowired
     public GlobalExceptionHandler(ObjectProvider<DiscordAlertService> discordAlertService) {
         this(discordAlertService.getIfAvailable());
     }
