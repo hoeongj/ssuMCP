@@ -50,6 +50,11 @@ smithery.yaml           # Smithery 레지스트리 설정
 
 ## 개발 규칙
 
+- 구현 AI는 세션 시작 직후 `.codex/current-task.md`를 먼저 읽는다.
+  이 디렉터리는 로컬 작업 컨텍스트이므로 git에 커밋하지 않는다.
+- 일반 작업에서 읽지 말 것: `build/`, `.gradle/`, `.idea/`, `.codex/`,
+  `src/main/kotlin/dev/eatsteak/rusaint/` generated binding. 해당 영역을
+  바꾸는 태스크일 때만 직접 확인한다.
 - 테스트: `.\gradlew.bat test` (cwd = repo 루트, Windows) / `./gradlew test` (Linux)
 - 새 MCP 도구 추가 후 배포까지:
   1. `.\gradlew.bat test` 통과

@@ -10,12 +10,10 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ssuai.domain.library.auth.dto.LibraryCredentialLoginRequest;
-import com.ssuai.domain.library.auth.dto.LibrarySessionCaptureRequest;
 import com.ssuai.global.response.ApiResponse;
 
 @RestController
@@ -44,22 +42,6 @@ public class LibrarySessionController {
     ) {
         String sessionKey = httpRequest.getSession().getId();
         credentialLoginService.login(sessionKey, request);
-        return ApiResponse.success(null);
-    }
-
-    /** Legacy: manual token capture (kept for backward compat). */
-    @PostMapping("/api/library/session")
-    @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Capture the oasis.ssu.ac.kr Pyxis-Auth-Token for the current ssuAI session")
-    public ApiResponse<Void> captureSession(
-            @Valid @RequestBody LibrarySessionCaptureRequest request,
-            HttpServletRequest httpRequest
-    ) {
-        String sessionKey = httpRequest.getSession().getId();
-        sessionStore.put(sessionKey, request.token());
-        log.info("library session captured: sessionKey={} tokenFingerprint={}",
-                LibrarySessionStore.fingerprint(sessionKey),
-                LibrarySessionStore.fingerprint(request.token()));
         return ApiResponse.success(null);
     }
 

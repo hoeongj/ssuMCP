@@ -28,6 +28,9 @@ secrets/
 *.dump
 *.sql.gz
 
+# Agent task context (local only)
+.codex/
+
 # OS noise
 .DS_Store
 Thumbs.db
