@@ -9,8 +9,8 @@ fullnameOverride: ""
 env:
   springProfilesActive: prod
   frontendOrigin: https://ssuai.vercel.app
-  dbUrl: ""
-  dbUsername: ""
+  dbUrl: "jdbc:postgresql://postgres-service:5432/ssuai"
+  dbUsername: "ssuai"
   # Public HTTPS origin that SmartID can call back to. In prod this is the
   # Vercel frontend origin, whose Next.js rewrite proxies /api/* to the
   # backend so refresh/session cookies land as first-party browser cookies.
