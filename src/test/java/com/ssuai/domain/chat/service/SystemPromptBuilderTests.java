@@ -27,7 +27,9 @@ class SystemPromptBuilderTests {
         assertThat(basePrompt)
                 .isNotBlank()
                 .contains("ssuAI 챗봇")
-                .contains("친근한 선배처럼 편하게");
+                .contains("친근한 선배처럼 편하게")
+                .contains("tavily_search")
+                .contains("학교 관련 질문은 내부 도구가 없어도 웹 검색으로 시도해");
     }
 
     @Test
