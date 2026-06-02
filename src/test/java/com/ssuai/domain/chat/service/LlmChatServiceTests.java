@@ -325,6 +325,69 @@ class LlmChatServiceTests {
     }
 
     @Test
+    void skipsFailedSecondaryMcpClientDuringToolDiscovery() {
+        McpSyncClient brokenClient = mock(McpSyncClient.class);
+        doReturn(true).when(mcpClient).isInitialized();
+        doReturn(canonicalListToolsResult()).when(mcpClient).listTools();
+        doReturn(true).when(brokenClient).isInitialized();
+        when(brokenClient.listTools()).thenThrow(new IllegalStateException("missing tavily url"));
+        FakeProvider gemini = new FakeProvider("gemini")
+                .reply("gemini-model", "ok");
+        LlmChatService chatService = chatService(
+                List.of(gemini),
+                properties(List.of("gemini"), List.of(), 0),
+                List.of(mcpClient, brokenClient)
+        );
+
+        ChatResponse response = chatService.reply("c-test", "오늘 학식 뭐야?");
+
+        assertThat(response.reply()).isEqualTo("ok");
+        assertThat(gemini.request(0).tools()).extracting(tool -> tool.function().name())
+                .contains("get_today_meal")
+                .doesNotContain("start_auth");
+    }
+
+    @Test
+    void unknownToolCallIsForwardedToOwningSecondaryMcpClient() {
+        McpSyncClient tavilyClient = mock(McpSyncClient.class);
+        doReturn(true).when(mcpClient).isInitialized();
+        doReturn(canonicalListToolsResult()).when(mcpClient).listTools();
+        doReturn(true).when(tavilyClient).isInitialized();
+        doReturn(new McpSchema.ListToolsResult(
+                List.of(canonicalTool("tavily_search",
+                        "인터넷 실시간 검색을 수행합니다.",
+                        requiredStringSchema("query", "검색어"))),
+                null
+        )).when(tavilyClient).listTools();
+        when(tavilyClient.callTool(argThat(named("tavily_search"))))
+                .thenReturn(toolTextResult("{\"results\":[{\"title\":\"숭실대 컴퓨터학부\",\"url\":\"https://example.test\"}]}"));
+        FakeProvider gemini = new FakeProvider("gemini")
+                .toolCall("gemini-model", new OpenAiToolCall(
+                        "call-1",
+                        "function",
+                        new OpenAiToolCall.FunctionCall("tavily_search",
+                                "{\"query\":\"숭실대 컴퓨터학부 교수님 이름\"}")
+                ))
+                .reply("gemini-model", "검색 결과 기준으로 답했어요.");
+        LlmChatService chatService = chatService(
+                List.of(gemini),
+                properties(List.of("gemini"), List.of(), 0),
+                List.of(mcpClient, tavilyClient)
+        );
+
+        ChatResponse response = chatService.reply("c-test", "숭실대 컴퓨터학부 교수님 이름 알려줘");
+
+        assertThat(response.reply()).isEqualTo("검색 결과 기준으로 답했어요.");
+        assertThat(gemini.request(0).tools()).extracting(tool -> tool.function().name())
+                .contains("get_today_meal", "tavily_search");
+        verify(tavilyClient, times(1))
+                .callTool(argThat(request ->
+                        "tavily_search".equals(request.name())
+                                && "숭실대 컴퓨터학부 교수님 이름".equals(request.arguments().get("query"))));
+        verify(mcpClient, never()).callTool(argThat(named("tavily_search")));
+    }
+
+    @Test
     void secretLikeInputReturnsGuidanceWithoutCallingProviders() {
         FakeProvider gemini = new FakeProvider("gemini")
                 .reply("gemini-model", "should not be called");
@@ -1021,6 +1084,14 @@ class LlmChatServiceTests {
 
     private LlmChatService chatService(List<LlmProvider> providers, LlmChatProperties properties) {
         stubMcpToolDiscovery();
+        return chatService(providers, properties, List.of(mcpClient));
+    }
+
+    private LlmChatService chatService(
+            List<LlmProvider> providers,
+            LlmChatProperties properties,
+            List<McpSyncClient> mcpClients
+    ) {
         return new LlmChatService(
                 properties,
                 providers,
@@ -1031,7 +1102,7 @@ class LlmChatServiceTests {
                 lmsAssignmentsService,
                 librarySeatService,
                 libraryLoansService,
-                List.of(mcpClient),
+                mcpClients,
                 chapelService,
                 graduationService,
                 scholarshipService

@@ -124,6 +124,7 @@ public class LlmChatService implements ChatService {
     private final LibraryLoansService libraryLoansService;
     private final Clock clock;
     private volatile List<OpenAiChatCompletionRequest.Tool> cachedChatTools;
+    private volatile Map<String, McpSyncClient> toolClientIndex;
 
     private final List<McpSyncClient> mcpClients;
     private SystemPromptBuilder systemPromptBuilder;
@@ -220,14 +221,6 @@ public class LlmChatService implements ChatService {
      */
     String buildAuthContextMessage(String studentId) {
         return systemPromptBuilder.buildAuthContextMessage(studentId);
-    }
-
-    private McpSyncClient mcpClient() {
-        if (mcpClients == null || mcpClients.isEmpty()) {
-            throw new IllegalStateException(
-                    "LLM chat mode requires at least one Spring AI MCP client connection (spring.ai.mcp.client.streamable-http.connections.*).");
-        }
-        return mcpClients.get(0);
     }
 
     @Override
@@ -451,23 +444,88 @@ public class LlmChatService implements ChatService {
     }
 
     private List<OpenAiChatCompletionRequest.Tool> discoverChatTools() {
-        try {
-            McpSyncClient client = mcpClient();
-            if (!client.isInitialized()) {
-                client.initialize();
+        List<OpenAiChatCompletionRequest.Tool> tools = new ArrayList<>();
+        boolean anySuccess = false;
+        for (McpSyncClient client : safeMcpClients()) {
+            try {
+                if (!client.isInitialized()) {
+                    client.initialize();
+                }
+                McpSchema.ListToolsResult listing = client.listTools();
+                List<OpenAiChatCompletionRequest.Tool> fromClient = safeTools(listing).stream()
+                        .filter(Objects::nonNull)
+                        .filter(tool -> !CHAT_EXCLUDED_TOOLS.contains(tool.name()))
+                        .map(this::mapMcpToolToOpenAi)
+                        .toList();
+                tools.addAll(fromClient);
+                anySuccess = true;
+            } catch (RuntimeException exception) {
+                log.warn("multi-mcp: discoverChatTools failed for a client: error={}",
+                        exception.getClass().getSimpleName());
             }
-            McpSchema.ListToolsResult listing = client.listTools();
-            List<OpenAiChatCompletionRequest.Tool> tools = listing.tools().stream()
-                    .filter(Objects::nonNull)
-                    .filter(tool -> !CHAT_EXCLUDED_TOOLS.contains(tool.name()))
-                    .map(this::mapMcpToolToOpenAi)
-                    .toList();
-            log.info("mcp chat tools discovered: count={}", tools.size());
-            return tools;
-        } catch (RuntimeException exception) {
-            log.warn("mcp listTools failed: error={}", exception.getClass().getSimpleName());
-            throw new ChatUnavailableException(exception);
         }
+        if (!anySuccess) {
+            throw new ChatUnavailableException(new RuntimeException("no MCP client available"));
+        }
+        log.info("mcp chat tools discovered (all clients): count={}", tools.size());
+        return tools;
+    }
+
+    private Map<String, McpSyncClient> getToolClientIndex() {
+        Map<String, McpSyncClient> snapshot = toolClientIndex;
+        if (snapshot != null) {
+            return snapshot;
+        }
+        synchronized (this) {
+            if (toolClientIndex == null) {
+                Map<String, McpSyncClient> index = new LinkedHashMap<>();
+                for (McpSyncClient client : safeMcpClients()) {
+                    try {
+                        if (!client.isInitialized()) {
+                            client.initialize();
+                        }
+                        safeTools(client.listTools()).stream()
+                                .filter(Objects::nonNull)
+                                .forEach(tool -> index.putIfAbsent(tool.name(), client));
+                    } catch (RuntimeException exception) {
+                        log.warn("multi-mcp: listTools failed for a client: error={}",
+                                exception.getClass().getSimpleName());
+                    }
+                }
+                toolClientIndex = index;
+            }
+            return toolClientIndex;
+        }
+    }
+
+    private McpSyncClient clientFor(String toolName) {
+        McpSyncClient client = getToolClientIndex().get(toolName);
+        if (client != null) {
+            return client;
+        }
+        return firstAvailableMcpClient();
+    }
+
+    private List<McpSyncClient> safeMcpClients() {
+        if (mcpClients == null || mcpClients.isEmpty()) {
+            return List.of();
+        }
+        return mcpClients.stream()
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private McpSyncClient firstAvailableMcpClient() {
+        return safeMcpClients().stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static List<McpSchema.Tool> safeTools(McpSchema.ListToolsResult listing) {
+        if (listing == null || listing.tools() == null) {
+            return List.of();
+        }
+        return listing.tools();
     }
 
     private OpenAiChatCompletionRequest.Tool mapMcpToolToOpenAi(McpSchema.Tool tool) {
@@ -602,7 +660,10 @@ public class LlmChatService implements ChatService {
                     optionalIntArgument(toolCall, "page").ifPresent(page -> args.put("page", page));
                     yield callMcp(toolName, args);
                 }
-                default -> toolError("지원하지 않는 도구입니다: " + toolName);
+                default -> {
+                    Map<String, Object> args = rawArguments(toolCall);
+                    yield callMcp(toolName, args);
+                }
             };
         } catch (IllegalArgumentException | IllegalStateException exception) {
             return toolError(exception.getMessage());
@@ -707,9 +768,13 @@ public class LlmChatService implements ChatService {
     }
 
     private String callMcp(String toolName, Map<String, Object> arguments) {
+        McpSyncClient client = clientFor(toolName);
+        if (client == null) {
+            return toolError("사용 가능한 MCP 클라이언트가 없습니다.");
+        }
         McpSchema.CallToolResult result;
         try {
-            result = mcpClient().callTool(new McpSchema.CallToolRequest(toolName, arguments));
+            result = client.callTool(new McpSchema.CallToolRequest(toolName, arguments));
         } catch (RuntimeException exception) {
             log.warn("mcp tool call failed: tool={} error={}", toolName, exception.getClass().getSimpleName());
             return toolError("도구 호출에 실패했습니다.");
@@ -1201,6 +1266,20 @@ public class LlmChatService implements ChatService {
         JsonNode arguments = arguments(toolCall);
         JsonNode value = arguments.get(fieldName);
         return value == null || value.isNull() ? "" : value.asText("");
+    }
+
+    private Map<String, Object> rawArguments(OpenAiToolCall toolCall) {
+        JsonNode node = arguments(toolCall);
+        if (node == null || node.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = objectMapper.treeToValue(node, Map.class);
+            return map == null ? Map.of() : map;
+        } catch (JsonProcessingException exception) {
+            return Map.of();
+        }
     }
 
     private Optional<Integer> optionalIntArgument(OpenAiToolCall toolCall, String fieldName) {
