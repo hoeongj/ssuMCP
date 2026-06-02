@@ -2,15 +2,13 @@ package com.ssuai.domain.lms.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
 import com.ssuai.domain.lms.service.LmsAssignmentsService;
-import com.ssuai.global.auth.AuthAttributes;
-import com.ssuai.global.exception.UnauthorizedException;
+import com.ssuai.global.auth.AuthUser;
 import com.ssuai.global.response.ApiResponse;
 
 /**
@@ -34,11 +32,7 @@ public class LmsAssignmentsController {
 
     @GetMapping("/assignments")
     @Operation(summary = "Get the caller's pending LMS assignments and quizzes for the current term")
-    public ApiResponse<AssignmentsResponse> getMyAssignments(HttpServletRequest request) {
-        Object studentId = request.getAttribute(AuthAttributes.STUDENT_ID);
-        if (!(studentId instanceof String id) || id.isBlank()) {
-            throw new UnauthorizedException();
-        }
-        return ApiResponse.success(assignmentsService.fetchAssignments(id));
+    public ApiResponse<AssignmentsResponse> getMyAssignments(@AuthUser String studentId) {
+        return ApiResponse.success(assignmentsService.fetchAssignments(studentId));
     }
 }
