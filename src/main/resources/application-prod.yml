@@ -13,6 +13,7 @@
 #   SSUAI_CREDENTIAL_ENCRYPTION_KEY — AES-256 key for SAINT/LMS/library session stores;
 #                                     unset = stored school sessions vanish on JVM restart,
 #                                     forcing every user to redo SSO.
+#   SSUAI_DISCORD_ALERT_WEBHOOK_URL — optional Discord webhook for connector failure alerts.
 ssuai:
   connector:
     meal: real
@@ -27,6 +28,10 @@ ssuai:
     saint-scholarship: ${SSUAI_CONNECTOR_SAINT_SCHOLARSHIP:rusaint}
     lms-assignments: ${SSUAI_CONNECTOR_LMS_ASSIGNMENTS:real}
     chat: ${SSUAI_CONNECTOR_CHAT:mock}
+  monitoring:
+    discord:
+      webhook-url: ${SSUAI_DISCORD_ALERT_WEBHOOK_URL:}
+      dedupe-window: 60s
   # Production CORS allowlist — exactly one origin (the deployed Vercel
   # project), wired into WebCorsProdConfig. The value is supplied at
   # deploy time via the SSUAI_FRONTEND_ORIGIN env var (set on the
