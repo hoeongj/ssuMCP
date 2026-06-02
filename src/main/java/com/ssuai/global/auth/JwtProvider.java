@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
@@ -80,17 +81,22 @@ public class JwtProvider {
                 claims.get(CLAIM_NAME, String.class),
                 actualType,
                 claims.getIssuedAt().toInstant(),
-                claims.getExpiration().toInstant()
+                claims.getExpiration().toInstant(),
+                parseJti(claims, expectedType)
         );
     }
 
     private String issue(Student student, JwtTokenType type, java.time.Duration ttl) {
         Instant now = clock.instant();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .issuer(properties.getIssuer())
                 .subject(student.getStudentId())
                 .claim(CLAIM_NAME, student.getName())
-                .claim(CLAIM_TYPE, type.name())
+                .claim(CLAIM_TYPE, type.name());
+        if (type == JwtTokenType.REFRESH) {
+            builder.id(UUID.randomUUID().toString());
+        }
+        return builder
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ttl)))
                 .signWith(signingKey, Jwts.SIG.HS256)
@@ -129,5 +135,13 @@ public class JwtProvider {
             }
         }
         return null;
+    }
+
+    private static String parseJti(Claims claims, JwtTokenType expectedType) {
+        String jti = claims.getId();
+        if (expectedType == JwtTokenType.REFRESH && (jti == null || jti.isBlank())) {
+            throw new InvalidJwtException("missing refresh jti");
+        }
+        return jti;
     }
 }

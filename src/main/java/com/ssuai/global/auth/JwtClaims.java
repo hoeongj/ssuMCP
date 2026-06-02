@@ -7,6 +7,16 @@ public record JwtClaims(
         String name,
         JwtTokenType type,
         Instant issuedAt,
-        Instant expiresAt
+        Instant expiresAt,
+        String jti
 ) {
+
+    public JwtClaims(
+            String studentId,
+            String name,
+            JwtTokenType type,
+            Instant issuedAt,
+            Instant expiresAt) {
+        this(studentId, name, type, issuedAt, expiresAt, null);
+    }
 }
