@@ -1368,3 +1368,33 @@
   1. ArgoCD Image Updater의 annotation 방식과 CRD 방식의 차이점과 각각의 장단점은?
   2. 오픈소스 툴 업그레이드 시 breaking change를 사전에 감지하는 방법은?
   3. `kubectl get crd -o jsonpath`로 CRD 스키마를 읽어 옵션을 파악한 과정을 설명하세요.
+
+---
+
+## [2026-06-02] access token 만료 후 세션 유지 실패
+
+### 증상
+로그인 후 15분이 지나면 대시보드 카드가 전부 오류 상태로 변하고, 챗봇 인증도 끊김. 사용자 입장에서는 "로그인이 유지가 안 된다"고 느낌.
+
+### 처음 세운 가설 (틀림)
+JWT secret이 pod 재시작마다 바뀌어서 refresh token이 무효화되는 게 원인 아닐까? (`JwtProvider.buildSigningKey`의 ephemeral key 경고 메시지 근거)
+
+### 실제 원인
+`SSUAI_JWT_SECRET`은 Kubernetes secret에 이미 있어 JWT 서명 키는 안정적이었다. 진짜 원인은 프론트엔드에 access token 자동 갱신 로직이 없었던 것. `useSaintAuth`가 mount 시 1회 refresh만 수행하고, 15분 후 token 만료 시 자동 갱신을 하지 않아 모든 `Authorization: Bearer` 헤더가 만료된 토큰을 전송.
+
+추가 설계 배경: refresh token은 14일 TTL(HttpOnly cookie)이지만 access token은 15분 in-memory only. 브라우저 cookie는 `Set-Cookie` + meta-refresh 방식(Vercel 302 응답에서 Set-Cookie 제거 이슈 우회)으로 정상 설정됨. 즉 페이지 새로고침은 문제없으나, 같은 페이지에서 15분 초과하면 오류.
+
+### 핵심 파일/커밋
+- `ssuAI/hooks/useSaintAuth.tsx` — PR #184: accessTtlRef + setTimeout 자동 갱신 추가 (만료 2분 전)
+- `ssuMCP/domain/auth/saint/SaintSsoCallbackController.java` — htmlRedirect로 Vercel 302+Set-Cookie 문제 우회 (기존 코드)
+
+### 해결
+`useSaintAuth.tsx`에 `useEffect` 기반 타이머 추가: `accessToken` state 변경 시마다 `(ttlSeconds - 120) * 1000ms` 후 `refresh()` 재호출. cleanup 함수로 unmount/로그아웃 시 타이머 취소.
+
+### 포트폴리오 포인트
+단순 "로그인 유지" 버그처럼 보이지만, JWT의 short-lived access + long-lived refresh 분리 패턴과 Vercel rewrite proxy의 Set-Cookie 동작 차이, React 상태 생명주기까지 교차 분석해야 했던 사례. 서버 로그에서 `authenticated=true`가 찍혀 "서버는 정상"임을 확인하고 클라이언트 사이드로 좁혔다.
+
+### 면접 예상 질문
+1. JWT access token / refresh token 분리 설계의 이유와 각각의 적절한 TTL 기준은?
+2. SPA에서 "조용한 자동 갱신(silent refresh)"을 구현할 때 고려해야 할 경쟁 조건(race condition)은?
+3. Vercel rewrite proxy가 Set-Cookie를 302 응답에서 제거하는 이유와, 이를 우회한 방법은?
