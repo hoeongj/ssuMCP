@@ -300,7 +300,8 @@ public class LlmChatService implements ChatService {
         if (toolCalls.isEmpty()) {
             log.info("chat provider selected: conversationId={} provider={} model={} toolCalls=0",
                     conversationId, firstResult.providerName(), firstResult.model());
-            return new ChatResponse(conversationId, requireContent(firstMessage.content()));
+            return new ChatResponse(conversationId, requireContent(firstMessage.content()),
+                    formatModel(firstResult));
         }
 
         List<OpenAiChatCompletionRequest.Message> messages = new ArrayList<>(baseMessages);
@@ -338,7 +339,8 @@ public class LlmChatService implements ChatService {
         ));
         log.info("chat provider selected: conversationId={} provider={} model={} toolCalls={}",
                 conversationId, finalResult.providerName(), finalResult.model(), toolCalls.size());
-        return new ChatResponse(conversationId, requireContent(finalResult.message().content()));
+        return new ChatResponse(conversationId, requireContent(finalResult.message().content()),
+                formatModel(finalResult));
     }
 
     private int maxToolCalls() {
@@ -1325,6 +1327,16 @@ public class LlmChatService implements ChatService {
         } catch (JsonProcessingException exception) {
             throw new ChatUnavailableException(exception);
         }
+    }
+
+    private static String formatModel(LlmCompletionResult result) {
+        if (result == null) return null;
+        String provider = result.providerName();
+        String model = result.model();
+        if (provider == null && model == null) return null;
+        if (provider == null) return model;
+        if (model == null) return provider;
+        return provider + " · " + model;
     }
 
     private static String requireContent(String content) {
