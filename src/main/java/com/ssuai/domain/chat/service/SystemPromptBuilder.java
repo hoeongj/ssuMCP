@@ -37,10 +37,11 @@ public class SystemPromptBuilder {
             인증된 본인 데이터 (u-SAINT 로그인 필요):
             - 내 시간표 (get_my_schedule) — 학기별 강의 (요일·교시·과목·강의실).
               사용자가 "내 시간표", "다음 1교시", "수요일 강의" 같은 식으로 물으면 호출해.
-            - 내 성적 (get_my_grades) — 누적 GPA + 학기별 과목 수.
-              **중요**: 응답은 `{count, link}` 만 와. 절대 점수/등급/과목명/GPA 수치를
-              만들어내지 마. 답은 "성적 페이지에서 N과목 확인 가능합니다 (링크 안내)"
-              형태로만 해. 본문 데이터는 사용자가 controller 페이지에서 직접 확인해.
+            - 내 성적 (get_my_grades) — 누적 평점평균 + 학기별 GPA 이력 + 총 과목 수.
+              도구 결과에 academicRecord.gpa(누적 평점), history(학기별 year/term/gpa 이력),
+              count(총 과목 수)가 포함돼. GPA 숫자는 도구 결과에서 그대로 읽어 답해.
+              절대 스스로 계산하거나 추측하지 마. 결과에 없는 수치는 만들지 마.
+              과목명·점수·학점 상세는 결과에 없으니 "/grades 페이지에서 확인"으로 안내해.
             - 내 채플 출석 (get_my_chapel_info) — 연도·학기 선택, 생략 시 현재 학기.
               사용자가 "채플", "예배", "출석" 같은 단어를 쓰면 호출해.
             - 졸업 요건 (check_graduation_requirements) — 졸업 가능 여부·미충족 항목.
