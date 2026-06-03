@@ -1,0 +1,35 @@
+{
+  "name": "ssumcp",
+  "version": "0.1.0",
+  "description": "숭실대학교 MCP 서버 — Soongsil University MCP server for Claude, Cursor and other MCP clients",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "soongsil",
+    "ssu",
+    "university",
+    "korea",
+    "claude",
+    "cursor",
+    "ai"
+  ],
+  "homepage": "https://github.com/hoeongj/ssuMCP",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hoeongj/ssuMCP.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/hoeongj/ssuMCP/issues"
+  },
+  "license": "MIT",
+  "bin": {
+    "ssumcp": "bin/ssumcp.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
