@@ -22,15 +22,23 @@ public class NoticeService {
 
     private final NoticeConnector connector;
     private final DepartmentNoticeConnector departmentConnector;
+    private final NoticeListCache cache;
 
-    public NoticeService(NoticeConnector connector, DepartmentNoticeConnector departmentConnector) {
+    public NoticeService(
+            NoticeConnector connector,
+            DepartmentNoticeConnector departmentConnector,
+            NoticeListCache cache) {
         this.connector = connector;
         this.departmentConnector = departmentConnector;
+        this.cache = cache;
     }
 
     public NoticeListResponse getRecentNotices(String category, Integer page) {
         int effectivePage = page == null || page < 1 ? 1 : page;
-        return connector.fetchNotices(normalizeCategory(category), effectivePage);
+        String cat = normalizeCategory(category);
+        return cache.get(
+                NoticeListCache.Key.forList(cat, effectivePage),
+                () -> connector.fetchNotices(cat, effectivePage));
     }
 
     public NoticeListResponse searchNotices(String keyword, String category, Integer page) {
@@ -43,7 +51,10 @@ public class NoticeService {
                     "검색어는 " + MAX_KEYWORD_LENGTH + "자 이하로 입력해 주세요.");
         }
         int effectivePage = page == null || page < 1 ? 1 : page;
-        return connector.searchNotices(trimmed, normalizeCategory(category), effectivePage);
+        String cat = normalizeCategory(category);
+        return cache.get(
+                NoticeListCache.Key.forSearch(trimmed, cat, effectivePage),
+                () -> connector.searchNotices(trimmed, cat, effectivePage));
     }
 
     public NoticeCategoriesResponse getCategories() {

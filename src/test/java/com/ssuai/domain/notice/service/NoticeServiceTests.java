@@ -15,7 +15,8 @@ class NoticeServiceTests {
 
     private final NoticeService service = new NoticeService(
             new MockNoticeConnector(),
-            new MockDepartmentNoticeConnector()
+            new MockDepartmentNoticeConnector(),
+            new NoticeListCache(java.time.Duration.ofMinutes(5), java.time.Clock.systemUTC(), 500)
     );
 
     @Test
