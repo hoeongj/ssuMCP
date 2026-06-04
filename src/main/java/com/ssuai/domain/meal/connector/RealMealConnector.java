@@ -29,6 +29,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.meal.dto.MealClosure;
+import com.ssuai.domain.meal.dto.MealClosureType;
 import com.ssuai.domain.meal.dto.MealItem;
 import com.ssuai.domain.meal.dto.MealResponse;
 import com.ssuai.domain.meal.dto.MealRestaurant;
@@ -180,6 +181,9 @@ class RealMealConnector implements MealConnector {
         return List.copyOf(meals);
     }
 
+    private static final List<String> OFFICIAL_CLOSURE_KEYWORDS = List.of(
+            "휴무", "어린이날", "공휴일", "운영하지", "운영 안");
+
     private static List<MealClosure> parseClosures(String restaurant, Document document) {
         Set<String> reasons = new LinkedHashSet<>();
         for (Element cell : document.select("tr > td[colspan=2], td.menu_list")) {
@@ -189,8 +193,17 @@ class RealMealConnector implements MealConnector {
             }
         }
         return reasons.stream()
-                .map(reason -> new MealClosure(restaurant, reason))
+                .map(reason -> new MealClosure(restaurant, reason, closureType(reason)))
                 .toList();
+    }
+
+    private static MealClosureType closureType(String reason) {
+        for (String keyword : OFFICIAL_CLOSURE_KEYWORDS) {
+            if (reason.contains(keyword)) {
+                return MealClosureType.CLOSED;
+            }
+        }
+        return MealClosureType.NO_MENU;
     }
 
     private String buildMenuUrl(String restaurantCode, LocalDate date) {
@@ -277,6 +290,7 @@ class RealMealConnector implements MealConnector {
         return !token.isBlank()
                 && !token.startsWith("[")
                 && !token.startsWith("*")
+                && !token.startsWith("-")  // filters add-on items like "-면추가", "-삶은계란"
                 && !token.contains("알러지")
                 && !token.contains("원산지")
                 && HANGUL_PATTERN.matcher(token).find();
