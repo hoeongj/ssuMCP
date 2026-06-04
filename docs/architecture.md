@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-05-27. 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-06-04. 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -161,7 +161,7 @@ com.ssuai
     │   └── service     // LmsAssignmentsService
     ├── mcp
     │   ├── config      // McpServerConfig — ToolCallbackProvider 빈 + tool readOnly/destructive 어노테이션
-    │   └── tool        // 모든 @Tool 클래스 (총 23개 — §11 참조)
+    │   └── tool        // 모든 @Tool 클래스 (총 24개 — §11 참조)
     │                   // McpAuthHelper — 공유 principalKey 조회 + AUTH_REQUIRED 팩토리
     ├── meal
     │   ├── config      // MealFanOutConfig — 주간 export용 parallelStream fan-out
@@ -179,9 +179,11 @@ com.ssuai
     │   ├── connector   // SaintScheduleConnector, SaintGradesConnector (mock / real / rusaint)
     │   │               // SaintChapelConnector, SaintGraduationConnector, SaintScholarshipConnector
     │   ├── controller  // SaintScheduleController, SaintGradesController 등
-    │   ├── dto         // ScheduleResponse, GradesResponse, ChapelInfo, GraduationRequirements 등
+    │   ├── dto         // ScheduleResponse, GradesResponse, GpaSimulationResponse
+    │   │               // CourseScheduleEntry, MeetingSlot, ChapelInfo, GraduationRequirements 등
     │   ├── mcp         // SaintToolContext — ThreadLocal 범위 (챗봇 경로 전용)
-    │   └── service     // SaintScheduleService, SaintGradesService, SaintExtendedService
+    │   └── service     // SaintScheduleService, SaintGradesService, SaintGpaSimulationService
+    │                   // SaintChapelService, SaintGraduationService, SaintScholarshipService
     │                   // PortalNavigationService — WebDynpro 컴포넌트 진입 URL 해석
     └── user
         ├── entity      // Student (JPA — studentId PK, name, lastLoginAt)
@@ -421,7 +423,7 @@ Claude Desktop / IDE
    커넥터 / 저장소
 ```
 
-현재 도구 (총 23개 — 읽기 전용 20개, 쓰기 3개):
+현재 도구 (총 24개 — 읽기 전용 21개, 쓰기 3개):
 
 **공개 읽기 전용 (인증 불필요)**
 
@@ -443,18 +445,19 @@ Claude Desktop / IDE
 
 **개인 읽기 전용 (mcp_session_id 필요)**
 
-| 도구 | Provider | 위임 대상 |
-|------|----------|-----------|
-| `get_my_schedule` | SAINT | `SaintScheduleService` |
-| `get_my_grades` | SAINT | `SaintGradesService` |
-| `get_my_chapel_info` | SAINT | `SaintExtendedService` |
-| `check_graduation_requirements` | SAINT | `SaintExtendedService` |
-| `get_my_scholarships` | SAINT | `SaintExtendedService` |
-| `get_my_assignments` | LMS | `LmsAssignmentsService` |
-| `get_library_seat_status` | LIBRARY | `LibrarySeatService` |
-| `get_my_library_loans` | LIBRARY | `LibraryLoansService` |
+| 도구 | Provider | 위임 대상 | 비고 |
+|------|----------|-----------|------|
+| `get_my_schedule` | SAINT | `SaintScheduleService` | `year`·`term` 파라미터 지원 |
+| `get_my_grades` | SAINT | `SaintGradesService` | |
+| `get_my_chapel_info` | SAINT | `SaintChapelService` | |
+| `check_graduation_requirements` | SAINT | `SaintGraduationService` | |
+| `get_my_scholarships` | SAINT | `SaintScholarshipService` | |
+| `simulate_gpa` | SAINT | `SaintGpaSimulationService` | |
+| `get_my_assignments` | LMS | `LmsAssignmentsService` | |
+| `get_library_seat_status` | LIBRARY | `LibrarySeatService` | |
+| `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
-도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 20개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
+도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 21개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
 
 규칙:
 
@@ -577,7 +580,7 @@ ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`)은 웹 
 
 ---
 
-## 16. 미해결 질문 — 해결됨
+## 16. 초기 설계 질문 — 결정 기록
 
 1주차의 모든 미해결 질문이 정리되었다 (설계 로그를 위해 보존):
 
