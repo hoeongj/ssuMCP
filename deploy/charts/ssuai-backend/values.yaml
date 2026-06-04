@@ -2,7 +2,7 @@ namespace: ssuai-prod
 replicaCount: 1
 image:
   repository: ghcr.io/hoeongj/ssumcp
-  tag: sha-f5c4c44dc5111ded5417ac92d2e5c0ead4b0b666
+  tag: sha-9f8a6661da4b3c5987ea2c25d41818112b2f9f7c
   pullPolicy: Always
 nameOverride: ""
 fullnameOverride: ""
