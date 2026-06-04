@@ -1,20 +1,29 @@
 package com.ssuai.domain.mcp.tool;
 
+import java.util.List;
+
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
+import com.ssuai.domain.campus.dto.AcademicCalendarEvent;
 import com.ssuai.domain.campus.dto.CampusFacilityListResponse;
 import com.ssuai.domain.campus.dto.CampusFacilitySearchConstraints;
+import com.ssuai.domain.campus.service.AcademicCalendarService;
 import com.ssuai.domain.campus.service.CampusFacilityService;
+import com.ssuai.global.exception.ConnectorException;
 
 @Component
 public class CampusMcpTools {
 
     private final CampusFacilityService campusFacilityService;
+    private final AcademicCalendarService academicCalendarService;
 
-    public CampusMcpTools(CampusFacilityService campusFacilityService) {
+    public CampusMcpTools(
+            CampusFacilityService campusFacilityService,
+            AcademicCalendarService academicCalendarService) {
         this.campusFacilityService = campusFacilityService;
+        this.academicCalendarService = academicCalendarService;
     }
 
     @Tool(
@@ -32,5 +41,20 @@ public class CampusMcpTools {
                             + "자까지 허용됩니다. 받은 길이: " + safeQuery.length() + "자.");
         }
         return campusFacilityService.searchFacilities(safeQuery);
+    }
+
+    @Tool(
+            name = "get_academic_calendar",
+            description = "숭실대학교 학사일정을 조회합니다. 수강신청·중간/기말고사·방학 등의 주요 일정을 [{date, event, category}] 형태로 반환합니다. year를 생략하면 현재 연도를 사용합니다."
+    )
+    public List<AcademicCalendarEvent> getAcademicCalendar(
+            @ToolParam(required = false, description = "조회할 연도(예: 2026). 생략 시 현재 연도.")
+            Integer year
+    ) {
+        try {
+            return academicCalendarService.getCalendar(year);
+        } catch (ConnectorException exception) {
+            throw new IllegalStateException(ConnectorErrorMessages.forResource("학사일정", exception), exception);
+        }
     }
 }

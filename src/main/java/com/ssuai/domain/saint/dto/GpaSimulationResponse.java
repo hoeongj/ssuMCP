@@ -10,6 +10,7 @@ public record GpaSimulationResponse(
         Double targetGpa,
         Double requiredGradePointAverage,
         Boolean achievable,
-        double maxGradePoint
+        double maxGradePoint,
+        double maxAchievableGpa
 ) {
 }

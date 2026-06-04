@@ -103,6 +103,7 @@ ssuai:
     saint-graduation: mock # mock | rusaint
     saint-scholarship: mock # mock | rusaint
     lms-assignments: mock # mock | real
+    academic-calendar: mock # mock | real
     chat: ${SSUAI_CONNECTOR_CHAT:mock} # mock | llm
     notice: mock # mock | real
     department-notice: real # mock | real
@@ -198,6 +199,18 @@ ssuai:
     cache-ttl: 5m
     timeout: 8s
     max-page-size: 20
+    # CSS selectors for scatch notice pages. Override here if the HTML structure changes
+    # without needing a rebuild. Defaults match the spike-confirmed layout (2026-05-23).
+    selectors:
+      list-item: "ul.notice-lists > li:not(.notice_head)"
+      date: "div.notice_col1 div.h2"
+      status: "div.notice_col2 span.tag"
+      title-link: "div.notice_col3 > a"
+      title-text: "span.d-inline-blcok.m-pt-5"
+      category-label: "span.label"
+      department: "div.notice_col4"
+      pagination: "nav.board-pagination a.page-numbers"
+      detail-body: "div.bg-white > hr + div"
   ssufid:
     base-url: ${SSUAI_SSUFID_BASE_URL:https://ssufid.yourssu.com}
   chat:

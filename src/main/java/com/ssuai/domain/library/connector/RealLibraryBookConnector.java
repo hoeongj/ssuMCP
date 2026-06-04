@@ -22,9 +22,13 @@ import org.springframework.web.client.RestClientResponseException;
 import com.ssuai.domain.library.dto.BookStatus;
 import com.ssuai.domain.library.dto.LibraryBook;
 import com.ssuai.domain.library.dto.LibraryBookSearchResponse;
+import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 /**
  * Reads books from the Soongsil University central library via the Pyxis
@@ -47,21 +51,25 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
     private final LibraryBookProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    private final DiscordAlertService discordAlertService;
 
     public RealLibraryBookConnector(
             LibraryBookProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("libraryBookRestClient") RestClient restClient
+            @Qualifier("libraryBookRestClient") RestClient restClient,
+            DiscordAlertService discordAlertService
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+        this.discordAlertService = discordAlertService;
     }
 
     @Override
     public LibraryBookSearchResponse search(String query, int page, int size) {
         URI uri = buildUri(query, page, size);
         String body;
+        randomDelay();
         try {
             body = restClient.get()
                     .uri(uri)
@@ -72,13 +80,13 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
         } catch (ResourceAccessException exception) {
             log.warn("library book connector timeout/io: queryLen={} page={} size={}",
                     query == null ? 0 : query.length(), page, size);
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (RestClientResponseException exception) {
             HttpStatusCode status = exception.getStatusCode();
             log.warn("library book connector http error: status={} queryLen={}",
                     status.value(), query == null ? 0 : query.length());
             if (status.is5xxServerError()) {
-                throw new ConnectorUnavailableException(exception);
+                throw alert(new ConnectorUnavailableException(exception));
             }
             throw new ConnectorParseException(exception);
         }
@@ -157,5 +165,25 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
     private static String textOrFallback(JsonNode node, String fallback) {
         String value = textOrNull(node);
         return value == null ? fallback : value;
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
+    }
+
+    private static void randomDelay() {
+        try {
+            Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextLong(300, 1200));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

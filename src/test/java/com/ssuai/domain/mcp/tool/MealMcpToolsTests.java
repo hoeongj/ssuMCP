@@ -18,13 +18,15 @@ import org.junit.jupiter.api.Test;
 import com.ssuai.domain.meal.dto.MealResponse;
 import com.ssuai.domain.meal.dto.MealRestaurant;
 import com.ssuai.domain.meal.service.MealService;
+import com.ssuai.domain.meal.service.WeeklyMealService;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 
 class MealMcpToolsTests {
 
     private final MealService mealService = mock(MealService.class);
-    private final MealMcpTools tools = new MealMcpTools(mealService);
+    private final WeeklyMealService weeklyMealService = mock(WeeklyMealService.class);
+    private final MealMcpTools tools = new MealMcpTools(mealService, weeklyMealService);
 
     @Test
     void getTodayMealDelegatesToService() {

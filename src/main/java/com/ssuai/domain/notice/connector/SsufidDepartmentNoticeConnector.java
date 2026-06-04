@@ -27,8 +27,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssuai.domain.notice.dto.Notice;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
+import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.department-notice", havingValue = "real")
@@ -92,18 +96,27 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final boolean delayBeforeRequest;
+    private final DiscordAlertService discordAlertService;
 
     public SsufidDepartmentNoticeConnector(
             @Value("${ssuai.ssufid.base-url:https://ssufid.yourssu.com}") String baseUrl,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            DiscordAlertService discordAlertService
     ) {
-        this(baseUrl, objectMapper, true);
+        this(baseUrl, objectMapper, true, discordAlertService);
     }
 
     SsufidDepartmentNoticeConnector(String baseUrl, ObjectMapper objectMapper, boolean delayBeforeRequest) {
+        this(baseUrl, objectMapper, delayBeforeRequest, null);
+    }
+
+    SsufidDepartmentNoticeConnector(
+            String baseUrl, ObjectMapper objectMapper,
+            boolean delayBeforeRequest, DiscordAlertService discordAlertService) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
         this.delayBeforeRequest = delayBeforeRequest;
+        this.discordAlertService = discordAlertService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -130,10 +143,11 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
                 }
             } catch (ConnectorTimeoutException | ConnectorUnavailableException e) {
                 log.error("Failed to fetch notices from slug: {}, error: {}", slug, e.getMessage());
-                throw e;
+                throw alert(e);
             } catch (Exception e) {
                 log.error("Failed to parse notices from slug: {}, error: {}", slug, e.getMessage());
-                throw new ConnectorUnavailableException(e);
+                ConnectorUnavailableException mapped = new ConnectorUnavailableException(e);
+                throw alert(mapped);
             }
         }
 
@@ -227,6 +241,18 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
             Thread.currentThread().interrupt();
             throw new ConnectorUnavailableException(e);
         }
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
     }
 
     private void delayBeforeRequest() {

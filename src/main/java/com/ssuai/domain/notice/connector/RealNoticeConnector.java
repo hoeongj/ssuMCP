@@ -43,19 +43,18 @@ class RealNoticeConnector implements NoticeConnector {
     private static final String USER_AGENT = "ssuAI/0.1 (+akftjdwn@gmail.com)";
     private static final String ACCEPT_LANGUAGE = "ko-KR,ko;q=0.9";
 
-    // scatch notice list selectors (spike-confirmed 2026-05-23)
-    private static final String LIST_ITEM_SELECTOR = "ul.notice-lists > li:not(.notice_head)";
-    private static final String DATE_SELECTOR = "div.notice_col1 div.h2";
-    private static final String STATUS_SELECTOR = "div.notice_col2 span.tag";
-    private static final String TITLE_LINK_SELECTOR = "div.notice_col3 > a";
-    private static final String TITLE_TEXT_SELECTOR = "span.d-inline-blcok.m-pt-5";
-    private static final String CATEGORY_LABEL_SELECTOR = "span.label";
-    private static final String DEPARTMENT_SELECTOR = "div.notice_col4";
-    private static final String PAGINATION_SELECTOR = "nav.board-pagination a.page-numbers";
-
-    // scatch notice detail selectors (spike-confirmed 2026-05-23)
-    // structure: div.bg-white.p-4.mb-5 > [label, h1, div.clearfix, hr, div(body)]
-    private static final String DETAIL_BODY_SELECTOR = "div.bg-white > hr + div";
+    // Default selectors — kept for package-private static test helpers and as fallback values.
+    // Production paths read from NoticeConnectorProperties.getSelectors() so HTML-structure
+    // changes can be patched via application.yml without a rebuild.
+    static final String LIST_ITEM_SELECTOR = "ul.notice-lists > li:not(.notice_head)";
+    static final String DATE_SELECTOR = "div.notice_col1 div.h2";
+    static final String STATUS_SELECTOR = "div.notice_col2 span.tag";
+    static final String TITLE_LINK_SELECTOR = "div.notice_col3 > a";
+    static final String TITLE_TEXT_SELECTOR = "span.d-inline-blcok.m-pt-5";
+    static final String CATEGORY_LABEL_SELECTOR = "span.label";
+    static final String DEPARTMENT_SELECTOR = "div.notice_col4";
+    static final String PAGINATION_SELECTOR = "nav.board-pagination a.page-numbers";
+    static final String DETAIL_BODY_SELECTOR = "div.bg-white > hr + div";
 
     private static final int MAX_BODY_TEXT_LENGTH = 4000;
 
@@ -111,7 +110,7 @@ class RealNoticeConnector implements NoticeConnector {
             // Parse the notice metadata from the detail page
             String title = textOrEmpty(doc.selectFirst("h3"));
             String bodyElement = "";
-            Element body = doc.selectFirst(DETAIL_BODY_SELECTOR);
+            Element body = doc.selectFirst(properties.getSelectors().getDetailBody());
             if (body != null) {
                 bodyElement = body.text();
             }
@@ -146,8 +145,8 @@ class RealNoticeConnector implements NoticeConnector {
         long startedAt = System.currentTimeMillis();
         try {
             Document doc = connect(url);
-            List<Notice> notices = parseNoticeList(doc);
-            int totalPages = parseTotalPages(doc);
+            List<Notice> notices = parseNoticeList(doc, properties.getSelectors());
+            int totalPages = parseTotalPages(doc, properties.getSelectors().getPagination());
 
             log.debug("connector=notice status=ok action=list page={} items={} totalPages={} ms={}",
                     page, notices.size(), totalPages, elapsedMs(startedAt));
@@ -172,28 +171,40 @@ class RealNoticeConnector implements NoticeConnector {
         }
     }
 
-    // package-private for testing
+    // package-private for testing — uses default (hardcoded) selectors
     static List<Notice> parseNoticeList(Document doc) {
-        Elements items = doc.select(LIST_ITEM_SELECTOR);
+        return parseNoticeList(doc, null);
+    }
+
+    static List<Notice> parseNoticeList(Document doc, NoticeConnectorProperties.Selectors sel) {
+        String listItem = sel != null ? sel.getListItem() : LIST_ITEM_SELECTOR;
+        String dateS = sel != null ? sel.getDate() : DATE_SELECTOR;
+        String statusS = sel != null ? sel.getStatus() : STATUS_SELECTOR;
+        String titleLink = sel != null ? sel.getTitleLink() : TITLE_LINK_SELECTOR;
+        String titleText = sel != null ? sel.getTitleText() : TITLE_TEXT_SELECTOR;
+        String categoryLabel = sel != null ? sel.getCategoryLabel() : CATEGORY_LABEL_SELECTOR;
+        String dept = sel != null ? sel.getDepartment() : DEPARTMENT_SELECTOR;
+
+        Elements items = doc.select(listItem);
         List<Notice> notices = new ArrayList<>();
 
         for (Element item : items) {
-            String date = textOrEmpty(item.selectFirst(DATE_SELECTOR));
-            String status = textOrEmpty(item.selectFirst(STATUS_SELECTOR));
+            String date = textOrEmpty(item.selectFirst(dateS));
+            String status = textOrEmpty(item.selectFirst(statusS));
 
-            Element linkElement = item.selectFirst(TITLE_LINK_SELECTOR);
+            Element linkElement = item.selectFirst(titleLink);
             String link = linkElement != null ? linkElement.attr("abs:href") : "";
             String title = "";
             String category = "";
 
             if (linkElement != null) {
-                Element titleSpan = linkElement.selectFirst(TITLE_TEXT_SELECTOR);
+                Element titleSpan = linkElement.selectFirst(titleText);
                 title = textOrEmpty(titleSpan);
-                Element categorySpan = linkElement.selectFirst(CATEGORY_LABEL_SELECTOR);
+                Element categorySpan = linkElement.selectFirst(categoryLabel);
                 category = textOrEmpty(categorySpan);
             }
 
-            String department = textOrEmpty(item.selectFirst(DEPARTMENT_SELECTOR));
+            String department = textOrEmpty(item.selectFirst(dept));
 
             notices.add(new Notice(title, link, date, status, department, category));
         }
@@ -201,8 +212,13 @@ class RealNoticeConnector implements NoticeConnector {
         return notices;
     }
 
+    // package-private for testing — uses default selector
     static int parseTotalPages(Document doc) {
-        Elements pageLinks = doc.select(PAGINATION_SELECTOR);
+        return parseTotalPages(doc, PAGINATION_SELECTOR);
+    }
+
+    static int parseTotalPages(Document doc, String paginationSelector) {
+        Elements pageLinks = doc.select(paginationSelector);
         int maxPage = -1;
         for (Element pageLink : pageLinks) {
             try {

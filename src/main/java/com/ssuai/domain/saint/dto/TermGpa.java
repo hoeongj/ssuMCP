@@ -38,14 +38,17 @@ public record TermGpa(
         if (term == null || term.isBlank()) {
             throw new IllegalArgumentException("term is required");
         }
+        gpa = gpa == null ? null : round2(gpa);
+        arithmeticAverage = round2(arithmeticAverage);
+        gpaSum = round2(gpaSum);
     }
 
-    /**
-     * Stable key used by {@code GradesResponse.detailsByTerm} to match a
-     * history row to its per-course detail list. Format: {@code "${year}-${term}"}.
-     */
     public String termKey() {
         return year + "-" + term;
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0d) / 100.0d;
     }
 
     /**

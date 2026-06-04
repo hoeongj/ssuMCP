@@ -106,7 +106,7 @@ class SaintExtendedMcpToolsTests {
     @Test
     void gpaSimulationToolDelegatesForLinkedSession() {
         GpaSimulationResponse stub = new GpaSimulationResponse(
-                3.32d, 69.0d, 229.2d, 18.0d, 4.0d, 3.4621d, 3.45d, 3.9417d, true, 4.5d);
+                3.32d, 69.0d, 229.2d, 18.0d, 4.0d, 3.4621d, 3.45d, 3.9417d, true, 4.5d, 3.5655d);
         when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
         when(gpaSimulationService.simulate(STUDENT_ID, 18.0d, 4.0d, 3.45d)).thenReturn(stub);
 

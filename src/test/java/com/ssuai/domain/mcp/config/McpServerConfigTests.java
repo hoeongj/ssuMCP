@@ -28,8 +28,10 @@ class McpServerConfigTests {
                 .containsExactlyInAnyOrder(
                         "get_today_meal",
                         "get_meal_by_date",
+                        "get_meal_weekly",
                         "get_dorm_weekly_meal",
                         "search_campus_facilities",
+                        "get_academic_calendar",
                         "get_auth_status",
                         "start_auth",
                         "logout_provider",

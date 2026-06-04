@@ -20,10 +20,14 @@ import org.springframework.web.client.RestClientResponseException;
 
 import com.ssuai.domain.library.dto.LibraryLoanItem;
 import com.ssuai.domain.library.dto.LibraryLoansResponse;
+import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 /**
  * Fetches the authenticated user's current library loans from
@@ -45,14 +49,17 @@ public class RealLibraryLoansConnector implements LibraryLoansConnector {
 
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    private final DiscordAlertService discordAlertService;
 
     public RealLibraryLoansConnector(
             LibrarySeatProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("librarySeatRestClient") RestClient restClient
+            @Qualifier("librarySeatRestClient") RestClient restClient,
+            DiscordAlertService discordAlertService
     ) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -62,6 +69,7 @@ public class RealLibraryLoansConnector implements LibraryLoansConnector {
     }
 
     private String callUpstream(String token) {
+        randomDelay();
         try {
             return restClient.get()
                     .uri(LOANS_PATH)
@@ -74,14 +82,34 @@ public class RealLibraryLoansConnector implements LibraryLoansConnector {
                     .body(String.class);
         } catch (ResourceAccessException exception) {
             log.warn("library loans connector timeout/io");
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (RestClientResponseException exception) {
             HttpStatusCode status = exception.getStatusCode();
             log.warn("library loans connector http error: status={}", status.value());
             if (status.is5xxServerError()) {
-                throw new ConnectorUnavailableException(exception);
+                throw alert(new ConnectorUnavailableException(exception));
             }
             throw new ConnectorParseException(exception);
+        }
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
+    }
+
+    private static void randomDelay() {
+        try {
+            Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextLong(300, 1200));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 

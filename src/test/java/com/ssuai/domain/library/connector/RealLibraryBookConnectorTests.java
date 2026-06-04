@@ -43,7 +43,7 @@ class RealLibraryBookConnectorTests {
         RestClient.Builder builder = RestClient.builder().baseUrl(properties.getBaseUrl());
         server = MockRestServiceServer.bindTo(builder).build();
         RestClient restClient = builder.build();
-        connector = new RealLibraryBookConnector(properties, new ObjectMapper(), restClient);
+        connector = new RealLibraryBookConnector(properties, new ObjectMapper(), restClient, null);
     }
 
     @Test

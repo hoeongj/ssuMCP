@@ -29,6 +29,8 @@ class SaintGpaSimulationServiceTests {
         assertThat(response.projectedGpa()).isEqualTo(3.4621d);
         assertThat(response.requiredGradePointAverage()).isEqualTo(3.9417d);
         assertThat(response.achievable()).isTrue();
+        // maxAchievableGpa: (229.2 + 18 * 4.5) / (69 + 18) = 310.2 / 87 = 3.5655...
+        assertThat(response.maxAchievableGpa()).isEqualTo(3.5655d);
     }
 
     @Test
@@ -40,6 +42,8 @@ class SaintGpaSimulationServiceTests {
         assertThat(response.projectedGpa()).isNull();
         assertThat(response.requiredGradePointAverage()).isGreaterThan(4.5d);
         assertThat(response.achievable()).isFalse();
+        // maxAchievableGpa: (229.2 + 3 * 4.5) / (69 + 3) = 242.7 / 72 = 3.3708...
+        assertThat(response.maxAchievableGpa()).isEqualTo(3.3708d);
     }
 
     @Test

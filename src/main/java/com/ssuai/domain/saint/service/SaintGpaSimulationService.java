@@ -51,6 +51,9 @@ public class SaintGpaSimulationService {
             achievable = required <= MAX_GRADE_POINT;
         }
 
+        double maxAchievableGpa = round(
+                (currentGpaSum + plannedCredits * MAX_GRADE_POINT) / (currentGpaCredits + plannedCredits));
+
         return new GpaSimulationResponse(
                 round(summary.gpa()),
                 round(currentGpaCredits),
@@ -61,7 +64,8 @@ public class SaintGpaSimulationService {
                 targetGpa == null ? null : round(targetGpa),
                 required,
                 achievable,
-                MAX_GRADE_POINT
+                MAX_GRADE_POINT,
+                maxAchievableGpa
         );
     }
 

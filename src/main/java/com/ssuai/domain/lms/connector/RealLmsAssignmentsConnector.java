@@ -103,6 +103,7 @@ class RealLmsAssignmentsConnector implements LmsAssignmentsConnector {
 
     @Override
     public AssignmentsResponse fetchAssignments(String studentId, LmsCookies cookies) {
+        randomDelay();
         CookieManager cookieManager = createCookieManager(cookies.rawCookieHeader(), properties.getCanvasBaseUrl());
         HttpClient client = HttpClient.newBuilder()
                 .cookieHandler(cookieManager)
@@ -225,6 +226,14 @@ class RealLmsAssignmentsConnector implements LmsAssignmentsConnector {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new LmsSessionExpiredException("canvas API interrupted");
+        }
+    }
+
+    private static void randomDelay() {
+        try {
+            Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextLong(300, 1200));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 

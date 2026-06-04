@@ -21,6 +21,12 @@ public record GpaSummary(
         double passFailCredits
 ) {
 
+    public GpaSummary {
+        gpa = round2(gpa);
+        arithmeticAverage = round2(arithmeticAverage);
+        gpaSum = round2(gpaSum);
+    }
+
     /**
      * Credits included in GPA calculation. P/F credits are earned credits,
      * but they do not belong in the GPA denominator.
@@ -28,5 +34,9 @@ public record GpaSummary(
     @JsonProperty("gpaCredits")
     public double gpaCredits() {
         return Math.max(0.0d, earnedCredits - passFailCredits);
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0d) / 100.0d;
     }
 }

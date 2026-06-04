@@ -1,8 +1,10 @@
 package com.ssuai.domain.mcp.tool;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -13,7 +15,9 @@ import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.meal.dto.MealResponse;
 import com.ssuai.domain.meal.dto.MealRestaurant;
+import com.ssuai.domain.meal.dto.WeeklyMealResponse;
 import com.ssuai.domain.meal.service.MealService;
+import com.ssuai.domain.meal.service.WeeklyMealService;
 import com.ssuai.global.exception.ConnectorException;
 
 @Component
@@ -48,9 +52,11 @@ public class MealMcpTools {
     );
 
     private final MealService mealService;
+    private final WeeklyMealService weeklyMealService;
 
-    public MealMcpTools(MealService mealService) {
+    public MealMcpTools(MealService mealService, WeeklyMealService weeklyMealService) {
         this.mealService = mealService;
+        this.weeklyMealService = weeklyMealService;
     }
 
     @Tool(
@@ -92,6 +98,25 @@ public class MealMcpTools {
         }
 
         return getMealInternal(parsed, restaurant);
+    }
+
+    @Tool(
+            name = "get_meal_weekly",
+            description = "숭실대학교 학생식당의 주간(7일) 메뉴를 조회합니다. weekOffset=0(기본)이면 이번 주 월요일부터 7일치, weekOffset=1이면 다음 주를 반환합니다. 기숙사 주간 메뉴는 get_dorm_weekly_meal을 사용하세요."
+    )
+    public WeeklyMealResponse getMealWeekly(
+            @ToolParam(required = false,
+                    description = "주 오프셋. 0=이번 주(기본), 1=다음 주, -1=지난 주. 정수.")
+            Integer weekOffset
+    ) {
+        LocalDate monday = LocalDate.now(SEOUL_ZONE)
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                .plusWeeks(weekOffset == null ? 0 : weekOffset);
+        try {
+            return weeklyMealService.fetchWeeklyMeals(monday);
+        } catch (ConnectorException exception) {
+            throw new IllegalStateException(ConnectorErrorMessages.forResource("학식", exception), exception);
+        }
     }
 
     private MealResponse getMealInternal(LocalDate date, String restaurantArg) {

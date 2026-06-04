@@ -12,12 +12,14 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.ssuai.domain.campus.dto.CampusFacilityListResponse;
+import com.ssuai.domain.campus.service.AcademicCalendarService;
 import com.ssuai.domain.campus.service.CampusFacilityService;
 
 class CampusMcpToolsTests {
 
     private final CampusFacilityService campusFacilityService = mock(CampusFacilityService.class);
-    private final CampusMcpTools tools = new CampusMcpTools(campusFacilityService);
+    private final AcademicCalendarService academicCalendarService = mock(AcademicCalendarService.class);
+    private final CampusMcpTools tools = new CampusMcpTools(campusFacilityService, academicCalendarService);
 
     @Test
     void searchCampusFacilitiesDelegatesBlankQueryForNull() {

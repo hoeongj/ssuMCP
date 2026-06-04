@@ -20,10 +20,14 @@ import org.springframework.web.client.RestClientResponseException;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
 import com.ssuai.domain.library.dto.LibrarySeatZone;
+import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 /**
  * Fetches real seat data from oasis.ssu.ac.kr via the Pyxis API.
@@ -48,15 +52,18 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     private final LibrarySeatProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    private final DiscordAlertService discordAlertService;
 
     public RealLibrarySeatConnector(
             LibrarySeatProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("librarySeatRestClient") RestClient restClient
+            @Qualifier("librarySeatRestClient") RestClient restClient,
+            DiscordAlertService discordAlertService
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -66,6 +73,7 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     }
 
     private String callUpstream(String token) {
+        randomDelay();
         try {
             return restClient.get()
                     .uri(SEAT_ROOMS_PATH)
@@ -77,14 +85,34 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
                     .body(String.class);
         } catch (ResourceAccessException exception) {
             log.warn("library seat connector timeout/io");
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (RestClientResponseException exception) {
             HttpStatusCode status = exception.getStatusCode();
             log.warn("library seat connector http error: status={}", status.value());
             if (status.is5xxServerError()) {
-                throw new ConnectorUnavailableException(exception);
+                throw alert(new ConnectorUnavailableException(exception));
             }
             throw new ConnectorParseException(exception);
+        }
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
+    }
+
+    private static void randomDelay() {
+        try {
+            Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextLong(300, 1200));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 
