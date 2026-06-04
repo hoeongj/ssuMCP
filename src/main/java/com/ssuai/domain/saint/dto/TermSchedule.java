@@ -9,7 +9,7 @@ import java.util.List;
 public record TermSchedule(
         int year,
         int term,
-        List<ScheduleEntry> entries
+        List<CourseScheduleEntry> entries
 ) {
 
     public TermSchedule {

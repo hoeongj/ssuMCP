@@ -37,7 +37,7 @@ public class SaintScheduleMcpTool {
 
     @Tool(
             name = "get_my_schedule",
-            description = "Returns the authenticated student's u-SAINT timetable. "
+            description = "Returns the authenticated student's u-SAINT timetable grouped by course. "
                     + "Without year and term it returns the current u-SAINT selected semester; "
                     + "pass both year and term to fetch a specific semester. "
                     + "Term values: 1=spring, 2=summer, 3=fall, 4=winter. "

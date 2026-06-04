@@ -57,7 +57,7 @@ class MealControllerTests {
 
         mockMvc.perform(get("/api/meals/today"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.date").value(not(emptyOrNullString())))
+                .andExpect(jsonPath("$.data.date").value("2026-05-06"))
                 .andExpect(jsonPath("$.data.meals[0].restaurant").value("학생식당"))
                 .andExpect(jsonPath("$.data.meals[0].type").value("BREAKFAST"))
                 .andExpect(jsonPath("$.data.meals[0].corner").value("조식"))

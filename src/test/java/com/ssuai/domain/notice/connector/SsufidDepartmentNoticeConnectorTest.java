@@ -28,7 +28,7 @@ class SsufidDepartmentNoticeConnectorTest {
         configureFor("localhost", wireMockServer.port());
 
         String baseUrl = "http://localhost:" + wireMockServer.port();
-        connector = new SsufidDepartmentNoticeConnector(baseUrl, new ObjectMapper());
+        connector = new SsufidDepartmentNoticeConnector(baseUrl, new ObjectMapper(), false);
     }
 
     @AfterEach

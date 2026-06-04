@@ -51,6 +51,8 @@ class LibraryLoansControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.loans[0].title").value("스프링 부트 핵심 가이드"))
+                .andExpect(jsonPath("$.data.loans[0].loanDate").value("2026-05-12"))
+                .andExpect(jsonPath("$.data.loans[0].dueDate").value("2026-05-26"))
                 .andExpect(jsonPath("$.data.loans[0].isRenewable").value(true))
                 .andExpect(jsonPath("$.error").doesNotExist());
     }

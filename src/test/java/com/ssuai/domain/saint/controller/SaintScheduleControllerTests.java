@@ -16,7 +16,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.ssuai.domain.saint.dto.ScheduleEntry;
+import com.ssuai.domain.saint.dto.CourseScheduleEntry;
+import com.ssuai.domain.saint.dto.MeetingSlot;
 import com.ssuai.domain.saint.dto.ScheduleResponse;
 import com.ssuai.domain.saint.dto.TermSchedule;
 import com.ssuai.domain.saint.service.SaintScheduleService;
@@ -41,8 +42,8 @@ class SaintScheduleControllerTests {
     void returnsScheduleEnvelopeWhenStudentIdPresent() throws Exception {
         ScheduleResponse payload = new ScheduleResponse(2024, 2026, 1, List.of(
                 new TermSchedule(2026, 1, List.of(
-                        new ScheduleEntry(1, "월", 3, "10:30-11:45",
-                                "자료구조", "김교수", "정보과학관 30100"))),
+                        new CourseScheduleEntry("자료구조", "김교수", List.of(
+                                new MeetingSlot(1, "월", 3, "10:30-11:45", "정보과학관 30100"))))),
                 new TermSchedule(2025, 1, List.of()),
                 new TermSchedule(2024, 1, List.of())));
         when(scheduleService.fetchSchedule("20241234", null, null)).thenReturn(payload);
@@ -55,6 +56,9 @@ class SaintScheduleControllerTests {
                 .andExpect(jsonPath("$.data.currentTerm").value(1))
                 .andExpect(jsonPath("$.data.terms.length()").value(3))
                 .andExpect(jsonPath("$.data.terms[0].entries[0].course").value("자료구조"))
+                .andExpect(jsonPath("$.data.terms[0].entries[0].professor").value("김교수"))
+                .andExpect(jsonPath("$.data.terms[0].entries[0].meetings[0].dayOfWeek").value(1))
+                .andExpect(jsonPath("$.data.terms[0].entries[0].meetings[0].room").value("정보과학관 30100"))
                 .andExpect(jsonPath("$.error").value(nullValue()));
     }
 
