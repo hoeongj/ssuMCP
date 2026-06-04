@@ -76,7 +76,7 @@ public class McpAuthMcpTools {
             description = "Generates a browser login URL for the specified provider (SAINT, LMS, or LIBRARY). "
                     + "Use this tool when a private tool returns AUTH_REQUIRED. "
                     + "Steps: 1) Call this tool to get loginUrl and mcpSessionId. "
-                    + "2) Show the user: 'Please open this link to log in: [loginUrl]'. "
+                    + "2) Paste the raw loginUrl as visible text for the user; do not replace it with a PlayMCP connector page URL or a markdown link target that differs from loginUrl. "
                     + "3) Wait for the user to confirm login is complete. "
                     + "4) Retry the original private tool call with mcp_session_id=[mcpSessionId]. "
                     + "Creates a new MCP session if mcp_session_id is not provided."
@@ -104,7 +104,9 @@ public class McpAuthMcpTools {
                 session.id().value(),
                 loginUrl,
                 state.expiresAt(),
-                "Open loginUrl in a browser to complete login, then call private tools with mcp_session_id.");
+                "Open this exact loginUrl in a browser: " + loginUrl
+                        + " Do not substitute a PlayMCP or connector page URL. "
+                        + "After login is complete, call private tools with mcp_session_id.");
     }
 
     @Tool(

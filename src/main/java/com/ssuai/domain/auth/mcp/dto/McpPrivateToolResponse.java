@@ -31,8 +31,8 @@ public record McpPrivateToolResponse<T>(
         return new McpPrivateToolResponse<>(
                 "AUTH_REQUIRED", provider, mcpSessionId, loginUrl, expiresAt,
                 "AUTHENTICATION REQUIRED. Action needed: "
-                        + "1) Open the loginUrl in a browser and complete login. "
-                        + "2) Tell the user: 'Please open this link to log in: [loginUrl]'. "
+                        + "1) Open this exact raw loginUrl in a browser and complete login: " + loginUrl + " "
+                        + "2) Show the same raw loginUrl as visible text to the user; do not replace it with a PlayMCP or connector page URL, and do not create a markdown link with a different target. "
                         + "3) After the user confirms login is complete, retry this exact tool call with mcp_session_id set to the mcpSessionId value shown here.",
                 null);
     }

@@ -53,6 +53,8 @@ class McpAuthHelperTests {
         assertThat(response.status()).isEqualTo("AUTH_REQUIRED");
         assertThat(response.mcpSessionId()).isEqualTo(SESSION_ID.value());
         assertThat(response.loginUrl()).isEqualTo("https://login.example/saint");
+        assertThat(response.message()).contains("https://login.example/saint");
+        assertThat(response.message()).contains("raw loginUrl");
         verify(mcpAuthService).createSession();
     }
 

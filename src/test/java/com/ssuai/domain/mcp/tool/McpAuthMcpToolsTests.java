@@ -103,6 +103,8 @@ class McpAuthMcpToolsTests {
         assertThat(resp.loginUrl()).isEqualTo("https://login.url/saint");
         assertThat(resp.provider()).isEqualTo("SAINT");
         assertThat(resp.message()).contains("mcp_session_id");
+        assertThat(resp.message()).contains("https://login.url/saint");
+        assertThat(resp.message()).contains("Do not substitute");
     }
 
     @Test
