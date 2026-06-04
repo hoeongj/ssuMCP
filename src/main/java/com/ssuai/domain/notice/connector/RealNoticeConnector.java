@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
@@ -16,6 +17,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +30,9 @@ import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.notice", havingValue = "real")
@@ -68,9 +73,16 @@ class RealNoticeConnector implements NoticeConnector {
     );
 
     private final NoticeConnectorProperties properties;
+    private final DiscordAlertService discordAlertService;
 
     RealNoticeConnector(NoticeConnectorProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    RealNoticeConnector(NoticeConnectorProperties properties, DiscordAlertService discordAlertService) {
         this.properties = properties;
+        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -113,20 +125,20 @@ class RealNoticeConnector implements NoticeConnector {
             );
         } catch (SocketTimeoutException exception) {
             logFailure("timeout", "detail", startedAt);
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (HttpStatusException exception) {
             logFailure("http_" + exception.getStatusCode(), "detail", startedAt);
-            throw mapHttpStatus(exception);
+            throw alert(mapHttpStatus(exception));
         } catch (ConnectorException exception) {
             logFailure(exception.getErrorCode().name().toLowerCase(Locale.ROOT), "detail", startedAt);
-            throw exception;
+            throw alert(exception);
         } catch (IOException exception) {
             if (isTimeout(exception)) {
                 logFailure("timeout", "detail", startedAt);
-                throw new ConnectorTimeoutException(exception);
+                throw alert(new ConnectorTimeoutException(exception));
             }
             logFailure("unavailable", "detail", startedAt);
-            throw new ConnectorUnavailableException(exception);
+            throw alert(new ConnectorUnavailableException(exception));
         }
     }
 
@@ -143,20 +155,20 @@ class RealNoticeConnector implements NoticeConnector {
             return new NoticeListResponse(notices, page, totalPages);
         } catch (SocketTimeoutException exception) {
             logFailure("timeout", "list", startedAt);
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (HttpStatusException exception) {
             logFailure("http_" + exception.getStatusCode(), "list", startedAt);
-            throw mapHttpStatus(exception);
+            throw alert(mapHttpStatus(exception));
         } catch (ConnectorException exception) {
             logFailure(exception.getErrorCode().name().toLowerCase(Locale.ROOT), "list", startedAt);
-            throw exception;
+            throw alert(exception);
         } catch (IOException exception) {
             if (isTimeout(exception)) {
                 logFailure("timeout", "list", startedAt);
-                throw new ConnectorTimeoutException(exception);
+                throw alert(new ConnectorTimeoutException(exception));
             }
             logFailure("unavailable", "list", startedAt);
-            throw new ConnectorUnavailableException(exception);
+            throw alert(new ConnectorUnavailableException(exception));
         }
     }
 
@@ -219,6 +231,12 @@ class RealNoticeConnector implements NoticeConnector {
 
     private Document connect(String url) throws IOException {
         int timeoutMs = (int) Math.min(Integer.MAX_VALUE, properties.getTimeout().toMillis());
+        try {
+            long delayMs = ThreadLocalRandom.current().nextLong(300, 1200);
+            Thread.sleep(delayMs);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
         return Jsoup.connect(url)
                 .userAgent(USER_AGENT)
                 .timeout(timeoutMs)
@@ -274,6 +292,18 @@ class RealNoticeConnector implements NoticeConnector {
 
     private static long elapsedMs(long startedAt) {
         return System.currentTimeMillis() - startedAt;
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
     }
 
     private static void logFailure(String reason, String action, long startedAt) {

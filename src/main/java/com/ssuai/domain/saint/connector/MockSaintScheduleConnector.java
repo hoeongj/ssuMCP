@@ -11,7 +11,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.auth.saint.PortalCookies;
-import com.ssuai.domain.saint.dto.ScheduleEntry;
+import com.ssuai.domain.saint.dto.CourseScheduleEntry;
+import com.ssuai.domain.saint.dto.MeetingSlot;
 import com.ssuai.domain.saint.dto.ScheduleResponse;
 import com.ssuai.domain.saint.dto.TermSchedule;
 
@@ -59,7 +60,7 @@ class MockSaintScheduleConnector implements SaintScheduleConnector {
             throw new IllegalArgumentException("term must be 1..4");
         }
 
-        List<ScheduleEntry> entries = sampleEntries();
+        List<CourseScheduleEntry> entries = sampleEntries();
         if (requestedYear != null) {
             return new ScheduleResponse(enrollmentYear, currentYear, currentTerm,
                     List.of(new TermSchedule(currentYear, currentTerm, entries)));
@@ -82,22 +83,23 @@ class MockSaintScheduleConnector implements SaintScheduleConnector {
         return new ScheduleResponse(enrollmentYear, currentYear, currentTerm, terms);
     }
 
-    private static List<ScheduleEntry> sampleEntries() {
+    private static List<CourseScheduleEntry> sampleEntries() {
         return List.of(
-                new ScheduleEntry(1, "월", 3, "10:30-11:45", "자료구조", "김교수",
-                        "정보과학관 30100 (강의실A)"),
-                new ScheduleEntry(2, "화", 3, "10:30-11:45", "알고리즘", "이교수",
-                        "정보과학관 30200 (강의실B)"),
-                new ScheduleEntry(3, "수", 3, "10:30-11:45", "자료구조", "김교수",
-                        "정보과학관 30100 (강의실A)"),
-                new ScheduleEntry(4, "목", 3, "10:30-11:45", "알고리즘", "이교수",
-                        "정보과학관 30200 (강의실B)"),
-                new ScheduleEntry(1, "월", 5, "13:30-14:45", "운영체제", "박교수",
-                        "정보과학관 30300 (강의실C)"),
-                new ScheduleEntry(2, "화", 5, "13:30-14:20", "채플", "최교수",
-                        "한경직기념관 10000"),
-                new ScheduleEntry(3, "수", 5, "13:30-14:45", "운영체제", "박교수",
-                        "정보과학관 30300 (강의실C)")
+                new CourseScheduleEntry("자료구조", "김교수", List.of(
+                        new MeetingSlot(1, "월", 3, "10:30-11:45", "정보과학관 30100 (강의실A)"),
+                        new MeetingSlot(3, "수", 3, "10:30-11:45", "정보과학관 30100 (강의실A)")
+                )),
+                new CourseScheduleEntry("알고리즘", "이교수", List.of(
+                        new MeetingSlot(2, "화", 3, "10:30-11:45", "정보과학관 30200 (강의실B)"),
+                        new MeetingSlot(4, "목", 3, "10:30-11:45", "정보과학관 30200 (강의실B)")
+                )),
+                new CourseScheduleEntry("운영체제", "박교수", List.of(
+                        new MeetingSlot(1, "월", 5, "13:30-14:45", "정보과학관 30300 (강의실C)"),
+                        new MeetingSlot(3, "수", 5, "13:30-14:45", "정보과학관 30300 (강의실C)")
+                )),
+                new CourseScheduleEntry("채플", "최교수", List.of(
+                        new MeetingSlot(2, "화", 5, "13:30-14:20", "한경직기념관 10000")
+                ))
         );
     }
 }

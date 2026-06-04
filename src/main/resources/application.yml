@@ -3,6 +3,11 @@ spring:
     name: ssuai
   profiles:
     default: dev
+  jackson:
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
+        read-date-timestamps-as-nanoseconds: false
   # Dev/test fallback is H2 in-memory. Production should override via
   # SSUAI_DB_URL/SSUAI_DB_USERNAME/SSUAI_DB_PASSWORD to use Postgres.
   datasource:
@@ -28,9 +33,24 @@ spring:
         protocol: STREAMABLE
         instructions: >
           숭실대학교 공식 MCP 서버(ssuMCP)입니다.
-          공개 도구: 학식(오늘·날짜별), 기숙사 식단, 도서관 도서 검색, 시설 검색, 공지사항 6종.
-          개인 도구(u-SAINT·LMS·도서관): 시간표, 성적, 채플, 졸업 요건, 장학금, 과제, 좌석·대출 현황.
-          개인 도구 사용 전 start_auth 로 해당 서비스에 로그인하세요.
+
+          [공개 도구 — 인증 불필요]
+          학식(오늘·날짜별), 기숙사 식단, 도서관 도서 검색·좌석 현황,
+          캠퍼스 시설 검색, 공지사항 6종.
+
+          [인증 도구 — u-SAINT·LMS·도서관 로그인 필요]
+          시간표, 성적·GPA 시뮬레이터, 채플, 졸업 요건,
+          장학금, LMS 과제, 도서관 대출 현황.
+
+          [인증 플로우]
+          1. start_auth(provider) 호출 → loginUrl + mcp_session_id 반환.
+          2. loginUrl을 사용자에게 그대로 보여주고 브라우저에서 열도록 안내.
+             (PlayMCP connector 페이지 URL로 대체 금지 — 반드시 loginUrl 원문 사용)
+          3. 사용자가 로그인 완료를 확인하면, 이후 모든 인증 도구 호출에
+             mcp_session_id 파라미터를 포함.
+          4. 세션은 최대 7일간 유지. 만료 시 start_auth 재호출.
+
+          인증 전에 get_auth_status로 현재 세션 상태를 미리 확인할 수 있습니다.
       client:
         enabled: ${SSUAI_MCP_CLIENT_ENABLED:true}
         name: ssuai-self-mcp-client

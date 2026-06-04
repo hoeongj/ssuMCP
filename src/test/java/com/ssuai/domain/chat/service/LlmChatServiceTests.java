@@ -524,8 +524,10 @@ class LlmChatServiceTests {
         com.ssuai.domain.saint.dto.ScheduleResponse stub = new com.ssuai.domain.saint.dto.ScheduleResponse(
                 2022, 2025, 2,
                 List.of(new com.ssuai.domain.saint.dto.TermSchedule(2025, 2, List.of(
-                        new com.ssuai.domain.saint.dto.ScheduleEntry(
-                                1, "월", 1, "09:00-09:50", "운영체제", "김교수", "정보과학관 401")))));
+                        new com.ssuai.domain.saint.dto.CourseScheduleEntry(
+                                "운영체제", "김교수", List.of(
+                                new com.ssuai.domain.saint.dto.MeetingSlot(
+                                        1, "월", 1, "09:00-09:50", "정보과학관 401")))))));
         when(scheduleService.fetchSchedule("20221528", null, null)).thenReturn(stub);
         FakeProvider provider = new FakeProvider("gemini")
                 .toolCall("gemini-model", new OpenAiToolCall(
@@ -542,7 +544,7 @@ class LlmChatServiceTests {
         verify(mcpClient, never()).callTool(argThat(named("get_my_schedule")));
         assertThat(provider.request(0).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
         assertThat(provider.request(1).privacyMode()).isEqualTo(LlmPrivacyMode.PRIVATE);
-        // 두 번째 LLM call (tool 결과 포함) — professor / timeRange / dayLabel 차단 확인
+        // 두 번째 LLM call (tool 결과 포함) — grouped course shape and compact meetings 확인
         String toolContent = provider.request(1).messages().stream()
                 .filter(message -> "tool".equals(message.role()))
                 .findFirst()
@@ -550,8 +552,8 @@ class LlmChatServiceTests {
                 .content();
         assertThat(toolContent)
                 .contains("\"course\":\"운영체제\"")
-                .doesNotContain("professor")
-                .doesNotContain("김교수")
+                .contains("\"professor\":\"김교수\"")
+                .contains("\"meetings\"")
                 .doesNotContain("timeRange")
                 .doesNotContain("09:00-09:50")
                 .doesNotContain("dayLabel");
@@ -901,14 +903,11 @@ class LlmChatServiceTests {
     }
 
     /**
-     * Pins Task 16 spec §6 #6 — schedule rows ARE allowed in LLM prompts
-     * but only in a tight compact format. Strip fields the chat answer
-     * never needs (dayLabel — derivable from dayOfWeek, timeRange —
-     * derivable from period, professor — not required to answer "내일
-     * 1교시 뭐야?"). Keep dayOfWeek/period/course/room.
+     * Pins schedule compaction: course entries stay grouped, while meeting
+     * slots keep only dayOfWeek/period/room.
      */
     @Test
-    void scheduleCompactKeepsCompactRowAndStripsProfessorTimeRangeAndDayLabel() {
+    void scheduleCompactKeepsGroupedCoursesAndCompactMeetings() {
         LlmChatService chatService = chatService(
                 List.of(new FakeProvider("noop").reply("noop", "noop")),
                 List.of("noop"));
@@ -919,10 +918,16 @@ class LlmChatServiceTests {
                   "currentTerm":2,
                   "terms":[
                     {"year":2025,"term":2,"entries":[
-                      {"dayOfWeek":1,"dayLabel":"월","period":1,"timeRange":"09:00-09:50",
-                       "course":"운영체제","professor":"김교수","room":"정보과학관 401"},
-                      {"dayOfWeek":3,"dayLabel":"수","period":3,"timeRange":"10:30-11:45",
-                       "course":"알고리즘","professor":"이교수","room":"정보과학관 30100 (강의실A)"}
+                      {"course":"운영체제","professor":"김교수","meetings":[
+                        {"dayOfWeek":1,"dayLabel":"월","period":1,"timeRange":"09:00-09:50",
+                         "room":"정보과학관 401"},
+                        {"dayOfWeek":3,"dayLabel":"수","period":1,"timeRange":"09:00-09:50",
+                         "room":"정보과학관 401"}
+                      ]},
+                      {"course":"알고리즘","professor":"이교수","meetings":[
+                        {"dayOfWeek":3,"dayLabel":"수","period":3,"timeRange":"10:30-11:45",
+                         "room":"정보과학관 30100 (강의실A)"}
+                      ]}
                     ]}
                   ]
                 }
@@ -930,7 +935,7 @@ class LlmChatServiceTests {
 
         String compact = chatService.compactAndCap("get_my_schedule", rawScheduleJson);
 
-        // 허용 — compact row format (요일·교시·과목·강의실)
+        // 허용 — grouped course format and compact meeting slots
         assertThat(compact)
                 .contains("\"enrollmentYear\":2022")
                 .contains("\"currentYear\":2025")
@@ -940,17 +945,17 @@ class LlmChatServiceTests {
                 .contains("\"dayOfWeek\":1")
                 .contains("\"period\":1")
                 .contains("\"course\":\"운영체제\"")
+                .contains("\"professor\":\"김교수\"")
+                .contains("\"meetings\"")
                 .contains("\"room\":\"정보과학관 401\"")
                 .contains("\"course\":\"알고리즘\"");
-        // 차단 — chat 답변에 필요 없는 메타
+        // 차단 — chat 답변에 필요 없는 meeting 메타
         assertThat(compact)
                 .doesNotContain("dayLabel")
                 .doesNotContain("timeRange")
                 .doesNotContain("09:00-09:50")
                 .doesNotContain("10:30-11:45")
-                .doesNotContain("professor")
-                .doesNotContain("김교수")
-                .doesNotContain("이교수");
+                .contains("\"professor\":\"이교수\"");
     }
 
     @Test
