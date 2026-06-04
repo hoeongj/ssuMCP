@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 import com.ssuai.domain.auth.saint.PortalCookies;
 import com.ssuai.domain.auth.saint.SaintSessionStore;
 import com.ssuai.domain.saint.connector.SaintScheduleConnector;
-import com.ssuai.domain.saint.dto.ScheduleEntry;
+import com.ssuai.domain.saint.dto.CourseScheduleEntry;
+import com.ssuai.domain.saint.dto.MeetingSlot;
 import com.ssuai.domain.saint.dto.ScheduleResponse;
 import com.ssuai.domain.saint.dto.TermSchedule;
 import com.ssuai.global.exception.SaintSessionExpiredException;
@@ -175,8 +176,8 @@ class SaintScheduleCacheTests {
     private static ScheduleResponse stubResponse() {
         return new ScheduleResponse(2024, 2026, 1, List.of(
                 new TermSchedule(2026, 1, List.of(
-                        new ScheduleEntry(1, "월", 3, "10:30-11:45",
-                                "자료구조", "김교수", "정보과학관 30100")))));
+                        new CourseScheduleEntry("자료구조", "김교수", List.of(
+                                new MeetingSlot(1, "월", 3, "10:30-11:45", "정보과학관 30100")))))));
     }
 
     private static final class StubSessionStore extends SaintSessionStore {

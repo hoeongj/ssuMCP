@@ -24,6 +24,7 @@ import org.jsoup.select.Elements;
 import org.jsoup.select.Selector.SelectorParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +37,9 @@ import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.ErrorCode;
+import com.ssuai.global.monitoring.AlertLevel;
+import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.meal", havingValue = "real")
@@ -63,17 +67,28 @@ class RealMealConnector implements MealConnector {
     private final String menuUrl;
     private final long minIntervalMs;
     private final int timeoutMs;
+    private final DiscordAlertService discordAlertService;
     private final ConcurrentMap<String, Object> rateLimitLocksByRcd = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Long> lastCallAtMsByRcd = new ConcurrentHashMap<>();
 
     RealMealConnector() {
-        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS);
+        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS, null);
+    }
+
+    @Autowired
+    RealMealConnector(DiscordAlertService discordAlertService) {
+        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS, discordAlertService);
     }
 
     RealMealConnector(String menuUrl, long minIntervalMs, int timeoutMs) {
+        this(menuUrl, minIntervalMs, timeoutMs, null);
+    }
+
+    RealMealConnector(String menuUrl, long minIntervalMs, int timeoutMs, DiscordAlertService discordAlertService) {
         this.menuUrl = Objects.requireNonNull(menuUrl);
         this.minIntervalMs = Math.max(0L, minIntervalMs);
         this.timeoutMs = timeoutMs;
+        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -102,24 +117,24 @@ class RealMealConnector implements MealConnector {
             return new MealResponse(date, meals, closures);
         } catch (SocketTimeoutException exception) {
             logFailure("timeout", displayName, date, startedAt);
-            throw new ConnectorTimeoutException(exception);
+            throw alert(new ConnectorTimeoutException(exception));
         } catch (HttpStatusException exception) {
             logFailure("http_" + exception.getStatusCode(), displayName, date, startedAt);
-            throw mapHttpStatus(exception);
+            throw alert(mapHttpStatus(exception));
         } catch (SelectorParseException exception) {
             logFailure("parse", displayName, date, startedAt);
             throw new ConnectorParseException(exception);
         } catch (ConnectorException exception) {
             logFailure(exception.getErrorCode().name().toLowerCase(Locale.ROOT),
                     displayName, date, startedAt);
-            throw exception;
+            throw alert(exception);
         } catch (IOException exception) {
             if (isTimeout(exception)) {
                 logFailure("timeout", displayName, date, startedAt);
-                throw new ConnectorTimeoutException(exception);
+                throw alert(new ConnectorTimeoutException(exception));
             }
             logFailure("unavailable", displayName, date, startedAt);
-            throw new ConnectorUnavailableException(exception);
+            throw alert(new ConnectorUnavailableException(exception));
         }
     }
 
@@ -320,6 +335,18 @@ class RealMealConnector implements MealConnector {
 
     private static long elapsedMs(long startedAt) {
         return System.currentTimeMillis() - startedAt;
+    }
+
+    private ConnectorException alert(ConnectorException exception) {
+        if (discordAlertService == null) {
+            return exception;
+        }
+        if (exception instanceof ConnectorTimeoutException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
+        } else if (exception instanceof ConnectorUnavailableException) {
+            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+        }
+        return exception;
     }
 
     private static void logFailure(String reason, String restaurant, LocalDate date, long startedAt) {

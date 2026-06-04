@@ -3,12 +3,13 @@ package com.ssuai.domain.saint.connector
 import com.ssuai.domain.saint.dto.ChapelAbsenceApplication
 import com.ssuai.domain.saint.dto.ChapelAttendanceEntry
 import com.ssuai.domain.saint.dto.ChapelInfo
+import com.ssuai.domain.saint.dto.CourseScheduleEntry
 import com.ssuai.domain.saint.dto.CourseGrade
 import com.ssuai.domain.saint.dto.GpaSummary
 import com.ssuai.domain.saint.dto.GraduationRequirementItem
 import com.ssuai.domain.saint.dto.GraduationStatus
 import com.ssuai.domain.saint.dto.GradesResponse
-import com.ssuai.domain.saint.dto.ScheduleEntry
+import com.ssuai.domain.saint.dto.MeetingSlot
 import com.ssuai.domain.saint.dto.ScheduleResponse
 import com.ssuai.domain.saint.dto.ScholarshipEntry
 import com.ssuai.domain.saint.dto.TermGpa
@@ -35,13 +36,28 @@ import dev.eatsteak.rusaint.model.SemesterType
 import dev.eatsteak.rusaint.model.Scholarship
 import dev.eatsteak.rusaint.model.Weekday
 import kotlinx.coroutines.runBlocking
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
+import com.ssuai.global.exception.ErrorCode
+import com.ssuai.global.monitoring.AlertLevel
+import com.ssuai.global.monitoring.DiscordAlertService
 
 @Component
 class RusaintUniFfiClient : RusaintClient {
 
+    private val discordAlertService: DiscordAlertService?
+
+    constructor() {
+        this.discordAlertService = null
+    }
+
+    @Autowired
+    constructor(discordAlertService: DiscordAlertService) {
+        this.discordAlertService = discordAlertService
+    }
+
     override fun authenticateWithToken(studentId: String, ssoToken: String): RusaintAuthenticatedSession =
-        withClientError("rusaint token authentication failed") {
+        withClientError("rusaint token authentication failed", alertOnFailure = true) {
             require(studentId.isNotBlank()) { "studentId is required" }
             require(ssoToken.isNotBlank()) { "ssoToken is required" }
 
@@ -254,22 +270,34 @@ class RusaintUniFfiClient : RusaintClient {
             scholarship.status,
         )
 
-    private fun mapSchedule(schedule: Map<Weekday, List<CourseScheduleInformation>>): List<ScheduleEntry> =
+    private fun mapSchedule(schedule: Map<Weekday, List<CourseScheduleInformation>>): List<CourseScheduleEntry> {
+        val grouped = linkedMapOf<Pair<String, String>, MutableList<MeetingSlot>>()
         schedule.entries
             .sortedBy { dayNumber(it.key) }
-            .flatMap { (day, entries) ->
-                entries.map { entry ->
-                    ScheduleEntry(
-                        dayNumber(day),
-                        dayLabel(day),
-                        periodFromTimeRange(entry.time),
-                        entry.time,
-                        entry.name,
-                        entry.professor,
-                        entry.classroom,
-                    )
-                }
+            .forEach { (day, entries) ->
+                entries
+                    .sortedWith(compareBy<CourseScheduleInformation> { periodFromTimeRange(it.time) }
+                        .thenBy { it.time }
+                        .thenBy { it.name }
+                        .thenBy { it.professor })
+                    .forEach { entry ->
+                        grouped.getOrPut(entry.name to entry.professor) { mutableListOf() }
+                            .add(
+                                MeetingSlot(
+                                    dayNumber(day),
+                                    dayLabel(day),
+                                    periodFromTimeRange(entry.time),
+                                    entry.time,
+                                    entry.classroom,
+                                ),
+                            )
+                    }
             }
+
+        return grouped.map { (key, meetings) ->
+            CourseScheduleEntry(key.first, key.second, meetings)
+        }
+    }
 
     private fun mapSummary(summary: GradeSummary): GpaSummary =
         GpaSummary(
@@ -404,14 +432,33 @@ class RusaintUniFfiClient : RusaintClient {
     private fun firstNonBlank(vararg values: String?): String? =
         values.firstOrNull { !it.isNullOrBlank() }
 
-    private inline fun <T> withClientError(message: String, block: () -> T): T =
+    private inline fun <T> withClientError(
+        message: String,
+        alertOnFailure: Boolean = false,
+        block: () -> T,
+    ): T =
         try {
             block()
         } catch (exception: RusaintClientException) {
+            if (alertOnFailure) {
+                alertRusaintFailure(exception)
+            }
             throw exception
         } catch (exception: Exception) {
-            throw RusaintClientException(message, exception)
+            val clientException = RusaintClientException(message, exception)
+            if (alertOnFailure) {
+                alertRusaintFailure(clientException)
+            }
+            throw clientException
         }
+
+    private fun alertRusaintFailure(exception: RusaintClientException) {
+        discordAlertService?.alertConnectorFailure(
+            AlertLevel.ERROR,
+            ErrorCode.CONNECTOR_UNAVAILABLE,
+            exception,
+        )
+    }
 
     private inline fun <T : AutoCloseable, R> T.useAuto(block: (T) -> R): R =
         try {

@@ -138,7 +138,7 @@ final class SaintScheduleHelpers {
 
     /** (year, term) pair returned by {@link #previousTerm(int, int)}. */
     record TermPosition(int year, int term) {
-        TermSchedule with(java.util.List<com.ssuai.domain.saint.dto.ScheduleEntry> entries) {
+        TermSchedule with(java.util.List<com.ssuai.domain.saint.dto.CourseScheduleEntry> entries) {
             return new TermSchedule(year, term, entries);
         }
     }

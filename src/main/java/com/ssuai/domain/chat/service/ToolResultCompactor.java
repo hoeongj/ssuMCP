@@ -140,13 +140,8 @@ public class ToolResultCompactor {
     }
 
     /**
-     * Schedule rows are allowed in LLM prompts in a compact row format
-     * (Task 16 spec §6 #6 — "월 1교시 알고리즘 / 정보과학관 401"). Strip
-     * fields the chat answer never needs (dayLabel — derivable from
-     * dayOfWeek, timeRange — derivable from period, professor — not
-     * required to answer "내일 1교시 뭐야?"). Keeping the input format
-     * tight makes the LLM prompt budget predictable and limits the
-     * cross-trust-boundary surface area.
+     * Schedule entries are grouped by course, with only compact meeting
+     * coordinates retained for prompt budget control.
      */
     private ObjectNode compactScheduleNode(JsonNode node) {
         ObjectNode compact = objectMapper.createObjectNode();
@@ -173,9 +168,19 @@ public class ToolResultCompactor {
 
     private ObjectNode compactScheduleEntryNode(JsonNode node) {
         ObjectNode compact = objectMapper.createObjectNode();
+        copyTextIfPresent(node, compact, "course");
+        copyTextIfPresent(node, compact, "professor");
+        JsonNode meetings = node.get("meetings");
+        if (meetings != null && meetings.isArray()) {
+            compact.set("meetings", filterArray(meetings, this::compactMeetingSlotNode));
+        }
+        return compact;
+    }
+
+    private ObjectNode compactMeetingSlotNode(JsonNode node) {
+        ObjectNode compact = objectMapper.createObjectNode();
         copyIntIfPresent(node, compact, "dayOfWeek");
         copyIntIfPresent(node, compact, "period");
-        copyTextIfPresent(node, compact, "course");
         copyTextIfPresent(node, compact, "room");
         return compact;
     }

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,13 +91,19 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
     private final String baseUrl;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final boolean delayBeforeRequest;
 
     public SsufidDepartmentNoticeConnector(
             @Value("${ssuai.ssufid.base-url:https://ssufid.yourssu.com}") String baseUrl,
             ObjectMapper objectMapper
     ) {
+        this(baseUrl, objectMapper, true);
+    }
+
+    SsufidDepartmentNoticeConnector(String baseUrl, ObjectMapper objectMapper, boolean delayBeforeRequest) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
+        this.delayBeforeRequest = delayBeforeRequest;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -202,6 +209,7 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
                 .build();
 
         try {
+            delayBeforeRequest();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
                 log.error("API returned non-200 status code: {} for URL: {}", response.statusCode(), url);
@@ -218,6 +226,18 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ConnectorUnavailableException(e);
+        }
+    }
+
+    private void delayBeforeRequest() {
+        if (!delayBeforeRequest) {
+            return;
+        }
+        try {
+            long delayMs = ThreadLocalRandom.current().nextLong(300, 1200);
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
