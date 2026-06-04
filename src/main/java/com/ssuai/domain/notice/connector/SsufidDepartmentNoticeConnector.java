@@ -18,6 +18,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -98,6 +99,7 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
     private final boolean delayBeforeRequest;
     private final DiscordAlertService discordAlertService;
 
+    @Autowired
     public SsufidDepartmentNoticeConnector(
             @Value("${ssuai.ssufid.base-url:https://ssufid.yourssu.com}") String baseUrl,
             ObjectMapper objectMapper,
