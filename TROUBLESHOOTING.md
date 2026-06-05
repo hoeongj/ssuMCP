@@ -48,6 +48,72 @@
   3.
 ```
 
+## 2026-06-06 — Prometheus/Grafana 전환 중 Grafana DNS와 PowerShell RNG 가정 오류
+
+- 맥락: Discord webhook 기반 장애 알림 코드를 제거하고, 운영 관측성을
+  Prometheus/Grafana/kube-prometheus-stack으로 전환했다. ArgoCD Application으로
+  monitoring stack을 GitOps 배포하고 Grafana를 외부에 노출하는 작업이었다.
+- 증상:
+  - 최초 Grafana Ingress를 `grafana-ssumcp.duckdns.org`로 만들었지만
+    cert-manager HTTP-01 challenge가 계속 `pending`에 머물렀다.
+  - `grafana-admin` Secret 생성 시 PowerShell의
+    `[RandomNumberGenerator]::Fill(...)` 호출이 현재 런타임에서 동작하지 않았다.
+- 처음 세운 가설 (틀린 방향):
+  - DuckDNS 하위 이름을 Ingress host로 쓰면 기존 VM IP로 자연스럽게 연결될 것이라
+    가정했다.
+  - 최신 .NET/PowerShell에서 쓰던 static RNG API가 현재 운영 셸에서도 그대로
+    지원될 것이라 가정했다.
+- 실제 원인:
+  - DuckDNS는 wildcard DNS가 아니며, 실제로 등록된 label은 `ssumcp`와
+    `argo-ssuai`뿐이었다. `grafana-ssumcp` label은 존재하지 않아 Let's Encrypt
+    HTTP-01 solver Ingress가 외부에서 도달될 수 없었다.
+  - 현재 PowerShell/.NET 런타임에서는 static `RandomNumberGenerator.Fill` 호출이
+    사용할 수 없었다. 동일한 암호학적 난수 생성이라도 런타임별 API surface가 다르다.
+- 해결:
+  - 새 DuckDNS label을 요구하지 않도록 Grafana를 기존 backend host의 sub-path인
+    `https://ssumcp.duckdns.org/grafana`로 노출했다.
+  - Grafana `root_url`을 `/grafana` 경로로 맞추고 `serve_from_sub_path=true`를
+    설정했다.
+  - 실패했던 cert-manager solver Ingress와 Challenge를 삭제했다.
+  - Secret은 `[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes(...)`
+    방식으로 즉시 재생성했다. password 값은 터미널에 출력하지 않았다.
+- 핵심 파일/커밋:
+  - `deploy/argocd/application-monitoring.yaml`
+  - `deploy/charts/monitoring/values.yaml`
+  - `deploy/charts/ssuai-backend/templates/servicemonitor.yaml`
+  - `deploy/README.md`, `deploy/argocd/README.md`
+  - `build.gradle`, `application.yml`
+  - `src/main/java/com/ssuai/global/monitoring/*` 삭제
+  - PR #21 `feat(monitoring): add prometheus stack`
+  - PR #22 `fix(monitoring): serve grafana under backend host`
+- 검증:
+  - `./gradlew.bat --no-daemon test` 통과.
+  - ArgoCD `monitoring` Application: `Synced / Healthy`.
+  - monitoring namespace의 Prometheus, Alertmanager, Grafana, kube-state-metrics,
+    node-exporter, operator 모두 `Running`.
+  - `https://ssumcp.duckdns.org/grafana/login` HTTP 200.
+  - `https://ssumcp.duckdns.org/actuator/prometheus` HTTP 200, `jvm_`,
+    `http_server` metric 확인.
+  - Prometheus active target에서 `ssuai-backend` health `up` 확인.
+- 포트폴리오 포인트:
+  - "Ingress YAML이 맞다"와 "외부 DNS가 실제로 존재한다"는 별개다. TLS 자동화는
+    Kubernetes 내부 상태만으로 검증되지 않고 DNS, VM firewall, port 80 reachability까지
+    포함한 end-to-end 시스템이다.
+  - 알림 코드를 애플리케이션 내부 Discord webhook에서 platform observability로
+    전환하면서, 장애 감지를 코드 예외 처리에서 Prometheus scrape/alert rule로 옮길
+    수 있는 구조를 만들었다.
+  - 운영 Secret 생성은 값 노출 없이 재현 가능한 명령으로 처리해야 하며, 로컬 셸 API
+    차이도 실패 원인이 될 수 있다.
+- 면접 예상 질문:
+  1. cert-manager HTTP-01 challenge가 pending일 때 DNS, Ingress, Service 중 어디부터
+     확인하나요?
+  2. 애플리케이션 코드에서 Discord webhook을 직접 호출하는 방식과 Prometheus/Grafana
+     기반 모니터링의 trade-off는 무엇인가요?
+  3. Grafana를 sub-path(`/grafana`)로 서빙할 때 `root_url`과
+     `serve_from_sub_path`가 왜 필요한가요?
+
+---
+
 ## 2026-06-05 — MCP 신규 도구 추가 시 두 개의 테스트 파일을 수동으로 업데이트해야 함
 
 - 맥락: `claude_check.md` 기반 일괄 개선 작업(PR #19)에서 `get_meal_weekly`, `get_academic_calendar` 두 개의 @Tool 메서드를 추가.

@@ -7,6 +7,7 @@ This is the operator guide for ssuMCP's production environment:
 - TLS via cert-manager + Let's Encrypt.
 - MCP server image registry at `ghcr.io/hoeongj/ssumcp`.
 - GitOps rollout via ArgoCD + Helm.
+- Observability via kube-prometheus-stack, Prometheus, Alertmanager, and Grafana.
 
 Current live endpoints:
 
@@ -27,11 +28,13 @@ The directory layout:
 deploy/
 ├── argocd/
 │   ├── application-ssuai-backend.yaml
+│   ├── application-monitoring.yaml
 │   ├── image-updater/
 │   ├── ingress.yaml
 │   ├── README.md
 │   └── values.yaml
 ├── charts/
+│   ├── monitoring/
 │   └── ssuai-backend/
 ├── cluster-bootstrap/
 │   └── clusterissuer.yaml
@@ -217,8 +220,32 @@ kubectl -n monitoring create secret generic grafana-admin \
 kubectl apply -f deploy/argocd/application-monitoring.yaml
 ```
 
-ArgoCD then owns Prometheus, Grafana, Alertmanager, and the ServiceMonitor
-that scrapes `/actuator/prometheus` from the backend Service.
+ArgoCD then owns Prometheus, Grafana, Alertmanager, kube-state-metrics,
+node-exporter, and the ServiceMonitor that scrapes `/actuator/prometheus`
+from the backend Service.
+
+Current monitoring checks:
+
+```bash
+kubectl -n argocd get applications.argoproj.io monitoring
+kubectl -n monitoring get pods
+kubectl -n monitoring get ingress,certificate
+kubectl -n ssuai-prod get servicemonitor
+curl -I https://ssumcp.duckdns.org/grafana/login
+curl https://ssumcp.duckdns.org/actuator/prometheus | head
+```
+
+Grafana is exposed under the existing backend host at
+`https://ssumcp.duckdns.org/grafana`. Do not create a separate
+`grafana-ssumcp.duckdns.org` hostname unless the DuckDNS record is also
+created and pointed at the VM.
+
+Retrieve the generated Grafana admin password from the cluster, not from git:
+
+```powershell
+kubectl -n monitoring get secret grafana-admin -o jsonpath="{.data.admin-password}" |
+  % { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_)) }
+```
 
 ---
 
@@ -244,11 +271,12 @@ kubectl -n ssuai-prod get pods,svc,ingress
 Rollback is a git revert of the image-bump commit. ArgoCD reconciles back to
 the previous chart value.
 
-> **Reality check (2026-05-16)**: the live single-node k3s cluster
-> does **not** have ArgoCD or Image Updater installed; `helm` is also
-> not present on the VM. Steps 3-5 above describe the design intent,
-> not the current operational truth. Until that gap is closed, deploys
-> follow §7.2 (GitHub Actions auto-deploy), with §7.1 as break-glass fallback.
+> **Current state (2026-06-06)**: the live single-node k3s cluster has
+> ArgoCD, the backend Application, and the monitoring Application installed.
+> The monitoring Application is `Synced`/`Healthy`, Grafana is available at
+> `/grafana`, and Prometheus scrapes the backend ServiceMonitor successfully.
+> GitHub Actions auto-deploy remains documented as a fallback path for backend
+> image rollouts if GitOps is unavailable.
 
 ### 7.1 Manual deploy (break-glass fallback)
 
@@ -320,6 +348,7 @@ Security notes:
 
 ```bash
 curl -i https://ssumcp.duckdns.org/actuator/health
+curl https://ssumcp.duckdns.org/actuator/prometheus | head
 curl https://ssumcp.duckdns.org/api/meals/today | jq .
 
 curl -I -H "Origin: https://attacker.example" \
@@ -366,6 +395,8 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/apply-live-deploy.ps1
 | `Certificate` stuck `READY=False` | DNS not propagated or port 80 blocked | Check DuckDNS, Oracle VCN/NSG, and UFW. |
 | ArgoCD Application is `OutOfSync` | Git and cluster differ | Inspect `argocd app diff ssuai-backend`, then sync or fix git. |
 | Image Updater logs credential errors | PAT Secret missing or wrong scope | Recreate `argocd-image-updater-git-creds` with `contents:write`. |
+| Grafana certificate challenge is pending | Hostname has no DuckDNS record or port 80 is blocked | Prefer existing `ssumcp.duckdns.org/grafana`, or create the DuckDNS record before changing the Ingress host. |
+| Prometheus has no backend target | ServiceMonitor not installed or selector mismatch | Check `kubectl -n ssuai-prod get servicemonitor ssuai-backend -o yaml` and Prometheus targets. |
 | Backend 502 from ingress | Service/Deployment selector or pod readiness issue | Check `kubectl -n ssuai-prod describe ingress,svc,pod`. |
 | CORS fails in browser | `SSUAI_FRONTEND_ORIGIN` mismatch | Update chart values and let ArgoCD reconcile. |
 
