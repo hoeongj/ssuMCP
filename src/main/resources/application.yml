@@ -97,6 +97,7 @@ ssuai:
     library-seat: mock # mock | real
     library-book: mock # mock | real
     library-loans: mock # mock | real
+    library-reservation: mock # mock | real
     saint-schedule: mock # mock | rusaint
     saint-grades: mock # mock | rusaint
     saint-chapel: mock # mock | rusaint

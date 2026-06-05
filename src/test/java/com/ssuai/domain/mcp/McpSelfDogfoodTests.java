@@ -74,6 +74,8 @@ class McpSelfDogfoodTests {
                             "get_library_seat_status",
                             "search_library_book",
                             "get_my_library_loans",
+                            "prepare_reserve_library_seat",
+                            "confirm_action",
                             "get_my_schedule",
                             "get_my_grades",
                             "get_my_chapel_info",
