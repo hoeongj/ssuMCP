@@ -15,9 +15,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import com.ssuai.domain.mcp.tool.CampusMcpTools;
+import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
 import com.ssuai.domain.mcp.tool.LibraryBookMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryLoansMcpTool;
+import com.ssuai.domain.mcp.tool.LibraryReservationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
@@ -41,7 +43,12 @@ class McpServerConfig {
      * All other tools are read-only data queries.
      */
     private static final Set<String> DESTRUCTIVE_TOOLS = Set.of("logout_provider", "logout_all");
-    private static final Set<String> WRITE_TOOLS = Set.of("start_auth", "logout_provider", "logout_all");
+    private static final Set<String> WRITE_TOOLS = Set.of(
+            "start_auth",
+            "logout_provider",
+            "logout_all",
+            "prepare_reserve_library_seat",
+            "confirm_action");
 
     @Bean
     ToolCallbackProvider ssuaiMcpTools(
@@ -52,6 +59,8 @@ class McpServerConfig {
             LibrarySeatMcpTool libraryMcpTool,
             LibraryBookMcpTool libraryBookMcpTool,
             LibraryLoansMcpTool libraryLoansMcpTool,
+            LibraryReservationMcpTool libraryReservationMcpTool,
+            ConfirmActionMcpTool confirmActionMcpTool,
             SaintScheduleMcpTool saintScheduleMcpTool,
             SaintGradesMcpTool saintGradesMcpTool,
             SaintExtendedMcpTools saintExtendedMcpTools,
@@ -67,6 +76,8 @@ class McpServerConfig {
                         libraryMcpTool,
                         libraryBookMcpTool,
                         libraryLoansMcpTool,
+                        libraryReservationMcpTool,
+                        confirmActionMcpTool,
                         saintScheduleMcpTool,
                         saintGradesMcpTool,
                         saintExtendedMcpTools,
