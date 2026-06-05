@@ -14,7 +14,7 @@ Current live endpoints:
 - Backend: `https://ssumcp.duckdns.org`
 - MCP Streamable HTTP: `https://ssumcp.duckdns.org/mcp`
 - ArgoCD UI: `https://argo-ssuai.duckdns.org`
-- Grafana UI: `https://grafana-ssumcp.duckdns.org`
+- Grafana UI: `https://ssumcp.duckdns.org/grafana`
 
 Architecture rationale lives in:
 
@@ -90,14 +90,12 @@ Set these subdomains to the VM public IP:
 
 - `ssumcp.duckdns.org`
 - `argo-ssuai.duckdns.org`
-- `grafana-ssumcp.duckdns.org`
 
 Verify:
 
 ```bash
 dig +short ssumcp.duckdns.org
 dig +short argo-ssuai.duckdns.org
-dig +short grafana-ssumcp.duckdns.org
 ```
 
 Install a DuckDNS updater cron on the VM. Keep the token root-owned and never
@@ -106,7 +104,7 @@ commit it:
 ```bash
 sudo tee /etc/cron.d/duckdns >/dev/null <<'EOF'
 */5 * * * * root curl -sk -o /dev/null \
-  "https://www.duckdns.org/update?domains=ssumcp,argo-ssuai,grafana-ssumcp&token=<YOUR_TOKEN>"
+  "https://www.duckdns.org/update?domains=ssumcp,argo-ssuai&token=<YOUR_TOKEN>"
 EOF
 sudo chmod 600 /etc/cron.d/duckdns
 ```
