@@ -1,0 +1,96 @@
+# kube-prometheus-stack values for single-node Oracle Cloud ARM64 k3s
+# Applied by the ArgoCD Application in deploy/argocd/application-monitoring.yaml.
+# Grafana Discord contact point: configure via Grafana UI after first deploy
+# (Alerting > Contact points > Add > Discord, paste webhook URL).
+
+prometheus:
+  prometheusSpec:
+    # Pick up ServiceMonitors from all namespaces (not just the release namespace).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 7d
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+grafana:
+  # Set via k8s Secret: kubectl -n monitoring create secret generic grafana-admin \
+  #   --from-literal=admin-user=admin --from-literal=admin-password=<your-password>
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - grafana-ssumcp.duckdns.org
+    tls:
+      - secretName: grafana-ssumcp-duckdns-org-tls
+        hosts:
+          - grafana-ssumcp.duckdns.org
+  grafana.ini:
+    server:
+      root_url: https://grafana-ssumcp.duckdns.org
+    analytics:
+      reporting_enabled: false
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 20m
+      limits:
+        memory: 128Mi
+        cpu: 100m
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+# k3s does not expose these endpoints — disable to prevent scrape errors.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+nodeExporter:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true

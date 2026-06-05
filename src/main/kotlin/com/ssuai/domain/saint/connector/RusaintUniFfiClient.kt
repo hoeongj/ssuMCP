@@ -36,28 +36,12 @@ import dev.eatsteak.rusaint.model.SemesterType
 import dev.eatsteak.rusaint.model.Scholarship
 import dev.eatsteak.rusaint.model.Weekday
 import kotlinx.coroutines.runBlocking
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
-import com.ssuai.global.exception.ErrorCode
-import com.ssuai.global.monitoring.AlertLevel
-import com.ssuai.global.monitoring.DiscordAlertService
-
 @Component
 class RusaintUniFfiClient : RusaintClient {
 
-    private val discordAlertService: DiscordAlertService?
-
-    constructor() {
-        this.discordAlertService = null
-    }
-
-    @Autowired
-    constructor(discordAlertService: DiscordAlertService) {
-        this.discordAlertService = discordAlertService
-    }
-
     override fun authenticateWithToken(studentId: String, ssoToken: String): RusaintAuthenticatedSession =
-        withClientError("rusaint token authentication failed", alertOnFailure = true) {
+        withClientError("rusaint token authentication failed") {
             require(studentId.isNotBlank()) { "studentId is required" }
             require(ssoToken.isNotBlank()) { "ssoToken is required" }
 
@@ -434,31 +418,16 @@ class RusaintUniFfiClient : RusaintClient {
 
     private inline fun <T> withClientError(
         message: String,
-        alertOnFailure: Boolean = false,
         block: () -> T,
     ): T =
         try {
             block()
         } catch (exception: RusaintClientException) {
-            if (alertOnFailure) {
-                alertRusaintFailure(exception)
-            }
             throw exception
         } catch (exception: Exception) {
-            val clientException = RusaintClientException(message, exception)
-            if (alertOnFailure) {
-                alertRusaintFailure(clientException)
-            }
-            throw clientException
+            throw RusaintClientException(message, exception)
         }
 
-    private fun alertRusaintFailure(exception: RusaintClientException) {
-        discordAlertService?.alertConnectorFailure(
-            AlertLevel.ERROR,
-            ErrorCode.CONNECTOR_UNAVAILABLE,
-            exception,
-        )
-    }
 
     private inline fun <T : AutoCloseable, R> T.useAuto(block: (T) -> R): R =
         try {

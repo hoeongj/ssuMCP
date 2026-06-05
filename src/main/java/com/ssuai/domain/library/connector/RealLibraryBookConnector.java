@@ -27,8 +27,6 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 
 /**
  * Reads books from the Soongsil University central library via the Pyxis
@@ -51,18 +49,15 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
     private final LibraryBookProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-    private final DiscordAlertService discordAlertService;
 
     public RealLibraryBookConnector(
             LibraryBookProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("libraryBookRestClient") RestClient restClient,
-            DiscordAlertService discordAlertService
+            @Qualifier("libraryBookRestClient") RestClient restClient
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
-        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -167,15 +162,7 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
         return value == null ? fallback : value;
     }
 
-    private ConnectorException alert(ConnectorException exception) {
-        if (discordAlertService == null) {
-            return exception;
-        }
-        if (exception instanceof ConnectorTimeoutException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
-        } else if (exception instanceof ConnectorUnavailableException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
-        }
+    private static ConnectorException alert(ConnectorException exception) {
         return exception;
     }
 

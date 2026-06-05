@@ -69,16 +69,29 @@ model in a dedicated migration task.
      --values deploy/argocd/image-updater/values.yaml
    ```
 
+8. Apply the monitoring Application after `application-monitoring.yaml` is
+   present on `main`:
+
+   ```bash
+   kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n monitoring create secret generic grafana-admin \
+     --from-literal=admin-user=admin \
+     --from-literal=admin-password=<GRAFANA_ADMIN_PASSWORD> \
+     --dry-run=client -o yaml | kubectl apply -f -
+   kubectl apply -f deploy/argocd/application-monitoring.yaml
+   ```
+
 ## Day-2 checks
 
 ```bash
 kubectl -n argocd get pods
 kubectl -n argocd get applications.argoproj.io
 kubectl -n argocd logs deploy/argocd-image-updater --tail=100
+kubectl -n monitoring get pods
 ```
 
 If the UI is reachable, open `https://argo-ssuai.duckdns.org` and confirm the
-`ssuai-backend` Application is `Synced` and `Healthy`.
+`ssuai-backend` and `monitoring` Applications are `Synced` and `Healthy`.
 
 ## Emergency break-glass
 

@@ -45,7 +45,7 @@ class RealLibrarySeatConnectorTests {
         properties.setBaseUrl(BASE_URL);
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         server = MockRestServiceServer.bindTo(builder).build();
-        connector = new RealLibrarySeatConnector(properties, new ObjectMapper(), builder.build(), null);
+        connector = new RealLibrarySeatConnector(properties, new ObjectMapper(), builder.build());
     }
 
     @Test

@@ -14,6 +14,7 @@ Current live endpoints:
 - Backend: `https://ssumcp.duckdns.org`
 - MCP Streamable HTTP: `https://ssumcp.duckdns.org/mcp`
 - ArgoCD UI: `https://argo-ssuai.duckdns.org`
+- Grafana UI: `https://grafana-ssumcp.duckdns.org`
 
 Architecture rationale lives in:
 
@@ -85,16 +86,18 @@ sudo ufw enable
 
 ## 2. Point DuckDNS at the VM
 
-Set both subdomains to the VM public IP:
+Set these subdomains to the VM public IP:
 
 - `ssumcp.duckdns.org`
 - `argo-ssuai.duckdns.org`
+- `grafana-ssumcp.duckdns.org`
 
 Verify:
 
 ```bash
 dig +short ssumcp.duckdns.org
 dig +short argo-ssuai.duckdns.org
+dig +short grafana-ssumcp.duckdns.org
 ```
 
 Install a DuckDNS updater cron on the VM. Keep the token root-owned and never
@@ -103,7 +106,7 @@ commit it:
 ```bash
 sudo tee /etc/cron.d/duckdns >/dev/null <<'EOF'
 */5 * * * * root curl -sk -o /dev/null \
-  "https://www.duckdns.org/update?domains=ssumcp,argo-ssuai&token=<YOUR_TOKEN>"
+  "https://www.duckdns.org/update?domains=ssumcp,argo-ssuai,grafana-ssumcp&token=<YOUR_TOKEN>"
 EOF
 sudo chmod 600 /etc/cron.d/duckdns
 ```
@@ -204,6 +207,20 @@ helm upgrade --install argocd-image-updater argo/argocd-image-updater \
 
 ArgoCD now owns the backend resources rendered from
 `deploy/charts/ssuai-backend/`.
+
+Apply the monitoring Application after the monitoring manifests are on `main`:
+
+```bash
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n monitoring create secret generic grafana-admin \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password=<GRAFANA_ADMIN_PASSWORD> \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f deploy/argocd/application-monitoring.yaml
+```
+
+ArgoCD then owns Prometheus, Grafana, Alertmanager, and the ServiceMonitor
+that scrapes `/actuator/prometheus` from the backend Service.
 
 ---
 

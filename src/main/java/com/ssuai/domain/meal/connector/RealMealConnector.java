@@ -39,8 +39,6 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.meal", havingValue = "real")
@@ -68,28 +66,18 @@ class RealMealConnector implements MealConnector {
     private final String menuUrl;
     private final long minIntervalMs;
     private final int timeoutMs;
-    private final DiscordAlertService discordAlertService;
     private final ConcurrentMap<String, Object> rateLimitLocksByRcd = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Long> lastCallAtMsByRcd = new ConcurrentHashMap<>();
 
-    RealMealConnector() {
-        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS, null);
-    }
-
     @Autowired
-    RealMealConnector(DiscordAlertService discordAlertService) {
-        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS, discordAlertService);
+    RealMealConnector() {
+        this(DEFAULT_MENU_URL, DEFAULT_MIN_INTERVAL_MS, DEFAULT_TIMEOUT_MS);
     }
 
     RealMealConnector(String menuUrl, long minIntervalMs, int timeoutMs) {
-        this(menuUrl, minIntervalMs, timeoutMs, null);
-    }
-
-    RealMealConnector(String menuUrl, long minIntervalMs, int timeoutMs, DiscordAlertService discordAlertService) {
         this.menuUrl = Objects.requireNonNull(menuUrl);
         this.minIntervalMs = Math.max(0L, minIntervalMs);
         this.timeoutMs = timeoutMs;
-        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -351,15 +339,7 @@ class RealMealConnector implements MealConnector {
         return System.currentTimeMillis() - startedAt;
     }
 
-    private ConnectorException alert(ConnectorException exception) {
-        if (discordAlertService == null) {
-            return exception;
-        }
-        if (exception instanceof ConnectorTimeoutException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
-        } else if (exception instanceof ConnectorUnavailableException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
-        }
+    private static ConnectorException alert(ConnectorException exception) {
         return exception;
     }
 
