@@ -77,7 +77,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, prometheus
   endpoint:
     health:
       show-details: never
@@ -113,10 +113,6 @@ ssuai:
       # Provider cookies may still expire earlier if the upstream rejects them.
       session-ttl: ${SSUAI_MCP_AUTH_SESSION_TTL:7d}
       state-ttl: 10m
-  monitoring:
-    discord:
-      webhook-url: ${SSUAI_DISCORD_ALERT_WEBHOOK_URL:}
-      dedupe-window: 60s
   library:
     session:
       # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream

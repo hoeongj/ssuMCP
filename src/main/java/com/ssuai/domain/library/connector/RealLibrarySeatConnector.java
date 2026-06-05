@@ -26,8 +26,6 @@ import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 
 /**
  * Fetches real seat data from oasis.ssu.ac.kr via the Pyxis API.
@@ -52,18 +50,15 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     private final LibrarySeatProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-    private final DiscordAlertService discordAlertService;
 
     public RealLibrarySeatConnector(
             LibrarySeatProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("librarySeatRestClient") RestClient restClient,
-            DiscordAlertService discordAlertService
+            @Qualifier("librarySeatRestClient") RestClient restClient
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
-        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -96,15 +91,7 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
         }
     }
 
-    private ConnectorException alert(ConnectorException exception) {
-        if (discordAlertService == null) {
-            return exception;
-        }
-        if (exception instanceof ConnectorTimeoutException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
-        } else if (exception instanceof ConnectorUnavailableException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
-        }
+    private static ConnectorException alert(ConnectorException exception) {
         return exception;
     }
 

@@ -6,8 +6,6 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -19,8 +17,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
@@ -29,15 +25,7 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    private final DiscordAlertService discordAlertService;
-
-    @Autowired
-    public GlobalExceptionHandler(ObjectProvider<DiscordAlertService> discordAlertService) {
-        this(discordAlertService.getIfAvailable());
-    }
-
-    GlobalExceptionHandler(DiscordAlertService discordAlertService) {
-        this.discordAlertService = discordAlertService;
+    public GlobalExceptionHandler() {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -134,7 +122,6 @@ public class GlobalExceptionHandler {
     ) {
         log.warn("Connector exception: code={} type={}",
                 ErrorCode.CONNECTOR_TIMEOUT.name(), exception.getClass().getSimpleName(), exception);
-        alertConnector(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
 
         return error(ErrorCode.CONNECTOR_TIMEOUT);
     }
@@ -145,7 +132,6 @@ public class GlobalExceptionHandler {
     ) {
         log.warn("Connector exception: code={} type={}",
                 ErrorCode.CONNECTOR_UNAVAILABLE.name(), exception.getClass().getSimpleName(), exception);
-        alertConnector(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
 
         return error(ErrorCode.CONNECTOR_UNAVAILABLE);
     }
@@ -156,7 +142,6 @@ public class GlobalExceptionHandler {
     ) {
         log.warn("Connector exception: code={} type={}",
                 ErrorCode.CONNECTOR_PARSE_ERROR.name(), exception.getClass().getSimpleName(), exception);
-        alertConnector(AlertLevel.WARNING, ErrorCode.CONNECTOR_PARSE_ERROR, exception);
 
         return error(ErrorCode.CONNECTOR_PARSE_ERROR);
     }
@@ -165,7 +150,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<ErrorResponse>> handleConnectorException(ConnectorException exception) {
         log.warn("Connector exception: code={} type={}",
                 ErrorCode.CONNECTOR_ERROR.name(), exception.getClass().getSimpleName(), exception);
-        alertConnector(AlertLevel.ERROR, ErrorCode.CONNECTOR_ERROR, exception);
 
         return error(ErrorCode.CONNECTOR_ERROR);
     }
@@ -205,18 +189,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(errorCode.getStatus())
                 .body(ApiResponse.error(errorResponse));
-    }
-
-    private void alertConnector(AlertLevel level, ErrorCode errorCode, ConnectorException exception) {
-        if (discordAlertService == null) {
-            return;
-        }
-        try {
-            discordAlertService.alertConnectorFailure(level, errorCode, exception);
-        } catch (RuntimeException alertFailure) {
-            log.warn("Discord connector alert failed inside exception handler: code={} type={}",
-                    errorCode.name(), exception.getClass().getSimpleName(), alertFailure);
-        }
     }
 
     private ResponseEntity<ApiResponse<ErrorResponse>> validationFailed(String message) {

@@ -31,8 +31,6 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.notice", havingValue = "real")
@@ -72,16 +70,10 @@ class RealNoticeConnector implements NoticeConnector {
     );
 
     private final NoticeConnectorProperties properties;
-    private final DiscordAlertService discordAlertService;
-
-    RealNoticeConnector(NoticeConnectorProperties properties) {
-        this(properties, null);
-    }
 
     @Autowired
-    RealNoticeConnector(NoticeConnectorProperties properties, DiscordAlertService discordAlertService) {
+    RealNoticeConnector(NoticeConnectorProperties properties) {
         this.properties = properties;
-        this.discordAlertService = discordAlertService;
     }
 
     @Override
@@ -310,15 +302,7 @@ class RealNoticeConnector implements NoticeConnector {
         return System.currentTimeMillis() - startedAt;
     }
 
-    private ConnectorException alert(ConnectorException exception) {
-        if (discordAlertService == null) {
-            return exception;
-        }
-        if (exception instanceof ConnectorTimeoutException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
-        } else if (exception instanceof ConnectorUnavailableException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
-        }
+    private static ConnectorException alert(ConnectorException exception) {
         return exception;
     }
 

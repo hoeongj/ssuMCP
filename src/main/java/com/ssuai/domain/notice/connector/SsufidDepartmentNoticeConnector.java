@@ -32,8 +32,6 @@ import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.department-notice", havingValue = "real")
@@ -97,28 +95,19 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final boolean delayBeforeRequest;
-    private final DiscordAlertService discordAlertService;
 
     @Autowired
     public SsufidDepartmentNoticeConnector(
             @Value("${ssuai.ssufid.base-url:https://ssufid.yourssu.com}") String baseUrl,
-            ObjectMapper objectMapper,
-            DiscordAlertService discordAlertService
+            ObjectMapper objectMapper
     ) {
-        this(baseUrl, objectMapper, true, discordAlertService);
+        this(baseUrl, objectMapper, true);
     }
 
     SsufidDepartmentNoticeConnector(String baseUrl, ObjectMapper objectMapper, boolean delayBeforeRequest) {
-        this(baseUrl, objectMapper, delayBeforeRequest, null);
-    }
-
-    SsufidDepartmentNoticeConnector(
-            String baseUrl, ObjectMapper objectMapper,
-            boolean delayBeforeRequest, DiscordAlertService discordAlertService) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
         this.delayBeforeRequest = delayBeforeRequest;
-        this.discordAlertService = discordAlertService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -245,15 +234,7 @@ public class SsufidDepartmentNoticeConnector implements DepartmentNoticeConnecto
         }
     }
 
-    private ConnectorException alert(ConnectorException exception) {
-        if (discordAlertService == null) {
-            return exception;
-        }
-        if (exception instanceof ConnectorTimeoutException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_TIMEOUT, exception);
-        } else if (exception instanceof ConnectorUnavailableException) {
-            discordAlertService.alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
-        }
+    private static ConnectorException alert(ConnectorException exception) {
         return exception;
     }
 

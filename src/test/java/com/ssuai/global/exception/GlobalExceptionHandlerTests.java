@@ -1,67 +1,47 @@
 package com.ssuai.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import com.ssuai.global.monitoring.AlertLevel;
-import com.ssuai.global.monitoring.DiscordAlertService;
 import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
 class GlobalExceptionHandlerTests {
 
-    @Test
-    void connectorUnavailableSendsErrorAlert() {
-        DiscordAlertService alertService = org.mockito.Mockito.mock(DiscordAlertService.class);
-        GlobalExceptionHandler handler = new GlobalExceptionHandler(alertService);
-        ConnectorUnavailableException exception = new ConnectorUnavailableException();
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
-        ResponseEntity<ApiResponse<ErrorResponse>> response = handler.handleConnectorUnavailableException(exception);
+    @Test
+    void connectorUnavailableReturns503() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleConnectorUnavailableException(new ConnectorUnavailableException());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
-        verify(alertService).alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
     }
 
     @Test
-    void connectorParseSendsWarningAlert() {
-        DiscordAlertService alertService = org.mockito.Mockito.mock(DiscordAlertService.class);
-        GlobalExceptionHandler handler = new GlobalExceptionHandler(alertService);
-        ConnectorParseException exception = new ConnectorParseException();
-
-        ResponseEntity<ApiResponse<ErrorResponse>> response = handler.handleConnectorParseException(exception);
+    void connectorParseReturns502() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleConnectorParseException(new ConnectorParseException());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
-        verify(alertService).alertConnectorFailure(AlertLevel.WARNING, ErrorCode.CONNECTOR_PARSE_ERROR, exception);
     }
 
     @Test
-    void alertFailureDoesNotFailApiResponse() {
-        DiscordAlertService alertService = org.mockito.Mockito.mock(DiscordAlertService.class);
-        GlobalExceptionHandler handler = new GlobalExceptionHandler(alertService);
-        ConnectorUnavailableException exception = new ConnectorUnavailableException();
-        doThrow(new RuntimeException("webhook down"))
-                .when(alertService)
-                .alertConnectorFailure(AlertLevel.ERROR, ErrorCode.CONNECTOR_UNAVAILABLE, exception);
+    void connectorTimeoutReturns504() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleConnectorTimeoutException(new ConnectorTimeoutException());
 
-        assertThatCode(() -> handler.handleConnectorUnavailableException(exception))
-                .doesNotThrowAnyException();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
     }
 
     @Test
-    void normalUserErrorsDoNotAlert() {
-        DiscordAlertService alertService = org.mockito.Mockito.mock(DiscordAlertService.class);
-        GlobalExceptionHandler handler = new GlobalExceptionHandler(alertService);
+    void illegalArgumentReturns400() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleIllegalArgumentException(new IllegalArgumentException("bad input"));
 
-        handler.handleIllegalArgumentException(new IllegalArgumentException("bad request"));
-        handler.handleApiException(new UnauthorizedException());
-
-        verifyNoInteractions(alertService);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }

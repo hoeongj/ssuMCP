@@ -150,8 +150,21 @@ workflow 성공을 확인함. 시크릿이 제거되면 deploy job은 no-op (ski
 - 로컬: `http://localhost:8080/mcp` (Streamable HTTP)
 - 프로덕션: `https://ssumcp.duckdns.org/mcp`
 
-## 주의
+## Authorship & Attribution (필수 — 위반 시 history 재작성해야 함)
 
-- AI 코드 속성(`Co-Authored-By` 등)을 commit에 넣지 말 것
-- commit author = `git config user.name` / `git config user.email` (`hoengj` / `akftjdwn@gmail.com`)
-- 커밋 전 확인: `git log -1 --format='%an <%ae>'`
+GitHub contribution과 커밋 페이지에 **오직 사용자(hoengj)만** 표시되어야 한다.
+
+- **AI attribution 절대 금지**: commit message, PR body, 코드 주석, 문서
+  어디에도 `Co-Authored-By: Claude`, `🤖 Generated with…`, "Claude",
+  "Anthropic", "Codex", "Gemini" 같은 AI 출처 표기를 넣지 않는다.
+  trailer 한 줄이 커밋 페이지에 AI를 공동 작성자로 띄운다.
+- **author/committer는 반드시 사용자 계정**: `git config user.name=hoengj`,
+  `git config user.email=akftjdwn@gmail.com`. AI 계정·봇 계정·공유 계정으로
+  커밋하지 않는다. (argocd-image-updater 같은 자동화 봇 커밋은 예외)
+- **커밋 전 확인**: `git log -1 --format='%an <%ae> | %cn <%ce>'`
+- **이메일은 GitHub 계정에 등록되어 있어야 한다**: author 이메일이 GitHub
+  Settings > Emails에 없으면 그 커밋은 contribution 그래프에 잡히지 않는다.
+  `akftjdwn@gmail.com`을 반드시 등록해 둔다.
+- 이미 머지된 커밋에 AI 흔적이 있으면 사용자에게 알리고, 명시적 승인을 받아
+  `git filter-branch --msg-filter` + `--force-with-lease` push로 제거한다.
+  (silent rewrite 금지 — 반드시 사용자 확인)
