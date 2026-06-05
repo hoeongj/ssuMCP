@@ -50,14 +50,17 @@ grafana:
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     hosts:
-      - grafana-ssumcp.duckdns.org
+      - ssumcp.duckdns.org
+    path: /grafana
+    pathType: Prefix
     tls:
       - secretName: grafana-ssumcp-duckdns-org-tls
         hosts:
-          - grafana-ssumcp.duckdns.org
+          - ssumcp.duckdns.org
   grafana.ini:
     server:
-      root_url: https://grafana-ssumcp.duckdns.org
+      root_url: https://ssumcp.duckdns.org/grafana
+      serve_from_sub_path: true
     analytics:
       reporting_enabled: false
 
