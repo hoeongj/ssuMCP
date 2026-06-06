@@ -114,6 +114,70 @@
 
 ---
 
+## 2026-06-06 — SAINT 방학학기 선택 시 SaintSessionExpiredException 오판
+
+- 맥락: 6월 여름방학 진입 시점에 SAINT UI가 자동으로 여름학기(SUMMER)를 선택했다.
+  수업이 없는 학기여서 시간표 데이터가 없는 상태였다.
+- 증상: `get_my_schedule`, `get_my_chapel_info` 호출 시 "세션이 만료됐습니다" 오류 반환.
+  실제로 로그아웃한 것도 아니고 JWT 만료도 아니었다.
+- 처음 세운 가설: SAINT 세션이 실제로 만료됐거나 SmartID 쿠키가 갱신되지 않았다.
+- 실제 원인:
+  1. `app.getSelectedSemester()`가 SAINT UI 롤오버로 SUMMER를 반환.
+  2. rusaint가 `app.schedule(year, SUMMER)` 호출 시 수업 없는 학기임을 빈 테이블로 받지 않고
+     "ecc did not return the timetable container" 예외를 던짐.
+  3. `RusaintScheduleConnector`가 `RusaintClientException`을 `SaintSessionExpiredException`으로
+     포장 → 사용자에게 "세션 만료"로 잘못 노출.
+- 해결: `RusaintUniFfiClient.kt`에서 `requestedSemester` 계산 시
+  SUMMER → `SemesterType.ONE`, WINTER → `SemesterType.TWO`로 fallback.
+  `fetchSchedule`, `fetchChapelInfo` 모두 동일 패턴 적용.
+- 핵심 파일/커밋:
+  - `src/main/kotlin/com/ssuai/domain/saint/connector/RusaintUniFfiClient.kt`
+  - `999c82e fix: SAINT vacation-semester fallback + notice date ISO + local notice index`
+- 검증: `./gradlew.bat test` 전체 통과.
+- 포트폴리오 포인트:
+  - 에러 코드 재사용 함정: `RusaintClientException` 하나로 "API 오류"와 "빈 데이터" 모두를
+    포장하면 진단이 어렵다. 세션 만료와 데이터 부재는 반드시 다른 예외 타입으로 분리해야 한다.
+  - SAINT UI의 UI-level 상태(선택 학기)가 백엔드 동작에 영향을 주는 구조 이해.
+    학기 롤오버 타이밍이 외부 시스템 연동에서 예상치 못한 엣지 케이스를 만든다.
+- 면접 예상 질문:
+  1. 외부 라이브러리의 예외를 내부 도메인 예외로 포장할 때 정보가 손실되는 상황과 대응 방법은?
+  2. SAINT처럼 stateful UI 기반 시스템에서 "빈 응답"과 "인증 실패"를 구분하는 방법은?
+  3. 계절학기 롤오버처럼 시간 의존적 엣지 케이스를 사전에 탐지하는 테스트 전략은?
+
+---
+
+## 2026-06-06 — Spring Boot 4에서 @DataJpaTest 패키지 경로 미등록 → @SpringBootTest 전환
+
+- 맥락: `NoticeIndexRepositoryTests.java`를 새로 작성하면서 표준 `@DataJpaTest` 애노테이션을 사용.
+- 증상:
+  ```
+  error: package org.springframework.boot.test.autoconfigure.orm.jpa does not exist
+  import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+  ```
+  컴파일 실패. 기존 단위 테스트 전부 통과하는 상태인데 새 테스트만 못 만든다.
+- 처음 세운 가설: `spring-boot-starter-test`에 `@DataJpaTest`가 포함돼 있을 것이라 가정.
+- 실제 원인: 이 프로젝트의 기존 리포지토리 테스트(`StudentRepositoryTests`)가
+  `@DataJpaTest`가 아닌 `@SpringBootTest + @Transactional + @DirtiesContext` 조합을 사용하고 있었다.
+  `build.gradle`에 별도로 autoconfigure 의존성이 빠져 있거나 프로젝트 관례상 full context 방식을 쓰고 있다.
+- 해결: `@DataJpaTest` → `@SpringBootTest + @ActiveProfiles("test") + @Transactional + @DirtiesContext(classMode=AFTER_CLASS)` 로 교체. 프로젝트 기존 패턴과 통일.
+  추가로 `@BeforeEach`의 `when(noticeIndexRepository.count()).thenReturn(0L)`이 일부 테스트에서 미사용 → `lenient().when(...)` 처리.
+- 핵심 파일:
+  - `src/test/java/com/ssuai/domain/notice/repository/NoticeIndexRepositoryTests.java`
+  - `src/test/java/com/ssuai/domain/notice/service/NoticeServiceTests.java`
+- 검증: `./gradlew.bat test "--tests=com.ssuai.domain.notice.*"` 47 테스트 통과.
+- 포트폴리오 포인트:
+  - 새 테스트 작성 전 **기존 테스트 패턴을 먼저 확인**하는 습관. 프레임워크 표준이 프로젝트 관례와
+    다를 수 있다. `grep -r "@DataJpaTest" .` 결과가 없으면 프로젝트가 다른 방식을 사용 중이라는 신호.
+  - Mockito strict stubbing 규칙: `@ExtendWith(MockitoExtension.class)`는 미사용 stub을
+    `UnnecessaryStubbingException`으로 즉시 실패시킨다. `@BeforeEach`의 공통 stub은
+    `lenient()`로 처리하거나 stub을 각 테스트로 이동해야 한다.
+- 면접 예상 질문:
+  1. `@DataJpaTest`와 `@SpringBootTest`의 차이점과 각각 적합한 상황은?
+  2. Mockito strict stubbing이 `UnnecessaryStubbingException`을 던지는 이유와 장점은?
+  3. 프로젝트에서 테스트 패턴을 통일해야 하는 이유는 무엇인가요?
+
+---
+
 ## 2026-06-05 — MCP 신규 도구 추가 시 두 개의 테스트 파일을 수동으로 업데이트해야 함
 
 - 맥락: `claude_check.md` 기반 일괄 개선 작업(PR #19)에서 `get_meal_weekly`, `get_academic_calendar` 두 개의 @Tool 메서드를 추가.
