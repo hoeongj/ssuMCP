@@ -132,7 +132,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     private Optional<LibraryReservationResult> parseCurrentChargeResponse(String body) {
         JsonNode root = parseJson(body);
-        log.debug("getCurrentCharge response: {}", body);
+        log.warn("getCurrentCharge response: {}", body);
         if (NO_RECORD_CODE.equals(root.path("code").asText(""))) {
             return Optional.empty();
         }
