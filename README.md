@@ -5,7 +5,7 @@
 숭실대학교 캠퍼스 정보를 **MCP(Model Context Protocol) 표준 도구**로 제공하는 공개 서버.  
 동시에 [ssuAI](https://github.com/ghdtjdwn/ssuAI) 웹 클라이언트를 위한 REST API 서버다.
 
-> **MCP 엔드포인트**: `https://ssumcp.duckdns.org/mcp`
+> **MCP 엔드포인트**: `https://ssumcp.duckdns.org/mcp`  
 > **Grafana**: `https://ssumcp.duckdns.org/grafana`
 
 ---
@@ -14,7 +14,7 @@
 
 학식 메뉴, 도서관 좌석, 성적, 시간표처럼 매일 확인하는 정보를 매번 포털에서 찾는 게 번거로웠다. 단순히 크롤러를 만드는 대신, LLM이 직접 학교 데이터를 도구로 호출할 수 있는 MCP 서버를 만들면 챗봇·IDE·자동화 파이프라인 어디서든 재사용할 수 있겠다고 판단했다.
 
-Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 알려줘"* 같은 질문에 LLM이 직접 데이터를 가져와 답한다.
+Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 알려줘"*, *"도서관 빈 자리 예약해줘"* 같은 요청에 LLM이 직접 데이터를 가져와 답하거나 행동한다.
 
 ---
 
@@ -53,17 +53,26 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 
 ---
 
-## 도구 목록
+## 도구 목록 (42개)
 
-### 공개 도구 (인증 불필요)
+### 공개 도구 — 인증 불필요
+
+**학식·시설·도서관**
 
 | 도구 | 설명 |
 |------|------|
 | `get_today_meal` | 오늘 학식 메뉴 |
 | `get_meal_by_date` | 날짜별 학식 |
+| `get_meal_weekly` | 주간 학식 |
 | `get_dorm_weekly_meal` | 레지던스홀 주간 식단 |
 | `search_campus_facilities` | 교내 시설 검색 |
+| `get_library_seat_catalog` | 도서관 정적 좌석·열람실 카탈로그 |
 | `search_library_book` | 중앙도서관 도서 검색 |
+
+**학사 (Academic Policy RAG)**
+
+| 도구 | 설명 |
+|------|------|
 | `get_academic_calendar` | 학사 일정 조회 |
 | `find_academic_calendar_events` | 학사일정 월/키워드 필터 검색 |
 | `classify_academic_question` | 학사 질문 의도 분류 |
@@ -71,8 +80,13 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `get_academic_policy_brief` | 공식 출처 기반 학사 규정 요약 |
 | `check_scholarship_policy` | 장학 기준과 입력 조건 근거 대조 |
 | `list_academic_policy_sources` | 학사 RAG 공식 출처 목록 |
-| `get_library_available_seats` | 도서관 전체 열람실 live available 좌석 요약 |
-| `get_room_available_seats` | 특정 열람실 live available 좌석 목록 |
+
+학칙·졸업·장학 질문은 서버 시작 후 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 인메모리 corpus를 갱신한다. 도구 응답에는 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`를 포함한다.
+
+**공지사항**
+
+| 도구 | 설명 |
+|------|------|
 | `get_recent_notices` | 학교 공지사항 최신 목록 |
 | `search_notices` | 공지사항 키워드 검색 |
 | `list_notice_categories` | 공지 카테고리 목록 |
@@ -80,7 +94,7 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `get_active_notices` | 진행 중(마감 전) 공지 |
 | `get_department_notices` | 학과/부서별 공지 |
 
-### 개인 도구 (인증 필요)
+### 개인 도구 — 인증 필요
 
 인증 흐름:
 
@@ -88,22 +102,47 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 2. `loginUrl`을 브라우저에서 열어 숭실대 계정 로그인
 3. 이후 개인 도구 호출 시 `mcp_session_id` 파라미터 전달
 
-| 도구 | provider | 설명 |
-|------|----------|------|
-| `start_auth` | — | 로그인 URL 발급 |
-| `get_auth_status` | — | 세션 상태 확인 |
-| `logout_provider` | — | 특정 provider 해제 |
-| `logout_all` | — | 세션 전체 해제 |
-| `get_my_schedule` | SAINT | 시간표 (학기 지정 가능) |
-| `get_my_grades` | SAINT | 성적 |
-| `get_my_chapel_info` | SAINT | 채플 출석 현황 |
-| `check_graduation_requirements` | SAINT | 졸업 요건 |
-| `evaluate_graduation_with_policy` | SAINT | u-SAINT 졸업요건 + 공식 학칙 근거 |
-| `get_my_scholarships` | SAINT | 장학금 수혜 내역 |
-| `simulate_gpa` | SAINT | GPA 시뮬레이션 (이번 학기 예상 성적 → 누적 GPA 예측) |
-| `get_my_assignments` | LMS | 과제 및 퀴즈 목록 |
-| `get_library_seat_status` | LIBRARY | 층별 좌석 현황 (2·5·6층) |
-| `get_my_library_loans` | LIBRARY | 도서관 대출 현황 |
+**세션 관리**
+
+| 도구 | 설명 |
+|------|------|
+| `start_auth` | 로그인 URL 발급 (provider: SAINT / LMS / LIBRARY) |
+| `get_auth_status` | 세션 상태 확인 |
+| `logout_provider` | 특정 provider 해제 |
+| `logout_all` | 세션 전체 해제 |
+
+**u-SAINT (provider: SAINT)**
+
+| 도구 | 설명 |
+|------|------|
+| `get_my_schedule` | 시간표 (학기 지정 가능) |
+| `get_my_grades` | 성적 및 누적 GPA |
+| `get_my_chapel_info` | 채플 출석 현황 |
+| `check_graduation_requirements` | 졸업 요건 충족 여부 |
+| `evaluate_graduation_with_policy` | 졸업 요건 + 공식 학칙 근거 함께 조회 |
+| `get_my_scholarships` | 장학금 수혜 내역 |
+| `simulate_gpa` | 이번 학기 예상 성적 → 누적 GPA 예측 |
+
+**LMS (provider: LMS)**
+
+| 도구 | 설명 |
+|------|------|
+| `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록 |
+
+**도서관 (provider: LIBRARY)**
+
+| 도구 | 설명 |
+|------|------|
+| `get_library_seat_status` | 층별 좌석 현황 (2·5·6층) |
+| `get_library_available_seats` | 전체 열람실 live per-seat 가용 좌석 요약 |
+| `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive) |
+| `recommend_library_seats` | 선호도 기반 좌석 추천 |
+| `prepare_reserve_library_seat` | 좌석 예약 준비 → `confirm_action` 필요 |
+| `get_my_library_seat` | 현재 예약 좌석 조회 |
+| `prepare_swap_library_seat` | 이석 준비 → `confirm_action` 필요 |
+| `prepare_cancel_library_seat` | 반납 준비 → `confirm_action` 필요 |
+| `confirm_action` | write 작업 최종 실행 (2단계 확인 패턴) |
+| `get_my_library_loans` | 도서관 대출 현황 (반납 기한 포함) |
 
 ---
 
@@ -163,6 +202,19 @@ MealConnector (interface)
     → 최종 응답
 ```
 
+### 도서관 좌석 자동 예약 (Write 도구)
+
+도서관 예약·이석·반납은 `prepare_* → confirm_action` 2단계 확인 패턴을 사용한다.
+
+```
+get_library_available_seats
+    → 빈 좌석 목록 확인 (externalSeatId, label, status)
+    → prepare_reserve_library_seat(seat_id)
+    → 확인 메시지 표시 ("오픈열람실 25번 예약합니다. 확인하시겠습니까?")
+    → confirm_action(pending_action_id)
+    → 실제 Pyxis 예약 실행
+```
+
 ---
 
 ## 엔지니어링 노트
@@ -185,6 +237,10 @@ LMS Canvas의 5-hop SSO 체인에서는 수동 쿠키 병합 방식이 서브도
 
 SAP WebDynpro는 학기별 페이지를 이전 버튼으로 하나씩 이동해야 하는 stateful 구조다. 1시간 TTL 캐시를 두되, cold start 시 동시에 몰리는 중복 요청을 첫 요청만 upstream에 보내고 나머지는 결과를 공유하는 single-flight 패턴으로 처리했다.
 
+### Pyxis per-seat API 역공학
+
+공식 문서가 없는 Pyxis 도서관 API를 브라우저 DevTools Network 탭으로 역추적해 `GET /pyxis-api/1/api/rooms/{roomId}/seats` 엔드포인트를 발견했다. 응답에서 좌석별 `isActive`·`isOccupied`·`seatChargeState` 조합으로 available/occupied/away/inactive 4가지 상태를 매핑해 실시간 per-seat 조회 도구를 구현했다. 이 데이터를 통해 이전까지 불가능했던 정확한 좌석 단위 예약이 가능해졌다.
+
 ### Spring AI reflection workaround
 
 `McpServer.SyncSpecification.tools`가 `package-private final`이라 tool annotation(`readOnlyHint`, `destructiveHint`) 주입 공개 API가 없었다. `@Primary McpSyncServerCustomizer`로 auto-configure 빈을 교체하고 reflection으로 tool list를 재구성했다. Spring AI가 공개 API를 열면 제거할 임시 bridge다.
@@ -204,7 +260,7 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 
 - **비밀 값 비로깅**: 비밀번호, 세션 쿠키, JWT, API 키는 로그에 기록하지 않는다.
 - **인증 경계 분리**: 좌석 현황처럼 집계 데이터라도 캐시 키에 인증 여부를 포함해 익명 호출자가 인증 결과를 받지 못하게 한다.
-- **읽기 전용 MCP**: 21개 도구에 `readOnlyHint=true`, `logout_*`에 `destructiveHint=true`를 표시한다.
+- **읽기 전용 MCP**: 대부분의 도구에 `readOnlyHint=true`, `logout_*`에 `destructiveHint=true`를 표시한다.
 - **Write 도구 설계 원칙**: 예약·취소 같은 상태 변경 도구는 `prepare_*` + `confirm_action` 2단계 확인 패턴으로만 구현한다. (ADR 0015)
 
 ---
@@ -217,6 +273,7 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 | MCP 구현 | Spring AI 1.1 (Streamable HTTP) |
 | 크롤링 | Jsoup 1.22 |
 | u-SAINT 연동 | rusaint — JNA 5.18로 Rust 라이브러리를 JVM에 연결 |
+| 학사 RAG | 공식 출처 추적형 하이브리드 RAG (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus) |
 | 인증 | JJWT 0.13 (HS256), AES-256-GCM |
 | 테스트 | JUnit 5, MockWebServer, WireMock 3 |
 | 인프라 | Oracle Cloud ARM64 · k3s · Traefik · ArgoCD · Helm · GHCR · Prometheus · Grafana |
@@ -276,6 +333,7 @@ SSUAI_CONNECTOR_MEAL=real ./gradlew bootRun
 - [보안 정책](docs/security.md)
 - [트러블슈팅 로그](TROUBLESHOOTING.md)
 - [배포 runbook](deploy/README.md)
+- [도서관 에이전트 구현 계획](docs/library-seat-agent-completion-plan.md)
 
 ---
 
