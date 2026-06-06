@@ -18,11 +18,14 @@ import com.ssuai.domain.mcp.tool.CampusMcpTools;
 import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
 import com.ssuai.domain.mcp.tool.LibraryBookMcpTool;
+import com.ssuai.domain.mcp.tool.LibraryCancelMcpTool;
+import com.ssuai.domain.mcp.tool.LibraryCurrentSeatMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatCatalogMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryLoansMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryReservationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatRecommendationMcpTool;
+import com.ssuai.domain.mcp.tool.LibrarySwapMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
 import com.ssuai.domain.mcp.tool.McpAuthMcpTools;
@@ -50,6 +53,8 @@ class McpServerConfig {
             "logout_provider",
             "logout_all",
             "prepare_reserve_library_seat",
+            "prepare_cancel_library_seat",
+            "prepare_swap_library_seat",
             "confirm_action");
 
     @Bean
@@ -64,6 +69,9 @@ class McpServerConfig {
             LibraryBookMcpTool libraryBookMcpTool,
             LibraryLoansMcpTool libraryLoansMcpTool,
             LibraryReservationMcpTool libraryReservationMcpTool,
+            LibraryCancelMcpTool libraryCancelMcpTool,
+            LibraryCurrentSeatMcpTool libraryCurrentSeatMcpTool,
+            LibrarySwapMcpTool librarySwapMcpTool,
             ConfirmActionMcpTool confirmActionMcpTool,
             SaintScheduleMcpTool saintScheduleMcpTool,
             SaintGradesMcpTool saintGradesMcpTool,
@@ -83,6 +91,9 @@ class McpServerConfig {
                         libraryBookMcpTool,
                         libraryLoansMcpTool,
                         libraryReservationMcpTool,
+                        libraryCancelMcpTool,
+                        libraryCurrentSeatMcpTool,
+                        librarySwapMcpTool,
                         confirmActionMcpTool,
                         saintScheduleMcpTool,
                         saintGradesMcpTool,
