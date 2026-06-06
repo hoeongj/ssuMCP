@@ -38,7 +38,8 @@ public record TermGpa(
         if (term == null || term.isBlank()) {
             throw new IllegalArgumentException("term is required");
         }
-        gpa = gpa == null ? null : round2(gpa);
+        double gpaCredits = Math.max(0.0d, earnedCredits - passFailCredits);
+        gpa = gpa == null || gpaCredits == 0.0d ? null : round2(gpa);
         arithmeticAverage = round2(arithmeticAverage);
         gpaSum = round2(gpaSum);
     }

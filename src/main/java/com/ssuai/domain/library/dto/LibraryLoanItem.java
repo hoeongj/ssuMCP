@@ -2,6 +2,8 @@ package com.ssuai.domain.library.dto;
 
 import java.time.LocalDate;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 /**
  * Single checkout record returned by /pyxis-api/1/api/charges.
  *
@@ -19,7 +21,9 @@ public record LibraryLoanItem(
         String title,
         String author,
         String callNumber,
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
         LocalDate loanDate,
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
         LocalDate dueDate,
         boolean isOverdue,
         boolean isRenewable

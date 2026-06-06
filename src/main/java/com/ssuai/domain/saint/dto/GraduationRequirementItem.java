@@ -11,6 +11,10 @@ public record GraduationRequirementItem(
         boolean satisfied
 ) {
 
+    public GraduationRequirementItem {
+        remaining = Math.max(0.0f, required - completed);
+    }
+
     /**
      * Completed minus required. Negative means deficient, positive means
      * over-completed. Use {@code remaining} for a user-facing deficit value.

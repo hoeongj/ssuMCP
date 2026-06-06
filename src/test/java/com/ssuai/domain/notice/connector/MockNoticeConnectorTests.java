@@ -1,12 +1,14 @@
 package com.ssuai.domain.notice.connector;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
 import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
+import com.ssuai.global.exception.ConnectorParseException;
 
 class MockNoticeConnectorTests {
 
@@ -78,10 +80,8 @@ class MockNoticeConnectorTests {
     }
 
     @Test
-    void fetchDetailWithUnknownUrlFallsBackToFirst() {
-        NoticeDetailResponse response = connector.fetchDetail("https://example.com/unknown");
-
-        assertThat(response.title()).isNotBlank();
-        assertThat(response.bodyText()).isNotBlank();
+    void fetchDetailWithUnknownUrlDoesNotReturnFixtureBody() {
+        assertThatThrownBy(() -> connector.fetchDetail("https://example.com/unknown"))
+                .isInstanceOf(ConnectorParseException.class);
     }
 }
