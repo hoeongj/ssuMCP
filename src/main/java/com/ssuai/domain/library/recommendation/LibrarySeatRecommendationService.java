@@ -54,7 +54,7 @@ public class LibrarySeatRecommendationService {
                         .map(entry -> buildRecommendation(entry, availableSeats.statusOf(seatId), effectivePreference)))
                 .sorted(Comparator
                         .comparingInt(LibrarySeatRecommendation::score).reversed()
-                        .thenComparing(LibrarySeatRecommendation::seatId))
+                        .thenComparing(LibrarySeatRecommendation::seatId, LibrarySeatCatalogService::compareSeatIds))
                 .toList();
 
         List<LibrarySeatRecommendation> limited = allRecommendations.stream()

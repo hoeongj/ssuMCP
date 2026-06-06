@@ -21,6 +21,10 @@ import com.ssuai.domain.library.dto.LibraryFloor;
 public class LibrarySeatCatalogService {
 
     private static final String DEFAULT_CATALOG_PATH = "library/seat-catalog.json";
+    private static final Comparator<LibrarySeatCatalogEntry> ENTRY_ORDER = Comparator
+            .comparingInt(LibrarySeatCatalogEntry::floor)
+            .thenComparing(LibrarySeatCatalogEntry::roomCode)
+            .thenComparing(LibrarySeatCatalogEntry::seatId, LibrarySeatCatalogService::compareSeatIds);
 
     private final List<LibrarySeatCatalogEntry> entries;
     private final Map<Integer, Map<String, LibrarySeatCatalogEntry>> entriesByFloorAndSeatId;
@@ -43,7 +47,7 @@ public class LibrarySeatCatalogService {
     public List<LibrarySeatCatalogEntry> entriesFor(LibraryFloor floor) {
         return entries.stream()
                 .filter(entry -> entry.belongsTo(floor))
-                .sorted(Comparator.comparing(LibrarySeatCatalogEntry::seatId))
+                .sorted(ENTRY_ORDER)
                 .toList();
     }
 
@@ -61,9 +65,7 @@ public class LibrarySeatCatalogService {
             List<LibrarySeatCatalogEntry> loaded =
                     objectMapper.readValue(input, new TypeReference<List<LibrarySeatCatalogEntry>>() {});
             return loaded.stream()
-                    .sorted(Comparator
-                            .comparingInt(LibrarySeatCatalogEntry::floor)
-                            .thenComparing(LibrarySeatCatalogEntry::seatId))
+                    .sorted(ENTRY_ORDER)
                     .toList();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to load library seat catalog", exception);
@@ -72,5 +74,39 @@ public class LibrarySeatCatalogService {
 
     private static String normalizeSeatId(String seatId) {
         return seatId.trim().toUpperCase(Locale.ROOT);
+    }
+
+    static int compareSeatIds(String left, String right) {
+        return SeatSortKey.from(left).compareTo(SeatSortKey.from(right));
+    }
+
+    private record SeatSortKey(String prefix, int number, String raw) implements Comparable<SeatSortKey> {
+
+        private static SeatSortKey from(String value) {
+            String raw = normalizeSeatId(value);
+            int digitStart = 0;
+            while (digitStart < raw.length() && !Character.isDigit(raw.charAt(digitStart))) {
+                digitStart++;
+            }
+            String prefix = raw.substring(0, digitStart);
+            String digits = raw.substring(digitStart);
+            int number = !digits.isEmpty() && digits.chars().allMatch(Character::isDigit)
+                    ? Integer.parseInt(digits)
+                    : Integer.MAX_VALUE;
+            return new SeatSortKey(prefix, number, raw);
+        }
+
+        @Override
+        public int compareTo(SeatSortKey other) {
+            int prefixOrder = prefix.compareTo(other.prefix);
+            if (prefixOrder != 0) {
+                return prefixOrder;
+            }
+            int numberOrder = Integer.compare(number, other.number);
+            if (numberOrder != 0) {
+                return numberOrder;
+            }
+            return raw.compareTo(other.raw);
+        }
     }
 }

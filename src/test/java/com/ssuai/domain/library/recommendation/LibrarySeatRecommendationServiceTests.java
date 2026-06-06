@@ -31,19 +31,19 @@ class LibrarySeatRecommendationServiceTests {
     }
 
     @Test
-    void ranksOnlyCurrentlyAvailableCatalogedSeatsByPreference() {
+    void recommendsOnlyCurrentlyAvailableCatalogedSeats() {
         when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
                 .thenReturn(statusWithSeatItems(List.of(
-                        new LibrarySeatItem("2-A-001", "A-1", "available"),
-                        new LibrarySeatItem("2-A-002", "A-2", "available"),
-                        new LibrarySeatItem("2-A-076", "A-76", "occupied"),
-                        new LibrarySeatItem("2-B-001", "B-1", "available")
+                        new LibrarySeatItem("1", "1", "available"),
+                        new LibrarySeatItem("2", "2", "available"),
+                        new LibrarySeatItem("76", "76", "occupied"),
+                        new LibrarySeatItem("101", "101", "available")
                 )));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
                 SESSION_KEY,
-                new LibrarySeatPreference(true, true, false, true, null, null),
+                new LibrarySeatPreference(null, null, false, null, true, null),
                 10);
 
         assertThat(response.availabilitySource()).isEqualTo("live_seat_items");
@@ -52,28 +52,28 @@ class LibrarySeatRecommendationServiceTests {
         assertThat(response.catalogMatchedAvailableSeats()).isEqualTo(3);
         assertThat(response.recommendations())
                 .extracting(LibrarySeatRecommendation::seatId)
-                .containsExactly("2-A-001", "2-B-001", "2-A-002");
+                .containsExactly("1", "2", "101");
         assertThat(response.recommendations())
-                .noneMatch(recommendation -> recommendation.seatId().equals("2-A-076"));
+                .noneMatch(recommendation -> recommendation.seatId().equals("76"));
         assertThat(response.recommendations().getFirst().matchedPreferences())
-                .contains("window", "outlet", "not_standing", "edge");
+                .contains("not_standing", "quiet");
     }
 
     @Test
     void usesAvailableSeatIdsWhenConnectorDoesNotExposeSeatItems() {
         when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithSeatIds(List.of("2-B-001", "2-A-001")));
+                .thenReturn(statusWithSeatIds(List.of("10", "1")));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
                 SESSION_KEY,
-                new LibrarySeatPreference(null, true, null, null, null, true),
+                new LibrarySeatPreference(null, null, null, null, null, null),
                 2);
 
         assertThat(response.availabilitySource()).isEqualTo("live_available_seat_ids");
         assertThat(response.recommendations())
                 .extracting(LibrarySeatRecommendation::seatId)
-                .containsExactly("2-B-001", "2-A-001");
+                .containsExactly("1", "10");
     }
 
     @Test
@@ -96,7 +96,7 @@ class LibrarySeatRecommendationServiceTests {
     @Test
     void clampsLimitToTen() {
         when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithSeatIds(List.of("2-A-001")));
+                .thenReturn(statusWithSeatIds(List.of("1")));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
