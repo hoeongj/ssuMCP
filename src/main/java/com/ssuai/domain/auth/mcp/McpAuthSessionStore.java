@@ -95,7 +95,6 @@ public class McpAuthSessionStore {
 
     private Optional<McpAuthSession> findByValue(String value) {
         Instant now = clock.instant();
-        cleanupExpired(now);
         return repository.findBySessionIdAndExpiresAtAfter(value, now)
                 .map(this::toSession);
     }
@@ -130,7 +129,8 @@ public class McpAuthSessionStore {
         if (id == null || provider == null) {
             return;
         }
-        repository.findById(id.value()).ifPresent(entity -> {
+        Instant now = clock.instant();
+        repository.findBySessionIdAndExpiresAtAfter(id.value(), now).ifPresent(entity -> {
             Map<McpProviderType, McpProviderLink> updated = new EnumMap<>(McpProviderType.class);
             updated.putAll(deserializeProviders(entity.getProviders()));
             updated.remove(provider);
