@@ -19,7 +19,7 @@ public class MockNoticeConnector implements NoticeConnector {
             new Notice(
                     "2026학년도 1학기 장학금 신청 안내",
                     "https://scatch.ssu.ac.kr/공지사항/장학금-신청-안내/",
-                    "2026.05.20",
+                    "2026-05-20",
                     "진행",
                     "장학팀",
                     "장학"
@@ -27,7 +27,7 @@ public class MockNoticeConnector implements NoticeConnector {
             new Notice(
                     "2026학년도 하계 계절학기 수강신청 안내",
                     "https://scatch.ssu.ac.kr/공지사항/계절학기-수강신청/",
-                    "2026.05.18",
+                    "2026-05-18",
                     "진행",
                     "교무팀",
                     "학사"
@@ -35,7 +35,7 @@ public class MockNoticeConnector implements NoticeConnector {
             new Notice(
                     "중앙도서관 좌석 이용 안내 변경",
                     "https://scatch.ssu.ac.kr/공지사항/도서관-좌석-안내/",
-                    "2026.05.15",
+                    "2026-05-15",
                     "완료",
                     "중앙도서관",
                     "기타"

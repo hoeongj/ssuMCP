@@ -181,7 +181,7 @@ class RealNoticeConnector implements NoticeConnector {
         List<Notice> notices = new ArrayList<>();
 
         for (Element item : items) {
-            String date = textOrEmpty(item.selectFirst(dateS));
+            String date = normalizeDate(textOrEmpty(item.selectFirst(dateS)));
             String status = textOrEmpty(item.selectFirst(statusS));
 
             Element linkElement = item.selectFirst(titleLink);
@@ -275,6 +275,15 @@ class RealNoticeConnector implements NoticeConnector {
             return "";
         }
         return element.text().trim();
+    }
+
+    // package-private for testing
+    static String normalizeDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        // "2026.06.04" → "2026-06-04"
+        return raw.trim().replace('.', '-');
     }
 
     private static String truncate(String text, int maxLength) {

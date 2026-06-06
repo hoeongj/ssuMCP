@@ -82,7 +82,16 @@ class RusaintUniFfiClient : RusaintClient {
                         builder.build(session).useAuto { app ->
                             val selected = app.getSelectedSemester()
                             val requestedYear = year?.toUInt() ?: selected.year
-                            val requestedSemester = semesterType(term) ?: selected.semester
+                            // Vacation semesters (SUMMER/WINTER) have no timetable.
+                            // When no explicit term is requested, fall back to the
+                            // immediately preceding regular semester so the student
+                            // gets their most recent actual timetable instead of an error.
+                            val requestedSemester = when {
+                                term != null -> semesterType(term)!!
+                                selected.semester == SemesterType.SUMMER -> SemesterType.ONE
+                                selected.semester == SemesterType.WINTER -> SemesterType.TWO
+                                else -> selected.semester
+                            }
                             val responseYear = requestedYear.toInt()
                             val responseTerm = termNumber(requestedSemester)
                             val schedule = app.schedule(requestedYear, requestedSemester)
@@ -149,7 +158,14 @@ class RusaintUniFfiClient : RusaintClient {
                         builder.build(session).useAuto { app ->
                             val selected = app.getSelectedSemester()
                             val requestedYear = year?.toUInt() ?: selected.year
-                            val requestedSemester = semesterType(semester) ?: selected.semester
+                            // Apply the same vacation-semester fallback as the schedule connector:
+                            // chapel data only exists for regular semesters.
+                            val requestedSemester = when {
+                                semester != null -> semesterType(semester) ?: selected.semester
+                                selected.semester == SemesterType.SUMMER -> SemesterType.ONE
+                                selected.semester == SemesterType.WINTER -> SemesterType.TWO
+                                else -> selected.semester
+                            }
                             mapChapelInfo(app.information(requestedYear, requestedSemester))
                         }
                     }

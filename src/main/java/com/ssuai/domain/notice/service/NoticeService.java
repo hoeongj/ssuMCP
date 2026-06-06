@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.notice.connector.DepartmentNoticeConnector;
@@ -12,6 +14,8 @@ import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
 import com.ssuai.domain.notice.dto.Notice;
+import com.ssuai.domain.notice.entity.NoticeIndexEntry;
+import com.ssuai.domain.notice.repository.NoticeIndexRepository;
 
 @Service
 public class NoticeService {
@@ -19,18 +23,22 @@ public class NoticeService {
     private static final Logger log = LoggerFactory.getLogger(NoticeService.class);
 
     static final int MAX_KEYWORD_LENGTH = 64;
+    private static final int INDEX_PAGE_SIZE = 20;
 
     private final NoticeConnector connector;
     private final DepartmentNoticeConnector departmentConnector;
     private final NoticeListCache cache;
+    private final NoticeIndexRepository noticeIndexRepository;
 
     public NoticeService(
             NoticeConnector connector,
             DepartmentNoticeConnector departmentConnector,
-            NoticeListCache cache) {
+            NoticeListCache cache,
+            NoticeIndexRepository noticeIndexRepository) {
         this.connector = connector;
         this.departmentConnector = departmentConnector;
         this.cache = cache;
+        this.noticeIndexRepository = noticeIndexRepository;
     }
 
     public NoticeListResponse getRecentNotices(String category, Integer page) {
@@ -52,9 +60,35 @@ public class NoticeService {
         }
         int effectivePage = page == null || page < 1 ? 1 : page;
         String cat = normalizeCategory(category);
+
+        // Use local index when populated for date-ranked results; fall back to
+        // live scraping when the index has not been seeded yet (dev/test/cold start).
+        if (noticeIndexRepository.count() > 0) {
+            return searchFromIndex(trimmed, cat, effectivePage);
+        }
         return cache.get(
                 NoticeListCache.Key.forSearch(trimmed, cat, effectivePage),
                 () -> connector.searchNotices(trimmed, cat, effectivePage));
+    }
+
+    private NoticeListResponse searchFromIndex(String keyword, String category, int page) {
+        Page<NoticeIndexEntry> results = noticeIndexRepository.search(
+                keyword == null ? "" : keyword,
+                category == null ? "" : category,
+                PageRequest.of(page - 1, INDEX_PAGE_SIZE));
+        List<Notice> notices = results.getContent().stream()
+                .map(NoticeService::toNotice)
+                .toList();
+        int totalPages = Math.max(1, results.getTotalPages());
+        log.debug("notice index search: keyword={} category={} page={} hits={} totalPages={}",
+                keyword, category, page, notices.size(), totalPages);
+        return new NoticeListResponse(notices, page, totalPages);
+    }
+
+    private static Notice toNotice(NoticeIndexEntry entry) {
+        String date = entry.getPostedDate() != null ? entry.getPostedDate().toString() : "";
+        return new Notice(entry.getTitle(), entry.getLink(), date,
+                entry.getStatus(), entry.getDepartment(), entry.getCategory());
     }
 
     public NoticeCategoriesResponse getCategories() {

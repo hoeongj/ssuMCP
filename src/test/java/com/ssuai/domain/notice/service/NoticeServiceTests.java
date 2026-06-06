@@ -2,22 +2,39 @@ package com.ssuai.domain.notice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.ssuai.domain.notice.connector.MockDepartmentNoticeConnector;
 import com.ssuai.domain.notice.connector.MockNoticeConnector;
 import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
+import com.ssuai.domain.notice.repository.NoticeIndexRepository;
 
+@ExtendWith(MockitoExtension.class)
 class NoticeServiceTests {
 
-    private final NoticeService service = new NoticeService(
-            new MockNoticeConnector(),
-            new MockDepartmentNoticeConnector(),
-            new NoticeListCache(java.time.Duration.ofMinutes(5), java.time.Clock.systemUTC(), 500)
-    );
+    @Mock
+    private NoticeIndexRepository noticeIndexRepository;
+
+    private NoticeService service;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(noticeIndexRepository.count()).thenReturn(0L);
+        service = new NoticeService(
+                new MockNoticeConnector(),
+                new MockDepartmentNoticeConnector(),
+                new NoticeListCache(java.time.Duration.ofMinutes(5), java.time.Clock.systemUTC(), 500),
+                noticeIndexRepository);
+    }
 
     @Test
     void getRecentNoticesReturnsAll() {

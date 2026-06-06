@@ -32,7 +32,14 @@ class RealNoticeConnectorParseTests {
 
         List<Notice> notices = RealNoticeConnector.parseNoticeList(doc);
 
-        assertThat(notices.getFirst().date()).matches("\\d{4}\\.\\d{2}\\.\\d{2}");
+        assertThat(notices.getFirst().date()).matches("\\d{4}-\\d{2}-\\d{2}");
+    }
+
+    @Test
+    void normalizeDateConvertsDotsToHyphens() {
+        assertThat(RealNoticeConnector.normalizeDate("2026.06.04")).isEqualTo("2026-06-04");
+        assertThat(RealNoticeConnector.normalizeDate("")).isEmpty();
+        assertThat(RealNoticeConnector.normalizeDate(null)).isEmpty();
     }
 
     @Test
