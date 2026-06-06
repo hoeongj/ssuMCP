@@ -29,6 +29,12 @@ Claude: 수정 파일만 Read → 검수 → 다음 task 작성
 
 **Codex 토큰 소진 → `agy -m gemini-3.5-flash` 실행 → "task 읽어" → 즉시 이어서 작업.**
 
+**Claude 토큰 소진/부재 → Codex/AGY 단독 작업 모드.** 구현 AI 는 Claude의 추가
+task/검수를 기다리지 않고 현재 task를 끝까지 수행한다. 완료 후
+`C:/Users/akftj/mp/codex_work_alone.md` 에 작업 설명·판단·테스트·커밋/PR/머지·수정
+파일 목록을 누적 기록한다. Claude가 복귀하면 이 파일과 DONE 블록의 수정 파일
+목록만 기준으로 검수한다.
+
 ## DONE 블록 — 완료 출력 형식 (필수)
 
 구현 AI 는 작업 완료 후 **반드시** 아래 형식을 마지막에 출력:
