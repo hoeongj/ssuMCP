@@ -16,6 +16,7 @@ import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
+import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 
 @Component
 public class ConfirmActionMcpTool {
@@ -100,13 +101,18 @@ public class ConfirmActionMcpTool {
             String mcpSessionId, String sessionKey, String token) {
         ActionAudit confirmed = actionService.confirmAction(sessionKey);
         LibraryReservationRequest request = actionService.payload(confirmed, LibraryReservationRequest.class);
-        LibraryReservationResult result = reservationConnector.reserve(token, request);
-        String message = String.format(
-                "%s %s번 좌석 예약 완료! 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
-                result.roomName(), result.seatCode(),
-                result.beginTime(), result.endTime(),
-                result.chargeId());
-        return McpPrivateToolResponse.ok(mcpSessionId, message);
+        try {
+            LibraryReservationResult result = reservationConnector.reserve(token, request);
+            String message = String.format(
+                    "%s %s번 좌석 예약 완료! 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
+                    result.roomName(), result.seatCode(),
+                    result.beginTime(), result.endTime(),
+                    result.chargeId());
+            return McpPrivateToolResponse.ok(mcpSessionId, message);
+        } catch (LibrarySeatNotAvailableException e) {
+            return McpPrivateToolResponse.ok(mcpSessionId,
+                    "좌석이 이미 선점됐습니다. recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
+        }
     }
 
     private McpPrivateToolResponse<String> executeCancellation(
@@ -133,6 +139,11 @@ public class ConfirmActionMcpTool {
                     result.beginTime(), result.endTime(),
                     result.chargeId());
             return McpPrivateToolResponse.ok(mcpSessionId, message);
+        } catch (LibrarySeatNotAvailableException exception) {
+            log.warn("confirm_action swap: discharge succeeded but seat not available seat={}", request.newSeatId());
+            return McpPrivateToolResponse.ok(mcpSessionId,
+                    "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번)이 이미 선점됐습니다. "
+                            + "recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
         } catch (RuntimeException exception) {
             log.warn("confirm_action swap: discharge succeeded but reserve failed seat={}", request.newSeatId(), exception);
             return McpPrivateToolResponse.ok(mcpSessionId,

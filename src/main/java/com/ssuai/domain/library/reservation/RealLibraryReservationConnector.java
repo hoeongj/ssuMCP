@@ -20,6 +20,7 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.library-reservation", havingValue = "real")
@@ -149,7 +150,11 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         JsonNode root = parseJson(body);
         if (!root.path("success").asBoolean(false)) {
             checkNeedLogin(root);
-            log.warn("library reservation upstream returned success=false: code={}", root.path("code").asText(""));
+            String code = root.path("code").asText("");
+            log.warn("library reservation upstream returned success=false: code={}", code);
+            if (code.startsWith("warning.seat.") || code.startsWith("error.seat.")) {
+                throw new LibrarySeatNotAvailableException(code);
+            }
             throw new ConnectorParseException();
         }
         return parseChargeData(root.path("data"));
