@@ -93,7 +93,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\",status=~\"5..\"}[1m])) by (uri)",
-            "legendFormat": "{{ uri }}"
+            "legendFormat": "{{ "{{" }} uri {{ "}}" }}"
           }],
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 }
         }
