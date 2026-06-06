@@ -8,6 +8,7 @@
 | --- | --- |
 | [architecture.md](architecture.md) | Current runtime boundaries and package responsibilities |
 | [mcp-tools.md](mcp-tools.md) | Tool inventory, auth flow, and client setup |
+| [library-seat-agent-completion-plan.md](library-seat-agent-completion-plan.md) | Completion checklist for the library seat automation agent |
 | [security.md](security.md) | Data classification, secret handling, and action policy |
 | [../deploy/README.md](../deploy/README.md) | Production deployment runbook |
 
