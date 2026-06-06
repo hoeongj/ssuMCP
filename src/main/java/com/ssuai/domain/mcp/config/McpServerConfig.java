@@ -14,15 +14,18 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import com.ssuai.domain.mcp.tool.AcademicPolicyMcpTools;
 import com.ssuai.domain.mcp.tool.CampusMcpTools;
 import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
+import com.ssuai.domain.mcp.tool.LibraryAvailableSeatsMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryBookMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryCancelMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryCurrentSeatMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatCatalogMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryLoansMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryReservationMcpTool;
+import com.ssuai.domain.mcp.tool.LibraryRoomAvailableSeatsMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatRecommendationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySwapMcpTool;
@@ -66,6 +69,8 @@ class McpServerConfig {
             LibrarySeatMcpTool libraryMcpTool,
             LibrarySeatCatalogMcpTool librarySeatCatalogMcpTool,
             LibrarySeatRecommendationMcpTool librarySeatRecommendationMcpTool,
+            LibraryAvailableSeatsMcpTool libraryAvailableSeatsMcpTool,
+            LibraryRoomAvailableSeatsMcpTool libraryRoomAvailableSeatsMcpTool,
             LibraryBookMcpTool libraryBookMcpTool,
             LibraryLoansMcpTool libraryLoansMcpTool,
             LibraryReservationMcpTool libraryReservationMcpTool,
@@ -77,7 +82,8 @@ class McpServerConfig {
             SaintGradesMcpTool saintGradesMcpTool,
             SaintExtendedMcpTools saintExtendedMcpTools,
             LmsAssignmentsMcpTool lmsAssignmentsMcpTool,
-            NoticeMcpTools noticeMcpTools
+            NoticeMcpTools noticeMcpTools,
+            AcademicPolicyMcpTools academicPolicyMcpTools
     ) {
         return MethodToolCallbackProvider.builder()
                 .toolObjects(
@@ -88,6 +94,8 @@ class McpServerConfig {
                         libraryMcpTool,
                         librarySeatCatalogMcpTool,
                         librarySeatRecommendationMcpTool,
+                        libraryAvailableSeatsMcpTool,
+                        libraryRoomAvailableSeatsMcpTool,
                         libraryBookMcpTool,
                         libraryLoansMcpTool,
                         libraryReservationMcpTool,
@@ -99,7 +107,8 @@ class McpServerConfig {
                         saintGradesMcpTool,
                         saintExtendedMcpTools,
                         lmsAssignmentsMcpTool,
-                        noticeMcpTools)
+                        noticeMcpTools,
+                        academicPolicyMcpTools)
                 .build();
     }
 
