@@ -8,6 +8,11 @@ import org.springframework.stereotype.Component;
 public class MockLibraryReservationConnector implements LibraryReservationConnector {
 
     @Override
+    public java.util.Optional<LibraryReservationResult> getCurrentCharge(String pyxisAuthToken) {
+        return java.util.Optional.empty();
+    }
+
+    @Override
     public LibraryReservationResult reserve(String pyxisAuthToken, LibraryReservationRequest request) {
         return new LibraryReservationResult(0L, "열람실(Mock)", "0", "00:00", "00:00");
     }

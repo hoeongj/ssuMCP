@@ -1,6 +1,7 @@
 package com.ssuai.domain.library.reservation;
 
 import java.util.Map;
+import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,8 +28,10 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
     private static final Logger log = LoggerFactory.getLogger(RealLibraryReservationConnector.class);
 
     // Verified via DevTools on oasis.ssu.ac.kr (2026-06-06)
+    private static final String CURRENT_CHARGE_PATH = "/pyxis-api/1/api/seat-charges";
     private static final String RESERVE_PATH = "/pyxis-api/1/api/seat-charges";
     private static final String DISCHARGE_PATH = "/pyxis-api/1/api/seat-discharges";
+    private static final String NO_RECORD_CODE = "success.noRecord";
     private static final String NEED_LOGIN_CODE = "error.authentication.needLogin";
 
     private final LibraryReservationProperties properties;
@@ -43,6 +46,19 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+    }
+
+    @Override
+    public Optional<LibraryReservationResult> getCurrentCharge(String pyxisAuthToken) {
+        try {
+            String body = get(pyxisAuthToken, CURRENT_CHARGE_PATH, properties.getDischargeReferer());
+            return parseCurrentChargeResponse(body);
+        } catch (LibraryAuthRequiredException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            log.warn("library getCurrentCharge failed", exception);
+            return Optional.empty();
+        }
     }
 
     @Override
@@ -63,6 +79,29 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         );
         String response = post(pyxisAuthToken, DISCHARGE_PATH, properties.getDischargeReferer(), body);
         parseDischargeResponse(response);
+    }
+
+    private String get(String pyxisAuthToken, String path, String referer) {
+        try {
+            return restClient.get()
+                    .uri(path)
+                    .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
+                    .header("Referer", referer)
+                    .header("Accept-Language", "ko")
+                    .retrieve()
+                    .body(String.class);
+        } catch (ResourceAccessException exception) {
+            log.warn("library reservation connector timeout/io: path={}", path);
+            throw new ConnectorTimeoutException(exception);
+        } catch (RestClientResponseException exception) {
+            HttpStatusCode status = exception.getStatusCode();
+            log.warn("library reservation connector http error: path={} status={}", path, status.value());
+            if (status.is5xxServerError()) {
+                throw new ConnectorUnavailableException(exception);
+            }
+            throw new ConnectorParseException(exception);
+        }
     }
 
     private String post(String pyxisAuthToken, String path, String referer, Map<String, Object> body) {
@@ -90,6 +129,22 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         }
     }
 
+    private Optional<LibraryReservationResult> parseCurrentChargeResponse(String body) {
+        JsonNode root = parseJson(body);
+        if (NO_RECORD_CODE.equals(root.path("code").asText(""))) {
+            return Optional.empty();
+        }
+        if (!root.path("success").asBoolean(false)) {
+            checkNeedLogin(root);
+            return Optional.empty();
+        }
+        JsonNode data = root.path("data");
+        if (data.isMissingNode() || data.isNull()) {
+            return Optional.empty();
+        }
+        return Optional.of(parseChargeData(data));
+    }
+
     private LibraryReservationResult parseReserveResponse(String body) {
         JsonNode root = parseJson(body);
         if (!root.path("success").asBoolean(false)) {
@@ -97,7 +152,10 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
             log.warn("library reservation upstream returned success=false: code={}", root.path("code").asText(""));
             throw new ConnectorParseException();
         }
-        JsonNode data = root.path("data");
+        return parseChargeData(root.path("data"));
+    }
+
+    private static LibraryReservationResult parseChargeData(JsonNode data) {
         long chargeId = data.path("id").asLong(0);
         String roomName = data.path("room").path("name").asText("");
         String seatCode = data.path("seat").path("code").asText("");
