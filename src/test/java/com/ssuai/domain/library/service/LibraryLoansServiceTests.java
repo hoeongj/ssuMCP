@@ -9,10 +9,10 @@ import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import com.ssuai.domain.library.auth.LibrarySessionProperties;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.connector.LibraryLoansConnector;
 import com.ssuai.domain.library.dto.LibraryLoanItem;
@@ -31,7 +31,7 @@ class LibraryLoansServiceTests {
         LibraryLoansResponse stub = stubResponse(2);
         when(connector.fetchLoans(any())).thenReturn(stub);
         LibraryLoansService service = new LibraryLoansService(
-                connector, new LibrarySessionStore(defaultProperties()), "mock");
+                connector, mock(LibrarySessionStore.class), "mock");
 
         LibraryLoansResponse response = service.getLoansForSession(SESSION_KEY);
 
@@ -41,8 +41,10 @@ class LibraryLoansServiceTests {
     @Test
     void realModeWithoutSessionThrows401() {
         LibraryLoansConnector connector = mock(LibraryLoansConnector.class);
+        LibrarySessionStore store = mock(LibrarySessionStore.class);
+        when(store.token(SESSION_KEY)).thenReturn(Optional.empty());
         LibraryLoansService service = new LibraryLoansService(
-                connector, new LibrarySessionStore(defaultProperties()), "real");
+                connector, store, "real");
 
         assertThatThrownBy(() -> service.getLoansForSession(SESSION_KEY))
                 .isInstanceOf(LibraryAuthRequiredException.class);
@@ -53,8 +55,8 @@ class LibraryLoansServiceTests {
     @Test
     void realModeWithCapturedSessionDelegatesToConnector() {
         LibraryLoansConnector connector = mock(LibraryLoansConnector.class);
-        LibrarySessionStore store = new LibrarySessionStore(defaultProperties());
-        store.put(SESSION_KEY, TOKEN);
+        LibrarySessionStore store = mock(LibrarySessionStore.class);
+        when(store.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         LibraryLoansResponse stub = stubResponse(1);
         when(connector.fetchLoans(TOKEN)).thenReturn(stub);
         LibraryLoansService service = new LibraryLoansService(connector, store, "real");
@@ -69,14 +71,10 @@ class LibraryLoansServiceTests {
         LibraryLoansConnector connector = mock(LibraryLoansConnector.class);
         when(connector.fetchLoans(any())).thenThrow(new ConnectorTimeoutException());
         LibraryLoansService service = new LibraryLoansService(
-                connector, new LibrarySessionStore(defaultProperties()), "mock");
+                connector, mock(LibrarySessionStore.class), "mock");
 
         assertThatThrownBy(() -> service.getLoansForSession(SESSION_KEY))
                 .isInstanceOf(ConnectorTimeoutException.class);
-    }
-
-    private static LibrarySessionProperties defaultProperties() {
-        return new LibrarySessionProperties();
     }
 
     private static LibraryLoansResponse stubResponse(int count) {

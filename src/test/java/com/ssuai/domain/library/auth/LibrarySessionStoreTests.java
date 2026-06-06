@@ -3,21 +3,40 @@ package com.ssuai.domain.library.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
+@SpringBootTest(classes = LibrarySessionStoreTests.JpaTestApplication.class)
+@ActiveProfiles("test")
+@Transactional
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LibrarySessionStoreTests {
 
     private static final Instant T0 = Instant.parse("2026-05-15T10:00:00Z");
+
+    @Autowired
+    private LibrarySessionRepository repository;
+
+    @BeforeEach
+    void clean() {
+        repository.deleteAll();
+    }
 
     @Test
     void putThenTokenReturnsValue() {
@@ -29,18 +48,19 @@ class LibrarySessionStoreTests {
     }
 
     @Test
-    void tokenIsEncryptedAtRest() throws Exception {
+    void tokenIsEncryptedAtRest() {
         LibrarySessionProperties props = properties(Duration.ofHours(2));
         props.setEncryptionKey("0123456789abcdef0123456789abcde!");
-        LibrarySessionStore store = new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+        LibrarySessionStore store = new LibrarySessionStore(repository, props, Clock.fixed(T0, ZoneOffset.UTC));
         store.put("session-a", "ssotoken-aaaaaa");
 
-        Object entry = entries(store).get("session-a");
-        byte[] ciphertext = recordBytes(entry, "ciphertext");
+        LibrarySessionEntity entity = repository.findById("session-a").orElseThrow();
+        byte[] cipherBytes = Base64.getDecoder().decode(entity.getCipherB64());
 
-        assertThat(entry.toString()).doesNotContain("ssotoken-aaaaaa");
-        assertThat(recordBytes(entry, "iv")).hasSize(12);
-        assertThat(containsSubsequence(ciphertext, "ssotoken-aaaaaa".getBytes(StandardCharsets.UTF_8))).isFalse();
+        assertThat(entity.getIvB64()).isNotBlank();
+        assertThat(Base64.getDecoder().decode(entity.getIvB64())).hasSize(12);
+        assertThat(containsSubsequence(cipherBytes,
+                "ssotoken-aaaaaa".getBytes(StandardCharsets.UTF_8))).isFalse();
         assertThat(store.token("session-a")).hasValue("ssotoken-aaaaaa");
     }
 
@@ -49,7 +69,7 @@ class LibrarySessionStoreTests {
         LibrarySessionProperties props = properties(Duration.ofHours(2));
         props.setEncryptionKey(Base64.getEncoder()
                 .encodeToString("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
-        LibrarySessionStore store = new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+        LibrarySessionStore store = new LibrarySessionStore(repository, props, Clock.fixed(T0, ZoneOffset.UTC));
 
         store.put("session-a", "ssotoken-aaaaaa");
 
@@ -61,7 +81,8 @@ class LibrarySessionStoreTests {
         LibrarySessionProperties props = properties(Duration.ofHours(2));
         props.setEncryptionKey("short");
 
-        assertThatThrownBy(() -> new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC)))
+        assertThatThrownBy(
+                () -> new LibrarySessionStore(repository, props, Clock.fixed(T0, ZoneOffset.UTC)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("at least 32 bytes");
     }
@@ -96,13 +117,13 @@ class LibrarySessionStoreTests {
     @Test
     void expiredEntryIsDroppedOnRead() {
         MutableClock clock = new MutableClock(T0);
-        LibrarySessionStore store = new LibrarySessionStore(properties(Duration.ofMinutes(30)), clock);
+        LibrarySessionStore store = new LibrarySessionStore(repository, properties(Duration.ofMinutes(30)), clock);
         store.put("session-a", "ssotoken-aaaaaa");
 
         clock.advance(Duration.ofMinutes(31));
 
         assertThat(store.token("session-a")).isEmpty();
-        assertThat(store.size()).isZero();
+        assertThat(repository.findById("session-a")).isEmpty();
     }
 
     @Test
@@ -113,26 +134,36 @@ class LibrarySessionStoreTests {
         store.invalidate("session-a");
 
         assertThat(store.token("session-a")).isEmpty();
+        assertThat(repository.findById("session-a")).isEmpty();
     }
 
     @Test
-    void lruEvictionWhenOverCapacity() {
-        LibrarySessionProperties props = new LibrarySessionProperties();
-        props.setTtl(Duration.ofHours(2));
-        props.setMaxSessions(3);
-        LibrarySessionStore store = new LibrarySessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+    void cleanupExpiredSessionsDeletesExpiredRows() {
+        MutableClock clock = new MutableClock(T0);
+        LibrarySessionStore store = new LibrarySessionStore(repository, properties(Duration.ofMinutes(30)), clock);
+        store.put("session-a", "ssotoken-aaaaaa");
+        assertThat(store.size()).isEqualTo(1);
 
-        store.put("a", "tok-a");
-        store.put("b", "tok-b");
-        store.put("c", "tok-c");
-        // Access "a" to mark it recently used, then add "d" — "b" should evict.
-        store.token("a");
-        store.put("d", "tok-d");
+        clock.advance(Duration.ofMinutes(31));
+        store.cleanupExpiredSessions();
 
-        assertThat(store.has("a")).isTrue();
-        assertThat(store.has("b")).isFalse();
-        assertThat(store.has("c")).isTrue();
-        assertThat(store.has("d")).isTrue();
+        assertThat(store.size()).isZero();
+        assertThat(repository.count()).isZero();
+    }
+
+    @Test
+    void sessionSurvivesStoreRecreation() {
+        String fixedKey = "0123456789abcdef0123456789abcde!";
+        LibrarySessionProperties props = properties(Duration.ofHours(2));
+        props.setEncryptionKey(fixedKey);
+
+        new LibrarySessionStore(repository, props, Clock.fixed(T0, ZoneOffset.UTC))
+                .put("session-a", "ssotoken-aaaaaa");
+
+        LibrarySessionStore secondStore =
+                new LibrarySessionStore(repository, props, Clock.fixed(T0.plusSeconds(1), ZoneOffset.UTC));
+
+        assertThat(secondStore.token("session-a")).hasValue("ssotoken-aaaaaa");
     }
 
     @Test
@@ -152,27 +183,14 @@ class LibrarySessionStoreTests {
         assertThat(LibrarySessionStore.fingerprint("")).isEqualTo("none");
     }
 
-    private static LibrarySessionStore newStore(Instant now, Duration ttl) {
-        return new LibrarySessionStore(properties(ttl), Clock.fixed(now, ZoneOffset.UTC));
+    private LibrarySessionStore newStore(Instant now, Duration ttl) {
+        return new LibrarySessionStore(repository, properties(ttl), Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private static LibrarySessionProperties properties(Duration ttl) {
         LibrarySessionProperties props = new LibrarySessionProperties();
         props.setTtl(ttl);
         return props;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, ?> entries(LibrarySessionStore store) throws Exception {
-        Field field = LibrarySessionStore.class.getDeclaredField("entries");
-        field.setAccessible(true);
-        return (Map<String, ?>) field.get(store);
-    }
-
-    private static byte[] recordBytes(Object entry, String accessorName) throws Exception {
-        Method accessor = entry.getClass().getDeclaredMethod(accessorName);
-        accessor.setAccessible(true);
-        return (byte[]) accessor.invoke(entry);
     }
 
     private static boolean containsSubsequence(byte[] bytes, byte[] candidate) {
@@ -220,5 +238,12 @@ class LibrarySessionStoreTests {
         public Instant instant() {
             return instant;
         }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableAutoConfiguration
+    @EntityScan(basePackageClasses = LibrarySessionEntity.class)
+    @EnableJpaRepositories(basePackageClasses = LibrarySessionRepository.class)
+    static class JpaTestApplication {
     }
 }

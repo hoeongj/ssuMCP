@@ -9,8 +9,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 
 import javax.crypto.Cipher;
@@ -21,17 +19,18 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * In-memory store of captured library session tokens, keyed by ssuAI session id
- * (Spring HttpSession id for MVP). Values are the upstream `Pyxis-Auth-Token`
+ * Persistent store of captured library session tokens, keyed by ssuAI session id
+ * (Spring HttpSession id for MVP). Values are the upstream {@code Pyxis-Auth-Token}
  * captured from oasis.ssu.ac.kr after the user logs in on its own page.
  *
- * Tokens are encrypted with AES-GCM while stored in memory and decrypted only
- * when the connector needs to drive an upstream `Pyxis-Auth-Token` request
- * header. All log messages use the 8-char fingerprint via
- * {@link #fingerprint(String)}.
+ * Tokens are encrypted with AES-GCM while stored and decrypted only when the
+ * connector needs to drive an upstream {@code Pyxis-Auth-Token} request header.
+ * All log messages use the 8-char fingerprint via {@link #fingerprint(String)}.
  */
 @Component
 public class LibrarySessionStore {
@@ -42,35 +41,42 @@ public class LibrarySessionStore {
     private static final int GCM_IV_BYTES = 12;
     private static final int GCM_TAG_BITS = 128;
 
+    private final LibrarySessionRepository repository;
     private final LibrarySessionProperties properties;
     private final Clock clock;
     private final SecretKey aesKey;
     private final SecureRandom secureRandom;
-    private final Map<String, Entry> entries;
 
     @Autowired
-    public LibrarySessionStore(LibrarySessionProperties properties) {
-        this(properties, Clock.systemUTC(), new SecureRandom());
+    public LibrarySessionStore(
+            LibrarySessionRepository repository,
+            LibrarySessionProperties properties
+    ) {
+        this(repository, properties, Clock.systemUTC(), new SecureRandom());
     }
 
-    public LibrarySessionStore(LibrarySessionProperties properties, Clock clock) {
-        this(properties, clock, new SecureRandom());
+    LibrarySessionStore(
+            LibrarySessionRepository repository,
+            LibrarySessionProperties properties,
+            Clock clock
+    ) {
+        this(repository, properties, clock, new SecureRandom());
     }
 
-    LibrarySessionStore(LibrarySessionProperties properties, Clock clock, SecureRandom secureRandom) {
+    LibrarySessionStore(
+            LibrarySessionRepository repository,
+            LibrarySessionProperties properties,
+            Clock clock,
+            SecureRandom secureRandom
+    ) {
+        this.repository = repository;
         this.properties = properties;
         this.clock = clock;
         this.secureRandom = secureRandom;
         this.aesKey = buildAesKey(properties.getEncryptionKey(), secureRandom);
-        int cap = Math.max(1, properties.getMaxSessions());
-        this.entries = new LinkedHashMap<>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Entry> eldest) {
-                return size() > cap;
-            }
-        };
     }
 
+    @Transactional
     public void put(String sessionKey, String token) {
         if (sessionKey == null || sessionKey.isBlank()) {
             throw new IllegalArgumentException("sessionKey is required");
@@ -80,26 +86,34 @@ public class LibrarySessionStore {
         }
         Instant now = clock.instant();
         Entry entry = encrypt(token, now);
-        synchronized (entries) {
-            entries.put(sessionKey, entry);
-        }
+        repository.save(new LibrarySessionEntity(
+                sessionKey,
+                Base64.getEncoder().encodeToString(entry.iv()),
+                Base64.getEncoder().encodeToString(entry.ciphertext()),
+                entry.capturedAt(),
+                entry.expiresAt()
+        ));
     }
 
+    @Transactional
     public Optional<String> token(String sessionKey) {
         if (sessionKey == null || sessionKey.isBlank()) {
             return Optional.empty();
         }
-        Entry entry;
-        synchronized (entries) {
-            entry = entries.get(sessionKey);
-            if (entry == null) {
-                return Optional.empty();
-            }
-            if (entry.expiresAt().isBefore(clock.instant())) {
-                entries.remove(sessionKey);
-                return Optional.empty();
-            }
+        LibrarySessionEntity entity = repository.findById(sessionKey).orElse(null);
+        if (entity == null) {
+            return Optional.empty();
         }
+        if (entity.getExpiresAt().isBefore(clock.instant())) {
+            repository.deleteById(sessionKey);
+            return Optional.empty();
+        }
+        Entry entry = new Entry(
+                Base64.getDecoder().decode(entity.getIvB64()),
+                Base64.getDecoder().decode(entity.getCipherB64()),
+                entity.getCapturedAt(),
+                entity.getExpiresAt()
+        );
         return Optional.of(decrypt(entry));
     }
 
@@ -107,19 +121,22 @@ public class LibrarySessionStore {
         return token(sessionKey).isPresent();
     }
 
+    @Transactional
     public void invalidate(String sessionKey) {
         if (sessionKey == null || sessionKey.isBlank()) {
             return;
         }
-        synchronized (entries) {
-            entries.remove(sessionKey);
-        }
+        repository.deleteById(sessionKey);
     }
 
     int size() {
-        synchronized (entries) {
-            return entries.size();
-        }
+        return Math.toIntExact(repository.count());
+    }
+
+    @Scheduled(fixedDelay = 60_000)
+    @Transactional
+    public void cleanupExpiredSessions() {
+        repository.deleteExpiredBefore(clock.instant());
     }
 
     public static String fingerprint(String token) {
