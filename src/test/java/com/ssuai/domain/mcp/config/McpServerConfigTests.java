@@ -37,6 +37,8 @@ class McpServerConfigTests {
                         "logout_provider",
                         "logout_all",
                         "get_library_seat_status",
+                        "get_library_seat_catalog",
+                        "recommend_library_seats",
                         "search_library_book",
                         "get_my_library_loans",
                         "prepare_reserve_library_seat",

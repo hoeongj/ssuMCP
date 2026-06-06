@@ -18,9 +18,11 @@ import com.ssuai.domain.mcp.tool.CampusMcpTools;
 import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
 import com.ssuai.domain.mcp.tool.LibraryBookMcpTool;
+import com.ssuai.domain.mcp.tool.LibrarySeatCatalogMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryLoansMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryReservationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatMcpTool;
+import com.ssuai.domain.mcp.tool.LibrarySeatRecommendationMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
 import com.ssuai.domain.mcp.tool.McpAuthMcpTools;
@@ -57,6 +59,8 @@ class McpServerConfig {
             CampusMcpTools campusMcpTools,
             McpAuthMcpTools mcpAuthMcpTools,
             LibrarySeatMcpTool libraryMcpTool,
+            LibrarySeatCatalogMcpTool librarySeatCatalogMcpTool,
+            LibrarySeatRecommendationMcpTool librarySeatRecommendationMcpTool,
             LibraryBookMcpTool libraryBookMcpTool,
             LibraryLoansMcpTool libraryLoansMcpTool,
             LibraryReservationMcpTool libraryReservationMcpTool,
@@ -74,6 +78,8 @@ class McpServerConfig {
                         campusMcpTools,
                         mcpAuthMcpTools,
                         libraryMcpTool,
+                        librarySeatCatalogMcpTool,
+                        librarySeatRecommendationMcpTool,
                         libraryBookMcpTool,
                         libraryLoansMcpTool,
                         libraryReservationMcpTool,

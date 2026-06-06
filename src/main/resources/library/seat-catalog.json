@@ -1,0 +1,156 @@
+[
+  {
+    "floor": 2,
+    "roomCode": "open-reading-2f",
+    "roomName": "Open Reading Room 2F",
+    "seatId": "2-A-001",
+    "externalSeatId": "1",
+    "label": "A-1",
+    "zone": "2F A Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": true,
+      "outlet": true,
+      "standing": false,
+      "edge": true,
+      "quiet": true,
+      "nearEntrance": false
+    },
+    "note": "Sample catalog entry. Replace with the real 2F floor-map metadata after capture."
+  },
+  {
+    "floor": 2,
+    "roomCode": "open-reading-2f",
+    "roomName": "Open Reading Room 2F",
+    "seatId": "2-A-002",
+    "externalSeatId": "2",
+    "label": "A-2",
+    "zone": "2F A Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": true,
+      "outlet": false,
+      "standing": false,
+      "edge": false,
+      "quiet": true,
+      "nearEntrance": false
+    }
+  },
+  {
+    "floor": 2,
+    "roomCode": "open-reading-2f",
+    "roomName": "Open Reading Room 2F",
+    "seatId": "2-A-076",
+    "externalSeatId": "76",
+    "label": "A-76",
+    "zone": "2F A Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": false,
+      "outlet": true,
+      "standing": true,
+      "edge": false,
+      "quiet": false,
+      "nearEntrance": true
+    },
+    "note": "Included to verify that occupied live seats are excluded from recommendations."
+  },
+  {
+    "floor": 2,
+    "roomCode": "open-reading-2f",
+    "roomName": "Open Reading Room 2F",
+    "seatId": "2-B-001",
+    "externalSeatId": "221",
+    "label": "B-1",
+    "zone": "2F B Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": false,
+      "outlet": true,
+      "standing": false,
+      "edge": true,
+      "quiet": false,
+      "nearEntrance": true
+    }
+  },
+  {
+    "floor": 5,
+    "roomCode": "maru-reading",
+    "roomName": "Maru Reading Room",
+    "seatId": "5-A-001",
+    "externalSeatId": "1",
+    "label": "A-1",
+    "zone": "5F A Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": true,
+      "outlet": true,
+      "standing": false,
+      "edge": true,
+      "quiet": true,
+      "nearEntrance": false
+    }
+  },
+  {
+    "floor": 5,
+    "roomCode": "maru-reading",
+    "roomName": "Maru Reading Room",
+    "seatId": "5-B-001",
+    "externalSeatId": "221",
+    "label": "B-1",
+    "zone": "5F B Zone",
+    "seatType": "general",
+    "audience": "all",
+    "attributes": {
+      "window": false,
+      "outlet": true,
+      "standing": true,
+      "edge": false,
+      "quiet": false,
+      "nearEntrance": true
+    }
+  },
+  {
+    "floor": 6,
+    "roomCode": "graduate-reading",
+    "roomName": "Graduate Reading Room",
+    "seatId": "6-A-001",
+    "externalSeatId": "1",
+    "label": "A-1",
+    "zone": "6F A Zone",
+    "seatType": "general",
+    "audience": "graduate_only",
+    "attributes": {
+      "window": true,
+      "outlet": false,
+      "standing": false,
+      "edge": true,
+      "quiet": true,
+      "nearEntrance": false
+    }
+  },
+  {
+    "floor": 6,
+    "roomCode": "graduate-reading",
+    "roomName": "Graduate Reading Room",
+    "seatId": "6-B-001",
+    "externalSeatId": "62",
+    "label": "B-1",
+    "zone": "6F B Zone",
+    "seatType": "general",
+    "audience": "graduate_only",
+    "attributes": {
+      "window": false,
+      "outlet": true,
+      "standing": false,
+      "edge": false,
+      "quiet": false,
+      "nearEntrance": true
+    }
+  }
+]

@@ -1,0 +1,167 @@
+[
+  {
+    "floorCode": "2F",
+    "floor": 2,
+    "roomCode": "soongsil-square-on",
+    "roomName": "숭실스퀘어ON",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "1-110 plus sound booths B1-B2",
+    "seatTypes": ["general", "sound_booth", "sofa", "monitor", "separated"],
+    "zones": ["sofa 1-20", "monitor 21-60", "general 61-110", "sound booths B1-B2"],
+    "textLayout": [
+      "[B1] [B2]                       [93-104 block]",
+      "sofa 5 10 15 20                 general 61-110 center grid",
+      "sofa 4  9 14 19                 monitor 21-60 right grid",
+      "sofa 3  8 13 18",
+      "sofa 2  7 12 17",
+      "sofa 1  6 11 16                 entrance bottom-center"
+    ],
+    "captureNotes": [
+      "Image #1. 2F count source likely combines this room with open-reading-2f.",
+      "Legend includes general, sound booth, sofa, monitor, separated, unavailable.",
+      "Need Pyxis room id and seat-list endpoint capture before exact per-seat coordinates are committed."
+    ]
+  },
+  {
+    "floorCode": "2F",
+    "floor": 2,
+    "roomCode": "open-reading-2f",
+    "roomName": "오픈열람실(2F)",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "1-232",
+    "seatTypes": ["general"],
+    "zones": ["right vertical block 1-80", "bottom-left/middle blocks 89-232"],
+    "textLayout": [
+      "right wall: 61/41 ... 21/1, then 76/56 ... 40/20",
+      "bottom-left: paired columns 221-232, 209-220, 185-208, 161-184",
+      "bottom-middle: paired columns 145-160, 125-144, 101-120, 81-96",
+      "entrance near center divider"
+    ],
+    "captureNotes": [
+      "Image #2. All visible seats are numbered 1-232.",
+      "This room is a likely primary candidate for normal reservation automation."
+    ]
+  },
+  {
+    "floorCode": "5F",
+    "floor": 5,
+    "roomCode": "pc-multi-zone-5f",
+    "roomName": "PC존/멀티존",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": true,
+    "seatIdPattern": "1-98 plus free-use P1-P8 and M1-M24",
+    "seatTypes": ["general", "pc_zone", "multi_zone", "sofa"],
+    "zones": ["P1-P8 free-use", "M1-M24 free-use", "reservable 1-98", "sofa 43-62"],
+    "textLayout": [
+      "left free-use: P1-P8 vertical, M1-M24 grid",
+      "top-center: 1 2 3      4 5 6",
+      "center grids: 7-42",
+      "right sofa block: 43-62",
+      "bottom-center: 63-80",
+      "bottom-right: 81-98 near recliner note"
+    ],
+    "captureNotes": [
+      "Image #3. P/M seats are free-use and should not be sent to reservation.",
+      "If upstream exposes these as seats, mark freeUse=true and exclude from reserve recommendations."
+    ]
+  },
+  {
+    "floorCode": "5F",
+    "floor": 5,
+    "roomCode": "recliner-5f",
+    "roomName": "리클라이너",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "R1-R6",
+    "seatTypes": ["recliner"],
+    "zones": ["single recliner row R1-R6"],
+    "textLayout": [
+      "R1 R2 R3 R4 R5 R6",
+      "side tables between recliner seats"
+    ],
+    "captureNotes": [
+      "Image #4. Page warns users to leave after recliner use time expires.",
+      "Reservation flow may need a room-specific time-limit warning before confirm_action."
+    ]
+  },
+  {
+    "floorCode": "6F",
+    "floor": 6,
+    "roomCode": "maru-reading",
+    "roomName": "마루열람실",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "1-245",
+    "seatTypes": ["general"],
+    "zones": ["left block 1-186", "center block 189-245", "right block 73-156"],
+    "textLayout": [
+      "left upper wall: 157-186 and side rows 166-177",
+      "left inner grids: 1-56 and 21-40 style paired rows",
+      "center/top: 189-245 around entrance cutout",
+      "right grids: 73-156, 201-234 edge columns"
+    ],
+    "captureNotes": [
+      "Image #5. Existing mock floor 6 appears to include this room.",
+      "Need exact room id and whether external seat 245 is the highest valid id."
+    ]
+  },
+  {
+    "floorCode": "6F",
+    "floor": 6,
+    "roomCode": "graduate-reading",
+    "roomName": "대학원열람실",
+    "audience": "graduate_only",
+    "reservable": true,
+    "graduateOnly": true,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "1-62",
+    "seatTypes": ["general"],
+    "zones": ["four paired-column blocks"],
+    "textLayout": [
+      "upper-left: 1-14",
+      "upper-middle: 15-32",
+      "upper-right: 39-56",
+      "lower-middle: 21-38",
+      "lower-right: 45-62"
+    ],
+    "captureNotes": [
+      "Image #6. Non-graduate reservation attempt shows alert: 해당유형은 사용이 불가능한 신분입니다.",
+      "Recommendation can show this room, but reservation prepare/confirm should surface the graduate-only restriction."
+    ]
+  },
+  {
+    "floorCode": "B1",
+    "floor": -1,
+    "roomCode": "basement-reading-b1",
+    "roomName": "지하열람실(B1)",
+    "audience": "all",
+    "reservable": true,
+    "graduateOnly": false,
+    "containsFreeUseSeats": false,
+    "seatIdPattern": "1-172",
+    "seatTypes": ["general"],
+    "zones": ["left block 1-104", "middle block 105-136", "right block 137-172"],
+    "textLayout": [
+      "top-left paired columns: 8/9 through 49/62",
+      "bottom-left paired columns: 1/16 through 79/94",
+      "middle: 105-136 around entrance bottom-center",
+      "right: 119-172 with repeated paired columns"
+    ],
+    "captureNotes": [
+      "Image #7. B1 is not currently represented by LibraryFloor enum or the real connector filter.",
+      "Add B1 only after confirming the Pyxis floor value and reservation floor parameter."
+    ]
+  }
+]
