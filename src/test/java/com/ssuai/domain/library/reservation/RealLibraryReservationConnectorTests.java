@@ -1,5 +1,6 @@
 package com.ssuai.domain.library.reservation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -29,7 +30,8 @@ class RealLibraryReservationConnectorTests {
 
     private static final String TOKEN = "stub-pyxis-auth-token";
     private static final String BASE_URL = "https://oasis.test.local";
-    private static final String RESERVE_URL = BASE_URL + "/pyxis-api/1/seat-reservations";
+    private static final String RESERVE_URL = BASE_URL + "/pyxis-api/1/api/seat-charges";
+    private static final String DISCHARGE_URL = BASE_URL + "/pyxis-api/1/api/seat-discharges";
 
     private MockRestServiceServer server;
     private RealLibraryReservationConnector connector;
@@ -44,66 +46,109 @@ class RealLibraryReservationConnectorTests {
     }
 
     @Test
-    void reservesSeatOnSuccessResponse() {
+    void reserveReturnsSeatCharge() {
         server.expect(requestTo(RESERVE_URL))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Pyxis-Auth-Token", TOKEN))
-                .andExpect(header("Referer", "https://oasis.ssu.ac.kr/library-services/smuf/reading-rooms"))
                 .andExpect(content().json("""
-                        {
-                          "seatId": "15",
-                          "floor": 5,
-                          "smufMethodCode": "PC",
-                          "branchGroupId": 1
-                        }
+                        {"seatId": 3179, "smufMethodCode": "PC"}
                         """))
                 .andRespond(withSuccess("""
-                        {"success":true,"code":"success","data":{}}
+                        {
+                          "success": true,
+                          "code": "success.processed",
+                          "data": {
+                            "id": 1966693,
+                            "room": {"id": 57, "name": "마루열람실(6F)"},
+                            "seat": {"id": 3179, "code": "74"},
+                            "beginTime": "2026-06-06 14:59:00",
+                            "endTime": "2026-06-06 18:59:00"
+                          }
+                        }
                         """, MediaType.APPLICATION_JSON));
 
-        assertThatNoException()
-                .isThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest("5F", "15")));
+        LibraryReservationResult result = connector.reserve(TOKEN, new LibraryReservationRequest(3179L));
+
+        assertThat(result.chargeId()).isEqualTo(1966693L);
+        assertThat(result.roomName()).isEqualTo("마루열람실(6F)");
+        assertThat(result.seatCode()).isEqualTo("74");
+        assertThat(result.beginTime()).isEqualTo("2026-06-06 14:59:00");
+        assertThat(result.endTime()).isEqualTo("2026-06-06 18:59:00");
     }
 
     @Test
-    void throwsLibraryAuthRequiredOnNeedLogin() {
-        String needLoginBody = """
-                {"success":false,"code":"error.authentication.needLogin","message":"Please log in.","data":null}
-                """;
-        server.expect(requestTo(RESERVE_URL))
-                .andRespond(withSuccess(needLoginBody, MediaType.APPLICATION_JSON));
+    void dischargeSucceeds() {
+        server.expect(requestTo(DISCHARGE_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Pyxis-Auth-Token", TOKEN))
+                .andExpect(content().json("""
+                        {"seatCharge": 1966693, "smufMethodCode": "PC"}
+                        """))
+                .andRespond(withSuccess("""
+                        {"success": true, "code": "success.discharge", "message": "반납되었습니다."}
+                        """, MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest("2F", "15")))
+        assertThatNoException()
+                .isThrownBy(() -> connector.discharge(TOKEN, 1966693L));
+    }
+
+    @Test
+    void reserveThrowsLibraryAuthRequiredOnNeedLogin() {
+        server.expect(requestTo(RESERVE_URL))
+                .andRespond(withSuccess("""
+                        {"success":false,"code":"error.authentication.needLogin","message":"Please log in.","data":null}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
                 .isInstanceOf(LibraryAuthRequiredException.class);
     }
 
     @Test
-    void throwsConnectorParseExceptionOnSuccessFalseWithUnknownCode() {
-        String body = """
-                {"success":false,"code":"error.unknown","message":"Unknown.","data":null}
-                """;
+    void reserveThrowsConnectorParseExceptionOnSuccessFalse() {
         server.expect(requestTo(RESERVE_URL))
-                .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("""
+                        {"success":false,"code":"error.unknown","message":"Unknown.","data":null}
+                        """, MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest("2F", "15")))
+        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
                 .isInstanceOf(ConnectorParseException.class);
     }
 
     @Test
-    void serverErrorMapsToConnectorUnavailable() {
+    void reserveServerErrorMapsToConnectorUnavailable() {
         server.expect(requestTo(RESERVE_URL))
                 .andRespond(withServerError());
 
-        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest("2F", "15")))
+        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
                 .isInstanceOf(ConnectorUnavailableException.class);
     }
 
     @Test
-    void ioExceptionMapsToConnectorTimeout() {
+    void reserveIoExceptionMapsToConnectorTimeout() {
         server.expect(requestTo(RESERVE_URL))
                 .andRespond(withException(new IOException("connect timed out")));
 
-        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest("2F", "15")))
+        assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
                 .isInstanceOf(ConnectorTimeoutException.class);
+    }
+
+    @Test
+    void dischargeThrowsLibraryAuthRequiredOnNeedLogin() {
+        server.expect(requestTo(DISCHARGE_URL))
+                .andRespond(withSuccess("""
+                        {"success":false,"code":"error.authentication.needLogin","message":"Please log in.","data":null}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> connector.discharge(TOKEN, 1966693L))
+                .isInstanceOf(LibraryAuthRequiredException.class);
+    }
+
+    @Test
+    void dischargeServerErrorMapsToConnectorUnavailable() {
+        server.expect(requestTo(DISCHARGE_URL))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> connector.discharge(TOKEN, 1966693L))
+                .isInstanceOf(ConnectorUnavailableException.class);
     }
 }

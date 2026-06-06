@@ -33,7 +33,7 @@ env:
   connectorLibraryBook: real
   connectorLibraryLoans: real
   connectorLibrarySeat: real
-  connectorLibraryReservation: mock # real enables the live Pyxis reservation API
+  connectorLibraryReservation: real
   connectorSaintSchedule: rusaint
   connectorSaintGrades: rusaint
   connectorLmsAssignments: real

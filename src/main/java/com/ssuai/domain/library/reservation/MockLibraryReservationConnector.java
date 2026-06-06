@@ -8,7 +8,12 @@ import org.springframework.stereotype.Component;
 public class MockLibraryReservationConnector implements LibraryReservationConnector {
 
     @Override
-    public void reserve(String pyxisAuthToken, LibraryReservationRequest request) {
+    public LibraryReservationResult reserve(String pyxisAuthToken, LibraryReservationRequest request) {
+        return new LibraryReservationResult(0L, "열람실(Mock)", "0", "00:00", "00:00");
+    }
+
+    @Override
+    public void discharge(String pyxisAuthToken, long chargeId) {
         // Mock mode intentionally does not call oasis.
     }
 }

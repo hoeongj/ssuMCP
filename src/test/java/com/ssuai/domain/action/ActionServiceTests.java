@@ -41,7 +41,7 @@ class ActionServiceTests {
     @Test
     void createsPendingActionAndConfirmsIt() {
         ActionAudit created = service.createPendingAction(
-                STUDENT_ID, ACTION_TYPE, new LibraryReservationRequest("2F", "101"));
+                STUDENT_ID, ACTION_TYPE, new LibraryReservationRequest(101L));
         when(repository.findTopByStudentIdAndStatusOrderByCreatedAtDesc(STUDENT_ID, ActionStatus.PENDING))
                 .thenReturn(Optional.of(created));
 
@@ -49,7 +49,7 @@ class ActionServiceTests {
 
         assertThat(confirmed.getStatus()).isEqualTo(ActionStatus.CONFIRMED);
         assertThat(confirmed.getConfirmedAt()).isEqualTo(NOW);
-        assertThat(confirmed.getPayload()).contains("\"floor\":\"2F\"");
+        assertThat(confirmed.getPayload()).contains("\"seatId\":101");
     }
 
     @Test

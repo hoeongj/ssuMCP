@@ -41,7 +41,7 @@ class LibraryReservationMcpToolTests {
         when(authHelper.<String>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<String> response =
-                tool.prepareReserveLibrarySeat(null, "2F", "101");
+                tool.prepareReserveLibrarySeat(null, "3179");
 
         assertThat(response.status()).isEqualTo("AUTH_REQUIRED");
         assertThat(response.provider()).isEqualTo("LIBRARY");

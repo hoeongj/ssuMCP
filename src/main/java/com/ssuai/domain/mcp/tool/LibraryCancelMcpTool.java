@@ -10,20 +10,20 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
-import com.ssuai.domain.library.reservation.LibraryReservationRequest;
+import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 
 @Component
-public class LibraryReservationMcpTool {
+public class LibraryCancelMcpTool {
 
-    static final String ACTION_TYPE = "LIBRARY_SEAT_RESERVATION";
+    static final String ACTION_TYPE = "LIBRARY_SEAT_CANCEL";
 
-    private static final Logger log = LoggerFactory.getLogger(LibraryReservationMcpTool.class);
+    private static final Logger log = LoggerFactory.getLogger(LibraryCancelMcpTool.class);
 
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
     private final McpAuthHelper authHelper;
 
-    public LibraryReservationMcpTool(
+    public LibraryCancelMcpTool(
             ActionService actionService,
             LibrarySessionStore sessionStore,
             McpAuthHelper authHelper) {
@@ -33,50 +33,50 @@ public class LibraryReservationMcpTool {
     }
 
     @Tool(
-            name = "prepare_reserve_library_seat",
-            description = "숭실대학교 중앙도서관 좌석 예약을 준비합니다. "
-                    + "예약은 이 도구만으로 실행되지 않으며, 사용자가 confirm_action을 호출해야 최종 실행됩니다. "
+            name = "prepare_cancel_library_seat",
+            description = "숭실대학교 중앙도서관 좌석 예약을 취소(반납)합니다. "
+                    + "취소는 이 도구만으로 실행되지 않으며, 사용자가 confirm_action을 호출해야 최종 실행됩니다. "
                     + "Requires mcp_session_id with the LIBRARY provider linked via start_auth. "
-                    + "seat_id는 get_library_seat_status 또는 recommend_library_seats에서 얻을 수 있습니다."
+                    + "charge_id는 confirm_action(예약 완료) 결과 메시지에서 확인할 수 있습니다."
     )
-    public McpPrivateToolResponse<String> prepareReserveLibrarySeat(
+    public McpPrivateToolResponse<String> prepareCancelLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id,
-            @ToolParam(description = "예약할 좌석 ID (숫자). get_library_seat_status 또는 recommend_library_seats에서 확인.")
-            String seat_id
+            @ToolParam(description = "반납할 예약 번호 (chargeId). 예약 완료 시 confirm_action 결과에서 확인.")
+            String charge_id
     ) {
-        long seatId = parseSeatId(seat_id);
-        LibraryReservationRequest request = new LibraryReservationRequest(seatId);
+        long chargeId = parseChargeId(charge_id);
+        LibraryCancelRequest request = new LibraryCancelRequest(chargeId);
         return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
                 .map(sessionKey -> prepareForSession(mcp_session_id, sessionKey, request))
                 .orElseGet(() -> {
-                    log.debug("prepare_reserve_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
+                    log.debug("prepare_cancel_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<String>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
                 });
     }
 
     private McpPrivateToolResponse<String> prepareForSession(
-            String mcpSessionId, String sessionKey, LibraryReservationRequest request) {
+            String mcpSessionId, String sessionKey, LibraryCancelRequest request) {
         if (sessionStore.token(sessionKey).isEmpty()) {
-            log.debug("prepare_reserve_library_seat: library token missing, returning AUTH_REQUIRED");
+            log.debug("prepare_cancel_library_seat: library token missing, returning AUTH_REQUIRED");
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         }
 
         actionService.createPendingAction(sessionKey, ACTION_TYPE, request);
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
-                request.seatId() + "번 좌석 예약을 준비했습니다. "
+                "예약 번호 " + request.chargeId() + " 좌석 반납을 준비했습니다. "
                         + "confirm_action을 호출해 최종 확인하세요.");
     }
 
-    private static long parseSeatId(String seatId) {
-        if (seatId == null || seatId.isBlank()) {
-            throw new IllegalArgumentException("seat_id is required.");
+    private static long parseChargeId(String chargeId) {
+        if (chargeId == null || chargeId.isBlank()) {
+            throw new IllegalArgumentException("charge_id is required.");
         }
         try {
-            return Long.parseLong(seatId.trim());
+            return Long.parseLong(chargeId.trim());
         } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("seat_id must be a number. 받은 값: " + seatId);
+            throw new IllegalArgumentException("charge_id must be a number. 받은 값: " + chargeId);
         }
     }
 }

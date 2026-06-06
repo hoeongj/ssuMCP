@@ -15,7 +15,6 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
-import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
@@ -27,9 +26,9 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     private static final Logger log = LoggerFactory.getLogger(RealLibraryReservationConnector.class);
 
-    // TODO: Verify the actual reservation endpoint/body in oasis.ssu.ac.kr DevTools.
-    // Current implementation follows the existing Pyxis seat-rooms API pattern.
-    private static final String RESERVE_PATH = "/pyxis-api/1/seat-reservations";
+    // Verified via DevTools on oasis.ssu.ac.kr (2026-06-06)
+    private static final String RESERVE_PATH = "/pyxis-api/1/api/seat-charges";
+    private static final String DISCHARGE_PATH = "/pyxis-api/1/api/seat-discharges";
     private static final String NEED_LOGIN_CODE = "error.authentication.needLogin";
 
     private final LibraryReservationProperties properties;
@@ -47,84 +46,90 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
     }
 
     @Override
-    public void reserve(String pyxisAuthToken, LibraryReservationRequest request) {
-        int floorCode = parseFloor(request.floor());
+    public LibraryReservationResult reserve(String pyxisAuthToken, LibraryReservationRequest request) {
         Map<String, Object> body = Map.of(
                 "seatId", request.seatId(),
-                "floor", floorCode,
-                "smufMethodCode", "PC",
-                "branchGroupId", 1
+                "smufMethodCode", "PC"
         );
-        String response = callUpstream(pyxisAuthToken, body);
-        parseResponse(response);
+        String response = post(pyxisAuthToken, RESERVE_PATH, properties.getReferer(), body);
+        return parseReserveResponse(response);
     }
 
-    private String callUpstream(String pyxisAuthToken, Map<String, Object> body) {
+    @Override
+    public void discharge(String pyxisAuthToken, long chargeId) {
+        Map<String, Object> body = Map.of(
+                "seatCharge", chargeId,
+                "smufMethodCode", "PC"
+        );
+        String response = post(pyxisAuthToken, DISCHARGE_PATH, properties.getDischargeReferer(), body);
+        parseDischargeResponse(response);
+    }
+
+    private String post(String pyxisAuthToken, String path, String referer, Map<String, Object> body) {
         try {
             return restClient.post()
-                    .uri(RESERVE_PATH)
+                    .uri(path)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
-                    .header("Referer", properties.getReferer())
+                    .header("Referer", referer)
                     .header("Accept-Language", "ko")
                     .body(body)
                     .retrieve()
                     .body(String.class);
         } catch (ResourceAccessException exception) {
-            log.warn("library reservation connector timeout/io");
-            throw alert(new ConnectorTimeoutException(exception));
+            log.warn("library reservation connector timeout/io: path={}", path);
+            throw new ConnectorTimeoutException(exception);
         } catch (RestClientResponseException exception) {
             HttpStatusCode status = exception.getStatusCode();
-            log.warn("library reservation connector http error: status={}", status.value());
+            log.warn("library reservation connector http error: path={} status={}", path, status.value());
             if (status.is5xxServerError()) {
-                throw alert(new ConnectorUnavailableException(exception));
+                throw new ConnectorUnavailableException(exception);
             }
             throw new ConnectorParseException(exception);
         }
     }
 
-    private static ConnectorException alert(ConnectorException exception) {
-        return exception;
+    private LibraryReservationResult parseReserveResponse(String body) {
+        JsonNode root = parseJson(body);
+        if (!root.path("success").asBoolean(false)) {
+            checkNeedLogin(root);
+            log.warn("library reservation upstream returned success=false: code={}", root.path("code").asText(""));
+            throw new ConnectorParseException();
+        }
+        JsonNode data = root.path("data");
+        long chargeId = data.path("id").asLong(0);
+        String roomName = data.path("room").path("name").asText("");
+        String seatCode = data.path("seat").path("code").asText("");
+        String beginTime = data.path("beginTime").asText("");
+        String endTime = data.path("endTime").asText("");
+        return new LibraryReservationResult(chargeId, roomName, seatCode, beginTime, endTime);
     }
 
-    private void parseResponse(String body) {
+    private void parseDischargeResponse(String body) {
+        JsonNode root = parseJson(body);
+        if (!root.path("success").asBoolean(false)) {
+            checkNeedLogin(root);
+            log.warn("library discharge upstream returned success=false: code={}", root.path("code").asText(""));
+            throw new ConnectorParseException();
+        }
+    }
+
+    private JsonNode parseJson(String body) {
         if (body == null || body.isBlank()) {
             throw new ConnectorParseException();
         }
-
-        JsonNode root;
         try {
-            root = objectMapper.readTree(body);
+            return objectMapper.readTree(body);
         } catch (Exception exception) {
             throw new ConnectorParseException(exception);
         }
-
-        if (root.path("success").asBoolean(false)) {
-            return;
-        }
-
-        String code = root.path("code").asText("");
-        if (NEED_LOGIN_CODE.equals(code)) {
-            log.info("library reservation upstream returned needLogin");
-            throw new LibraryAuthRequiredException();
-        }
-        log.warn("library reservation upstream returned success=false: code={}", code);
-        throw new ConnectorParseException();
     }
 
-    private static int parseFloor(String floor) {
-        if (floor == null || floor.isBlank()) {
-            throw new IllegalArgumentException("floor is required");
-        }
-        String normalized = floor.trim().toUpperCase();
-        if (normalized.endsWith("F")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        try {
-            return Integer.parseInt(normalized);
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("invalid floor: " + floor, exception);
+    private void checkNeedLogin(JsonNode root) {
+        if (NEED_LOGIN_CODE.equals(root.path("code").asText(""))) {
+            log.info("library reservation upstream returned needLogin");
+            throw new LibraryAuthRequiredException();
         }
     }
 }

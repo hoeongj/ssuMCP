@@ -11,6 +11,7 @@ public class LibraryReservationProperties {
 
     private String baseUrl = "https://oasis.ssu.ac.kr";
     private String referer = "https://oasis.ssu.ac.kr/library-services/smuf/reading-rooms";
+    private String dischargeReferer = "https://oasis.ssu.ac.kr/mylibrary/seat/reservations";
     private Duration timeout = Duration.ofSeconds(10);
 
     public String getBaseUrl() {
@@ -27,6 +28,14 @@ public class LibraryReservationProperties {
 
     public void setReferer(String referer) {
         this.referer = referer;
+    }
+
+    public String getDischargeReferer() {
+        return dischargeReferer;
+    }
+
+    public void setDischargeReferer(String dischargeReferer) {
+        this.dischargeReferer = dischargeReferer;
     }
 
     public Duration getTimeout() {

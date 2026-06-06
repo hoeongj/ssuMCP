@@ -11,8 +11,10 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
+import com.ssuai.domain.library.reservation.LibraryReservationResult;
 
 @Component
 public class ConfirmActionMcpTool {
@@ -38,7 +40,7 @@ public class ConfirmActionMcpTool {
     @Tool(
             name = "confirm_action",
             description = "가장 최근에 준비된 사용자 승인 대기 액션을 최종 확인하고 실행합니다. "
-                    + "현재는 prepare_reserve_library_seat로 준비한 도서관 좌석 예약을 실행합니다. "
+                    + "prepare_reserve_library_seat(좌석 예약) 또는 prepare_cancel_library_seat(좌석 반납)으로 준비한 액션을 실행합니다. "
                     + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
     )
     public McpPrivateToolResponse<String> confirmAction(
@@ -56,15 +58,12 @@ public class ConfirmActionMcpTool {
     private McpPrivateToolResponse<String> confirmForSession(String mcpSessionId, String sessionKey) {
         ActionAudit pending = actionService.findPendingAction(sessionKey).orElse(null);
         if (pending == null) {
-            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 예약이 없습니다.");
-        }
-        if (!LibraryReservationMcpTool.ACTION_TYPE.equals(pending.getActionType())) {
-            return McpPrivateToolResponse.ok(mcpSessionId, "지원하지 않는 대기 액션입니다.");
+            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 액션이 없습니다.");
         }
         if (actionService.isExpired(pending)) {
             expirePending(sessionKey);
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "예약이 만료됐습니다. 다시 prepare_reserve_library_seat를 호출하세요.");
+                    mcpSessionId, "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
         }
 
         String token = sessionStore.token(sessionKey).orElse(null);
@@ -73,27 +72,48 @@ public class ConfirmActionMcpTool {
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         }
 
+        String actionType = pending.getActionType();
         try {
-            ActionAudit confirmed = actionService.confirmAction(sessionKey);
-            LibraryReservationRequest request = actionService.payload(confirmed, LibraryReservationRequest.class);
-            reservationConnector.reserve(token, request);
-            return McpPrivateToolResponse.ok(
-                    mcpSessionId,
-                    request.floor() + " " + request.seatId() + "번 좌석 예약을 완료했습니다.");
+            if (LibraryReservationMcpTool.ACTION_TYPE.equals(actionType)) {
+                return executeReservation(mcpSessionId, sessionKey, token);
+            } else if (LibraryCancelMcpTool.ACTION_TYPE.equals(actionType)) {
+                return executeCancellation(mcpSessionId, sessionKey, token);
+            } else {
+                return McpPrivateToolResponse.ok(mcpSessionId, "지원하지 않는 대기 액션입니다.");
+            }
         } catch (ActionService.NoPendingActionException exception) {
-            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 예약이 없습니다.");
+            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 액션이 없습니다.");
         } catch (ActionService.ActionExpiredException exception) {
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "예약이 만료됐습니다. 다시 prepare_reserve_library_seat를 호출하세요.");
-        } catch (UnsupportedOperationException exception) {
-            log.info("confirm_action: reservation connector not implemented");
-            return McpPrivateToolResponse.ok(
-                    mcpSessionId, "예약 실행 기능이 아직 준비되지 않았습니다: " + exception.getMessage());
+                    mcpSessionId, "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
         } catch (RuntimeException exception) {
-            log.warn("confirm_action: reservation failed", exception);
+            log.warn("confirm_action: action failed: type={}", actionType, exception);
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "예약 실행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+                    mcpSessionId, "실행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
         }
+    }
+
+    private McpPrivateToolResponse<String> executeReservation(
+            String mcpSessionId, String sessionKey, String token) {
+        ActionAudit confirmed = actionService.confirmAction(sessionKey);
+        LibraryReservationRequest request = actionService.payload(confirmed, LibraryReservationRequest.class);
+        LibraryReservationResult result = reservationConnector.reserve(token, request);
+        String message = String.format(
+                "%s %s번 좌석 예약 완료! 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
+                result.roomName(), result.seatCode(),
+                result.beginTime(), result.endTime(),
+                result.chargeId());
+        return McpPrivateToolResponse.ok(mcpSessionId, message);
+    }
+
+    private McpPrivateToolResponse<String> executeCancellation(
+            String mcpSessionId, String sessionKey, String token) {
+        ActionAudit confirmed = actionService.confirmAction(sessionKey);
+        LibraryCancelRequest request = actionService.payload(confirmed, LibraryCancelRequest.class);
+        reservationConnector.discharge(token, request.chargeId());
+        return McpPrivateToolResponse.ok(
+                mcpSessionId,
+                "예약 번호 " + request.chargeId() + " 좌석 반납 완료.");
     }
 
     private void expirePending(String sessionKey) {
