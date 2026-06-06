@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ssuai-red-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+data:
+  ssuai-red.json: |
+    {
+      "uid": "ssuai-red",
+      "title": "ssuAI - RED Method",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [{
+          "name": "datasource",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {}
+        }]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Request Rate",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\"}[1m]))",
+            "legendFormat": "req/s"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "reqps" }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Error Rate",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\",status=~\"5..\"}[1m])) / sum(rate(http_server_requests_seconds_count{application=\"ssuai\"}[1m]))",
+            "legendFormat": "error %"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "p99 Latency",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application=\"ssuai\"}[5m])) by (le))",
+            "legendFormat": "p99"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 3 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 }
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "5xx Timeline",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\",status=~\"5..\"}[1m])) by (uri)",
+            "legendFormat": "{{ uri }}"
+          }],
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 }
+        }
+      ]
+    }
