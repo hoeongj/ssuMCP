@@ -10,6 +10,7 @@ import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeCategory;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
+import com.ssuai.global.exception.ConnectorParseException;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.notice", havingValue = "mock", matchIfMissing = true)
@@ -80,7 +81,7 @@ public class MockNoticeConnector implements NoticeConnector {
         Notice match = FIXTURE_NOTICES.stream()
                 .filter(notice -> notice.link().equals(url))
                 .findFirst()
-                .orElse(FIXTURE_NOTICES.getFirst());
+                .orElseThrow(ConnectorParseException::new);
         return new NoticeDetailResponse(
                 match.title(),
                 match.link(),
