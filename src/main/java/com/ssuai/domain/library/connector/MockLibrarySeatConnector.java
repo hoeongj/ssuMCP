@@ -11,6 +11,7 @@ import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatItem;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
 import com.ssuai.domain.library.dto.LibrarySeatZone;
+import com.ssuai.domain.library.dto.PyxisSeatInfo;
 
 /**
  * Deterministic fixture for `ssuai.connector.library-seat=mock` (default).
@@ -65,6 +66,16 @@ public class MockLibrarySeatConnector implements LibrarySeatConnector {
                 .map(LibrarySeatItem::id)
                 .toList();
         return new LibrarySeatZone(label, total, available, seatIds, seats);
+    }
+
+    @Override
+    public List<PyxisSeatInfo> fetchRoomSeats(int roomId, String token) {
+        List<PyxisSeatInfo> seats = new ArrayList<>(5);
+        int baseId = roomId * 100;
+        for (int i = 1; i <= 5; i++) {
+            seats.add(new PyxisSeatInfo(baseId + i, String.valueOf(i), "일반용", "available", 0, 0));
+        }
+        return List.copyOf(seats);
     }
 
     private LibrarySeatStatusResponse snapshot(

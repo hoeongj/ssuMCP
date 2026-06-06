@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import com.ssuai.domain.library.connector.LibrarySeatConnector;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
+import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 
 class LibrarySeatCacheTests {
@@ -184,6 +185,11 @@ class LibrarySeatCacheTests {
             return stubResponse(floor);
         }
 
+        @Override
+        public List<PyxisSeatInfo> fetchRoomSeats(int roomId, String token) {
+            return List.of();
+        }
+
         int callsFor(LibraryFloor floor) {
             return counterFor(floor).get();
         }
@@ -220,6 +226,11 @@ class LibrarySeatCacheTests {
             return stubResponse(floor);
         }
 
+        @Override
+        public List<PyxisSeatInfo> fetchRoomSeats(int roomId, String token) {
+            return List.of();
+        }
+
         boolean awaitWaiter(long timeout, TimeUnit unit) throws InterruptedException {
             return waiters.await(timeout, unit);
         }
@@ -245,6 +256,11 @@ class LibrarySeatCacheTests {
                 return next;
             }
             throw new ConnectorTimeoutException();
+        }
+
+        @Override
+        public List<PyxisSeatInfo> fetchRoomSeats(int roomId, String token) {
+            return List.of();
         }
 
         void recover(LibrarySeatStatusResponse next) {
