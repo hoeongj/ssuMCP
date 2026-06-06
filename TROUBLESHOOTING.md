@@ -85,6 +85,82 @@
   2. Helm template 파일 안에 Grafana dashboard JSON을 넣을 때 `{{ ... }}`를 어떻게 escape해야 하나?
   3. ArgoCD `ComparisonError`와 Kubernetes rollout failure는 어떻게 구분하나?
 
+## 2026-06-06 — 학칙 RAG를 정적 seed에서 공식 출처 주기 갱신 구조로 전환
+
+- 맥락:
+  - 학칙·졸업·장학 질문은 기존 개인 데이터 도구만으로는 원문 조항 근거를 충분히 제공하기 어렵다.
+  - 목표는 학사 규정 Q&A를 추가하되, 정적 PDF 복사본이 오래되어 오답을 내는 위험을 줄이는 것이다.
+- 증상:
+  - 초기 구현 형태는 출처 URL registry와 seed corpus가 같이 들어가 있어, 코드만 보면 규정 본문을 하드코딩한 것처럼 보였다.
+  - 실제 요구는 "학교가 공식적으로 올린 문서를 주기적으로 직접 가져와 tool로 제공"하는 구조였다.
+- 처음 세운 가설 (틀린 방향):
+  - live fetch 옵션과 seed fallback을 함께 두면 MVP로 충분히 의도가 드러날 것이라고 봤다.
+  - 고정 `SEQ_HISTORY`가 있어도 문서에 revision을 노출하면 출처 추적성이 확보된다고 봤다.
+- 실제 원인:
+  - `SEQ_HISTORY`는 규정 개정 때 바뀌므로 고정 history URL은 stale-data 위험을 남긴다.
+  - seed corpus는 장애 fallback일 뿐 source of truth가 아니어야 한다.
+  - 운영 구조의 핵심은 "본문 하드코딩"이 아니라 "공식 URL registry + 최신 history resolve + scheduled refresh + fallback 표기"다.
+- 해결:
+  - `AcademicPolicyCorpusCache`를 추가해 서버 시작 후와 주기적으로 공식 출처 corpus를 refresh한다.
+  - `RealAcademicPolicyConnector`가 `rule.ssu.ac.kr/lawDetail.do?SEQ=...`에서 최신/선택 `SEQ_HISTORY`를 먼저 찾고,
+    해당 `lawFullContent.do` 원문을 가져오도록 변경했다.
+  - `ssu.ac.kr` 공식 학사 안내 페이지도 corpus 출처에 포함했다.
+  - 응답 DTO에 `live`, `fallbackUsed`, `revision`, `effectiveDate`, `url`, `contentHash`를 포함해 최신성/대체 여부를 숨기지 않는다.
+  - 테스트 profile에서는 scheduled refresh를 꺼서 외부 네트워크와 테스트 안정성을 분리했다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/academic/connector/RealAcademicPolicyConnector.java`
+  - `src/main/java/com/ssuai/domain/academic/service/AcademicPolicyCorpusCache.java`
+  - `src/main/java/com/ssuai/domain/academic/service/AcademicPolicyService.java`
+  - `src/main/java/com/ssuai/domain/mcp/tool/AcademicPolicyMcpTools.java`
+  - 커밋: `57c2199 feat(academic): add official policy RAG tools`
+  - PR: `https://github.com/hoeongj/ssuMCP/pull/25`
+- 검증:
+  - 변경 범위 테스트 통과:
+    `gradlew.bat test --tests "com.ssuai.domain.academic.*" --tests "com.ssuai.domain.mcp.tool.AcademicPolicyMcpToolsTests" --tests "com.ssuai.domain.mcp.tool.CampusMcpToolsTests" --tests "com.ssuai.domain.mcp.config.McpServerConfigTests" --tests "com.ssuai.domain.mcp.McpSelfDogfoodTests"`
+  - 전체 테스트 통과: `gradlew.bat test`
+  - GitHub Actions Backend (Gradle, JDK 21) 통과.
+- 포트폴리오 포인트:
+  - 단순 RAG 도입이 아니라 stale-data를 명시적으로 다루는 공식 출처 추적형 RAG 설계다.
+  - 개인 u-SAINT 데이터(`evaluate_graduation_with_policy`)와 공개 규정 근거를 하나의 MCP 응답으로 결합한다.
+  - DB migration 없이 인메모리 scheduled corpus로 MVP를 만들고, 이후 persistent corpus/vector search로 확장 가능한 경계를 남겼다.
+- 면접 예상 질문:
+  1. 정적 PDF RAG와 공식 출처 주기 갱신형 RAG의 운영 리스크 차이는 무엇인가?
+  2. 왜 처음부터 벡터DB/pgvector를 붙이지 않고 인메모리 corpus로 시작했는가?
+  3. 규정관리시스템의 `SEQ_HISTORY`가 바뀌는 문제를 어떻게 방어했는가?
+
+## 2026-06-06 — 동시 작업 중 MCP tool inventory 테스트 실패
+
+- 맥락:
+  - 학사 정책 RAG 도구 추가 작업과 도서관 available-seat 도구 추가 작업이 같은 ssuMCP worktree에서 순차적으로 합쳐졌다.
+  - 두 작업 모두 `McpServerConfig`와 tool inventory 테스트를 건드리는 성격이었다.
+- 증상:
+  - `McpServerConfigTests`와 `McpSelfDogfoodTests`가 실패했다.
+  - 실패 메시지에는 실제 tool 목록에 `get_library_available_seats`, `get_room_available_seats`가 있으나 기대 목록에는 없다고 나왔다.
+- 처음 세운 가설 (틀린 방향):
+  - 신규 academic-policy tool 등록 또는 Spring AI MCP callback provider 설정이 잘못됐다고 의심했다.
+  - Gradle worker EOF/timeout 때문에 코드 실패인지 환경 실패인지 바로 구분하기 어려웠다.
+- 실제 원인:
+  - 실제 등록 목록은 맞았고, 테스트 기대값이 동시 작업에서 추가된 도서관 read-only 도구 2개를 반영하지 못했다.
+  - 같은 `build/test-results`를 대상으로 여러 Gradle test 프로세스가 동시에 돌아 EOF/timeout 로그가 섞였다.
+- 해결:
+  - 공유 inventory 테스트 기대값에 `get_library_available_seats`, `get_room_available_seats`를 추가했다.
+  - 다른 test 프로세스가 끝난 뒤 변경 범위 테스트와 전체 테스트를 다시 실행했다.
+- 핵심 파일/커밋:
+  - `src/test/java/com/ssuai/domain/mcp/config/McpServerConfigTests.java`
+  - `src/test/java/com/ssuai/domain/mcp/McpSelfDogfoodTests.java`
+  - `docs/mcp-tools.md`, `docs/architecture.md`, `README.md`
+  - 커밋: `57c2199 feat(academic): add official policy RAG tools`
+- 검증:
+  - `McpServerConfigTests`와 `McpSelfDogfoodTests` 통과.
+  - 전체 `gradlew.bat test` 통과.
+- 포트폴리오 포인트:
+  - MCP 서버는 tool 목록 자체가 public contract이므로, 기능 추가보다 inventory contract 테스트를 정확히 유지하는 것이 중요하다.
+  - 병렬 작업 중 실패 로그가 섞일 때는 assertion failure와 Gradle worker/process 충돌을 분리해 보는 절차가 필요하다.
+- 면접 예상 질문:
+  1. MCP tool inventory를 `containsExactlyInAnyOrder`로 강하게 검증하는 이유는 무엇인가?
+  2. 동시 작업으로 같은 contract 테스트가 깨질 때 어떻게 원인을 분리했는가?
+  3. tool count 문서와 실제 MCP listing을 어떻게 동기화했는가?
+
 ---
 
 ## 2026-06-06 — Library seat-map screenshots revealed room-scoped policy and B1 gap
