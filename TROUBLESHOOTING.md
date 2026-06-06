@@ -48,6 +48,103 @@
   3.
 ```
 
+## 2026-06-06 — Library seat-map screenshots revealed room-scoped policy and B1 gap
+
+- 맥락: 사용자가 도서관 전체 좌석배치도 캡처 7장을 제공했고, 층별 잔여 좌석 수가 아니라
+  좌석별 속성(창가, 스탠딩, 콘센트, 가장자리 등)과 선호도 기반 추천/예약 자동화를 원했다.
+- 증상:
+  - 기존 `LibraryFloor`는 2F, 5F, 6F만 지원한다. 지하열람실(B1)은 현재 백엔드 enum과
+    프론트 실행 코드의 층 탭에 들어가 있지 않다.
+  - 기존 `RealLibrarySeatConnector`는 `/pyxis-api/1/seat-rooms?...`에서 방별 count만 파싱하고,
+    좌석 단위 `LibrarySeatZone.seats`를 채우지 않는다.
+  - 대학원열람실은 비대학원생이 예약을 누르면 upstream/UI에서
+    `해당유형은 사용이 불가능한 신분입니다.` 알림이 뜬다.
+- 처음 세운 가정(틀린 방향):
+  - 층 단위 availability와 seat id만 있으면 추천/예약을 바로 연결할 수 있다고 볼 수 있었다.
+  - 2F/5F/6F floor model만 확장하면 모든 열람실을 표현할 수 있다고 볼 수 있었다.
+  - 모든 표시 좌석은 같은 예약 권한 정책을 가진다고 볼 수 있었다.
+- 실제 원인:
+  - Pyxis 좌석 배치는 floor보다 room 단위가 더 중요하다. 같은 층 안에도
+    숭실스퀘어ON, 오픈열람실, PC존/멀티존, 리클라이너, 마루열람실, 대학원열람실처럼
+    좌석 타입과 정책이 다른 room이 있다.
+  - B1은 현재 API floor 값이 확인되지 않았고, `LibraryFloor`에 넣으면 실시간 connector와
+    예약 파라미터가 틀릴 위험이 있다.
+  - 대학원열람실은 좌석 availability와 별개로 사용자 신분 정책이 reservation 단계에서
+    강제된다. 추천 단계에서도 `graduate_only` restriction을 노출해야 한다.
+- 해결:
+  - `seat-room-catalog.json`에 캡처 기반 room catalog를 만들고, 각 room의
+    `floorCode`, `roomCode`, `roomName`, `audience`, `graduateOnly`, `seatIdPattern`,
+    `seatTypes`, `textLayout`, `captureNotes`를 분리했다.
+  - `seat-catalog.json`은 전체 하드코딩 전까지 대표 좌석 scaffold로 두고,
+    `roomCode`, `externalSeatId`, `seatType`, `audience`, 좌석 속성 booleans를 갖게 했다.
+  - 정적 조회용 `GET /api/library/seat-catalog`와 MCP `get_library_seat_catalog`를 추가했다.
+  - 실시간 추천용 MCP `recommend_library_seats`는 live seat item/seat id가 있을 때만
+    추천하고, real connector가 floor-only count만 주는 상황에서는 좌석 예약 가능하다고
+    과장하지 않도록 메시지를 반환한다.
+- 핵심 파일/커밋:
+  - `src/main/resources/library/seat-room-catalog.json`
+  - `src/main/resources/library/seat-catalog.json`
+  - `src/main/java/com/ssuai/domain/library/recommendation/*`
+  - `src/main/java/com/ssuai/domain/library/controller/LibrarySeatCatalogController.java`
+  - `src/main/java/com/ssuai/domain/mcp/tool/LibrarySeatCatalogMcpTool.java`
+  - `src/main/java/com/ssuai/domain/mcp/tool/LibrarySeatRecommendationMcpTool.java`
+  - `docs/library-seat-agent-handoff.md`
+  - commit `d957d74 feat: add library seat recommendation catalog`
+- 검증:
+  - `./gradlew.bat test --console=plain` 통과.
+  - 카탈로그 로딩, B1 static catalog 존재, 대학원열람실 `graduate_only` 표시,
+    MCP tool 등록, 추천 정렬/availability source 분기를 테스트로 검증했다.
+- 포트폴리오 포인트:
+  - LLM이 좌석을 추측하지 않도록 정적 공간 지식, 실시간 availability, 사용자 정책을
+    별도 계층으로 분리했다.
+  - floor-only 모델에서 room-scoped domain model로 확장 가능한 구조를 만들었다.
+  - 예약 action은 추천 결과와 분리하고, final reservation은 기존 `prepare`/`confirm`
+    경로로 유지해 write action safety를 보존했다.
+- 다음 작업자 체크리스트:
+  - DevTools Network에서 `pyxis-api` seat-map/seat-list endpoint, room id, floor id,
+    seat id field를 캡처한다.
+  - B1의 실제 Pyxis floor 값 또는 room-only 파라미터를 확인한 뒤 `LibraryFloor` 확장 여부를 결정한다.
+  - 대학원열람실 denial이 browser alert인지 API 응답인지 확인하고, reservation prepare/confirm
+    단계에서 사용자에게 신분 제한을 명시한다.
+- 면접 예상 질문:
+  1. 왜 좌석 추천 모델을 floor 단위가 아니라 room 단위로 확장해야 했나?
+  2. 실시간 availability가 없는 상황에서 LLM이 예약 가능 좌석을 hallucinate하지 않게 한 장치는 무엇인가?
+  3. 대학원열람실처럼 권한 정책이 있는 좌석을 추천/예약 플로우에서 어떻게 다르게 다뤄야 하나?
+
+---
+
+## 2026-06-06 — Gradle test result binary was corrupted after killed test run
+
+- 맥락: `d957d74` 구현 중 전체 테스트를 처음 실행할 때 120초 timeout으로 프로세스가 강제 종료됐다.
+- 증상:
+  - 다음 `./gradlew.bat test --console=plain` 실행이 소스 컴파일/테스트 assertion 실패가 아니라
+    아래 파일 누락으로 실패했다.
+  - `java.nio.file.NoSuchFileException: build/test-results/test/binary/in-progress-results-generic.bin`
+- 처음 세운 가정(틀린 방향):
+  - 새로 추가한 MCP tool 등록, JSON catalog deserialization, 또는 Spring context startup에서
+    코드 실패가 발생했다고 의심할 수 있었다.
+- 실제 원인:
+  - 첫 테스트 실행이 timeout으로 중간에 종료되면서 Gradle test-results binary state가
+    incomplete 상태로 남았다. 이후 Gradle이 깨진 incremental test result를 읽으려다 실패했다.
+- 해결:
+  - 테스트 결과 산출물만 정리하는 `./gradlew.bat cleanTest test --console=plain`을 실행했다.
+  - 이후 일반 `./gradlew.bat test --console=plain`도 통과했다.
+- 핵심 파일/커밋:
+  - 소스 변경 없음. 로컬 빌드 산출물 문제.
+  - 관련 구현 커밋: `d957d74 feat: add library seat recommendation catalog`
+- 검증:
+  - `./gradlew.bat cleanTest test --console=plain` 통과.
+  - `./gradlew.bat test --console=plain` 재실행 통과.
+- 포트폴리오 포인트:
+  - 테스트 실패가 항상 product code failure는 아니다. timeout/kill 이후에는 Gradle의
+    incremental test result state를 먼저 의심하고 `cleanTest`로 산출물만 재생성할 수 있다.
+- 면접 예상 질문:
+  1. Gradle test task가 assertion 실패가 아니라 binary result 파일 누락으로 실패하면 무엇을 먼저 확인하나?
+  2. `clean` 전체와 `cleanTest`의 차이는 무엇이고, 언제 `cleanTest`가 더 적절한가?
+  3. 긴 통합 테스트가 timeout으로 끊기는 환경에서 재현성 있는 검증 로그를 남기는 방법은?
+
+---
+
 ## 2026-06-06 — Prometheus/Grafana 전환 중 Grafana DNS와 PowerShell RNG 가정 오류
 
 - 맥락: Discord webhook 기반 장애 알림 코드를 제거하고, 운영 관측성을
