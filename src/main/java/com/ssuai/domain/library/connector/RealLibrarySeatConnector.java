@@ -23,6 +23,7 @@ import org.springframework.web.client.RestClientResponseException;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
 import com.ssuai.domain.library.dto.LibrarySeatZone;
+import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
@@ -89,6 +90,12 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     public LibrarySeatStatusResponse fetchSeatStatus(LibraryFloor floor, String token) {
         String body = callUpstream(token);
         return parseBody(body, floor);
+    }
+
+    @Override
+    public List<PyxisSeatInfo> fetchRoomSeats(int roomId, String token) {
+        String body = callRoomSeatsUpstream(roomId, token);
+        return parseRoomSeatsBody(body);
     }
 
     private String callUpstream(String token) {
@@ -197,6 +204,79 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
                 Instant.now(),
                 zones
         );
+    }
+
+    private String callRoomSeatsUpstream(int roomId, String token) {
+        try {
+            return restClient.get()
+                    .uri("/pyxis-api/1/api/rooms/{roomId}/seats", roomId)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("Pyxis-Auth-Token", token != null ? token : "")
+                    .header("Referer", properties.getReferer())
+                    .header("Accept-Language", "ko")
+                    .retrieve()
+                    .body(String.class);
+        } catch (ResourceAccessException exception) {
+            log.warn("library per-seat connector timeout/io: roomId={}", roomId);
+            throw alert(new ConnectorTimeoutException(exception));
+        } catch (RestClientResponseException exception) {
+            HttpStatusCode status = exception.getStatusCode();
+            log.warn("library per-seat connector http error: roomId={} status={}", roomId, status.value());
+            if (status.is5xxServerError()) {
+                throw alert(new ConnectorUnavailableException(exception));
+            }
+            throw new ConnectorParseException(exception);
+        }
+    }
+
+    private List<PyxisSeatInfo> parseRoomSeatsBody(String body) {
+        if (body == null || body.isBlank()) {
+            throw new ConnectorParseException();
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(body);
+        } catch (Exception exception) {
+            throw new ConnectorParseException(exception);
+        }
+        if (!root.path("success").asBoolean(false)) {
+            String code = root.path("code").asText("");
+            if (NEED_LOGIN_CODE.equals(code)) {
+                throw new LibraryAuthRequiredException();
+            }
+            throw new ConnectorParseException();
+        }
+        JsonNode list = root.path("data").path("list");
+        if (!list.isArray()) {
+            throw new ConnectorParseException();
+        }
+        List<PyxisSeatInfo> seats = new ArrayList<>();
+        for (JsonNode seat : list) {
+            int id = seat.path("id").asInt(-1);
+            String code = seat.path("code").asText("");
+            boolean isActive = seat.path("isActive").asBoolean(false);
+            boolean isOccupied = seat.path("isOccupied").asBoolean(false);
+            JsonNode chargeStateNode = seat.path("seatChargeState");
+            String chargeState = (chargeStateNode.isNull() || chargeStateNode.isMissingNode())
+                    ? null : chargeStateNode.asText();
+            int remainingTime = seat.path("remainingTime").asInt(0);
+            int chargeTime = seat.path("chargeTime").asInt(0);
+            String seatTypeName = seat.path("seatType").path("name").asText("일반용");
+
+            String status;
+            if (!isActive) {
+                status = "inactive";
+            } else if (isOccupied && "TEMP_CHARGE".equals(chargeState)) {
+                status = "away";
+            } else if (isOccupied) {
+                status = "occupied";
+            } else {
+                status = "available";
+            }
+
+            seats.add(new PyxisSeatInfo(id, code, seatTypeName, status, remainingTime, chargeTime));
+        }
+        return Collections.unmodifiableList(seats);
     }
 
     private static String textOr(JsonNode node, String fallback) {
