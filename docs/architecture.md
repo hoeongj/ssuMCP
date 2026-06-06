@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-06-04. 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-06-06. 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -146,13 +146,16 @@ com.ssuai
     │   ├── auth        // LibrarySessionStore (AES-256-GCM, 7d TTL), LibraryCredentialLoginService
     │   │   └── dto
     │   ├── connector   // LibraryBookConnector (mock / real Pyxis JSON API)
-    │   │               // LibrarySeatConnector (mock / real oasis 스크래핑)
+    │   │               // LibrarySeatConnector (mock / real) — fetchSeatStatus(floor) + fetchRoomSeats(roomId)
     │   │               // LibraryLoansConnector (mock / real)
     │   ├── controller  // LibraryBookController, LibrarySeatController
-    │   ├── dto         // LibraryBook, LibraryBookSearchResponse, LibrarySeatStatusResponse 등
+    │   ├── dto         // LibraryBook, LibrarySeatStatusResponse, PyxisSeatInfo, LibraryRoomAvailableSeatsResponse 등
     │   ├── mcp         // LibraryToolContext — ThreadLocal 범위 (챗봇 경로 전용)
+    │   ├── reservation // LibraryReservationConnector (mock / real)
+    │   │               // — reserve, discharge, getCurrentCharge (GET /pyxis-api/1/api/seat-charges)
+    │   │               // ActionService — prepare_* → PREPARED pending action → confirm_action 실행
     │   └── service     // LibraryBookService (LRU 200, 60s TTL), LibrarySeatService (30s TTL)
-    │                   // LibraryLoansService
+    │                   // LibraryAvailableSeatsService, LibraryLoansService
     ├── lms
     │   ├── connector   // LmsAssignmentsConnector (mock / real — Canvas LMS SSO)
     │   ├── controller  // LmsAssignmentsController — GET /api/lms/assignments
@@ -458,7 +461,15 @@ Claude Desktop / IDE
 | `get_my_scholarships` | SAINT | `SaintScholarshipService` | |
 | `simulate_gpa` | SAINT | `SaintGpaSimulationService` | |
 | `get_my_assignments` | LMS | `LmsAssignmentsService` | |
-| `get_library_seat_status` | LIBRARY | `LibrarySeatService` | |
+| `get_library_seat_status` | LIBRARY | `LibrarySeatService` | room-level 집계 |
+| `get_library_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 7개 열람실 순회 |
+| `get_room_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 특정 열람실 |
+| `recommend_library_seats` | LIBRARY | `LibrarySeatRecommendationService` | 선호도 점수 + live availability |
+| `prepare_reserve_library_seat` | LIBRARY | `ActionService` | PREPARED pending action 생성 |
+| `prepare_swap_library_seat` | LIBRARY | `ActionService` | |
+| `prepare_cancel_library_seat` | LIBRARY | `ActionService` | |
+| `confirm_action` | LIBRARY | `ActionService` | upstream 실행 + audit 상태 전이 |
+| `get_my_library_seat` | LIBRARY | `LibraryReservationConnector` | GET /pyxis-api/1/api/seat-charges |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
 도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 35개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
