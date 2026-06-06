@@ -10,9 +10,9 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
-import com.ssuai.domain.library.auth.LibrarySessionProperties;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
@@ -28,7 +28,7 @@ class LibrarySeatServiceTests {
     void connectorExceptionBubblesUpWithoutWrapping() {
         LibrarySeatCache cache = mock(LibrarySeatCache.class);
         when(cache.get(eq(LibraryFloor.F2), any())).thenThrow(new ConnectorTimeoutException());
-        LibrarySeatService service = mockModeService(cache, new LibrarySessionStore(defaultProperties()));
+        LibrarySeatService service = mockModeService(cache, mock(LibrarySessionStore.class));
 
         assertThatThrownBy(() -> service.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
                 .isInstanceOf(ConnectorTimeoutException.class);
@@ -37,7 +37,7 @@ class LibrarySeatServiceTests {
     @Test
     void mockModeSkipsSessionCheck() {
         LibrarySeatCache cache = mock(LibrarySeatCache.class);
-        LibrarySessionStore store = new LibrarySessionStore(defaultProperties());
+        LibrarySessionStore store = mock(LibrarySessionStore.class);
         LibrarySeatStatusResponse stub = stubResponse(LibraryFloor.F2);
         when(cache.get(eq(LibraryFloor.F2), any())).thenReturn(stub);
         LibrarySeatService service = new LibrarySeatService(cache, store, "mock");
@@ -49,7 +49,8 @@ class LibrarySeatServiceTests {
     @Test
     void realModeWithoutSessionThrows401() {
         LibrarySeatCache cache = mock(LibrarySeatCache.class);
-        LibrarySessionStore store = new LibrarySessionStore(defaultProperties());
+        LibrarySessionStore store = mock(LibrarySessionStore.class);
+        when(store.token(SESSION_KEY)).thenReturn(Optional.empty());
         LibrarySeatService service = new LibrarySeatService(cache, store, "real");
 
         assertThat(service.isAuthRequired()).isTrue();
@@ -62,8 +63,8 @@ class LibrarySeatServiceTests {
     @Test
     void realModeWithCapturedSessionDelegatesToCache() {
         LibrarySeatCache cache = mock(LibrarySeatCache.class);
-        LibrarySessionStore store = new LibrarySessionStore(defaultProperties());
-        store.put(SESSION_KEY, TOKEN);
+        LibrarySessionStore store = mock(LibrarySessionStore.class);
+        when(store.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         LibrarySeatStatusResponse stub = stubResponse(LibraryFloor.F2);
         when(cache.get(eq(LibraryFloor.F2), any())).thenReturn(stub);
         LibrarySeatService service = new LibrarySeatService(cache, store, "real");
@@ -73,10 +74,6 @@ class LibrarySeatServiceTests {
 
     private static LibrarySeatService mockModeService(LibrarySeatCache cache, LibrarySessionStore store) {
         return new LibrarySeatService(cache, store, "mock");
-    }
-
-    private static LibrarySessionProperties defaultProperties() {
-        return new LibrarySessionProperties();
     }
 
     private static LibrarySeatStatusResponse stubResponse(LibraryFloor floor) {
