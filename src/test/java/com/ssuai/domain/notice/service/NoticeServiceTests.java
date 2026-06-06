@@ -3,6 +3,8 @@ package com.ssuai.domain.notice.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.ssuai.domain.notice.connector.MockDepartmentNoticeConnector;
 import com.ssuai.domain.notice.connector.MockNoticeConnector;
+import com.ssuai.domain.notice.connector.NoticeConnector;
 import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
@@ -108,6 +111,25 @@ class NoticeServiceTests {
                 "https://scatch.ssu.ac.kr/공지사항/장학금-신청-안내/");
 
         assertThat(response.bodyText()).isNotBlank();
+    }
+
+    @Test
+    void getNoticeDetailDelegatesTrimmedUrlToConnector() {
+        NoticeConnector connector = mock(NoticeConnector.class);
+        NoticeService delegatingService = new NoticeService(
+                connector,
+                new MockDepartmentNoticeConnector(),
+                new NoticeListCache(java.time.Duration.ofMinutes(5), java.time.Clock.systemUTC(), 500),
+                noticeIndexRepository);
+        String url = "https://scatch.ssu.ac.kr/notice/123";
+        NoticeDetailResponse expected = new NoticeDetailResponse(
+                "title", url, "", "", "", "", "body");
+        when(connector.fetchDetail(url)).thenReturn(expected);
+
+        NoticeDetailResponse response = delegatingService.getNoticeDetail("  " + url + "  ");
+
+        assertThat(response).isSameAs(expected);
+        verify(connector).fetchDetail(url);
     }
 
     @Test

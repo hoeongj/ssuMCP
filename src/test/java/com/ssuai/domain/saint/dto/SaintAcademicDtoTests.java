@@ -45,6 +45,15 @@ class SaintAcademicDtoTests {
     }
 
     @Test
+    void passFailOnlyTermNullsGpaEvenWhenUpstreamSendsZero() {
+        TermGpa term = new TermGpa(2026, "summer", 3.0d, 3.0d, 3.0d, 0.0d, 0.0d, 0.0d,
+                "0/0", "0/0", false, false, false);
+
+        assertThat(term.gpaCredits()).isEqualTo(0.0d);
+        assertThat(term.gpa()).isNull();
+    }
+
+    @Test
     void graduationRequirementExposesDeficitAndGateTypeSeparately() {
         GraduationRequirementItem credit = new GraduationRequirementItem(
                 "major-required", "major", 15.0f, 9.0f, 6.0f, false);
@@ -57,5 +66,16 @@ class SaintAcademicDtoTests {
         assertThat(credit.requirementType()).isEqualTo("CREDIT");
         assertThat(gate.creditBased()).isFalse();
         assertThat(gate.requirementType()).isEqualTo("GATE");
+    }
+
+    @Test
+    void graduationRequirementNormalizesNegativeOrStaleRemaining() {
+        GraduationRequirementItem deficient = new GraduationRequirementItem(
+                "major-required", "major", 15.0f, 9.0f, -6.0f, false);
+        GraduationRequirementItem overCompleted = new GraduationRequirementItem(
+                "major-elective", "major", 15.0f, 18.0f, -3.0f, true);
+
+        assertThat(deficient.remaining()).isEqualTo(6.0f);
+        assertThat(overCompleted.remaining()).isZero();
     }
 }
