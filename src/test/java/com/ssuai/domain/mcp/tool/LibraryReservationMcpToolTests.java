@@ -15,6 +15,7 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 
 class LibraryReservationMcpToolTests {
 
@@ -22,6 +23,7 @@ class LibraryReservationMcpToolTests {
 
     private ActionService actionService;
     private LibrarySessionStore sessionStore;
+    private LibraryReservationConnector reservationConnector;
     private McpAuthHelper authHelper;
     private LibraryReservationMcpTool tool;
 
@@ -29,8 +31,9 @@ class LibraryReservationMcpToolTests {
     void setUp() {
         actionService = mock(ActionService.class);
         sessionStore = mock(LibrarySessionStore.class);
+        reservationConnector = mock(LibraryReservationConnector.class);
         authHelper = mock(McpAuthHelper.class);
-        tool = new LibraryReservationMcpTool(actionService, sessionStore, authHelper);
+        tool = new LibraryReservationMcpTool(actionService, sessionStore, reservationConnector, authHelper);
     }
 
     @Test

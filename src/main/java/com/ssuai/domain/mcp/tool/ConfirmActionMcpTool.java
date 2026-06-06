@@ -15,6 +15,7 @@ import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
+import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 
 @Component
 public class ConfirmActionMcpTool {
@@ -78,6 +79,8 @@ public class ConfirmActionMcpTool {
                 return executeReservation(mcpSessionId, sessionKey, token);
             } else if (LibraryCancelMcpTool.ACTION_TYPE.equals(actionType)) {
                 return executeCancellation(mcpSessionId, sessionKey, token);
+            } else if (LibrarySwapMcpTool.ACTION_TYPE.equals(actionType)) {
+                return executeSwap(mcpSessionId, sessionKey, token);
             } else {
                 return McpPrivateToolResponse.ok(mcpSessionId, "지원하지 않는 대기 액션입니다.");
             }
@@ -114,6 +117,28 @@ public class ConfirmActionMcpTool {
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
                 "예약 번호 " + request.chargeId() + " 좌석 반납 완료.");
+    }
+
+    private McpPrivateToolResponse<String> executeSwap(
+            String mcpSessionId, String sessionKey, String token) {
+        ActionAudit confirmed = actionService.confirmAction(sessionKey);
+        LibrarySwapRequest request = actionService.payload(confirmed, LibrarySwapRequest.class);
+        reservationConnector.discharge(token, request.oldChargeId());
+        try {
+            LibraryReservationResult result = reservationConnector.reserve(
+                    token, new LibraryReservationRequest(request.newSeatId()));
+            String message = String.format(
+                    "자리 변경 완료! %s %s번 예약 완료. 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
+                    result.roomName(), result.seatCode(),
+                    result.beginTime(), result.endTime(),
+                    result.chargeId());
+            return McpPrivateToolResponse.ok(mcpSessionId, message);
+        } catch (RuntimeException exception) {
+            log.warn("confirm_action swap: discharge succeeded but reserve failed seat={}", request.newSeatId(), exception);
+            return McpPrivateToolResponse.ok(mcpSessionId,
+                    "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번) 예약에 실패했습니다. "
+                            + "prepare_reserve_library_seat로 다시 시도해주세요.");
+        }
     }
 
     private void expirePending(String sessionKey) {
