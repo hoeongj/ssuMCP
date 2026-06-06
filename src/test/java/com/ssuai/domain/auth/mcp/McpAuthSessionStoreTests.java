@@ -8,11 +8,33 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
+@SpringBootTest
+@ActiveProfiles("test")
+@Transactional
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class McpAuthSessionStoreTests {
 
     private static final Instant T0 = Instant.parse("2026-05-18T10:00:00Z");
+
+    @Autowired
+    private McpSessionRepository repository;
+
+    private final ObjectMapper objectMapper = McpAuthSessionStore.defaultObjectMapper();
+
+
+    @BeforeEach
+    void clean() {
+        repository.deleteAll();
+    }
 
     @Test
     void createReturnsSessionWithId() {
@@ -24,6 +46,7 @@ class McpAuthSessionStoreTests {
         assertThat(session.id().value()).isNotBlank();
         assertThat(session.providers()).isEmpty();
         assertThat(session.expiresAt()).isEqualTo(T0.plus(Duration.ofHours(4)));
+        assertThat(repository.findById(session.id().value())).isPresent();
     }
 
     @Test
@@ -72,6 +95,7 @@ class McpAuthSessionStoreTests {
 
         assertThat(store.find(session.id())).isEmpty();
         assertThat(store.size()).isZero();
+        assertThat(repository.findById(session.id().value())).isEmpty();
     }
 
     @Test
@@ -85,6 +109,8 @@ class McpAuthSessionStoreTests {
         assertThat(updated.isLinked(McpProviderType.SAINT)).isTrue();
         assertThat(updated.provider(McpProviderType.SAINT).orElseThrow().principalKey())
                 .isEqualTo("20231234");
+        assertThat(repository.findById(session.id().value()).orElseThrow().getProviders())
+                .contains("\"SAINT\"");
     }
 
     @Test
@@ -183,22 +209,32 @@ class McpAuthSessionStoreTests {
     }
 
     @Test
-    void lruCapEvictsEldestAccessedEntry() {
-        McpAuthProperties props = properties(Duration.ofHours(4));
-        props.setMaxSessions(3);
-        McpAuthSessionStore store = new McpAuthSessionStore(props, Clock.fixed(T0, ZoneOffset.UTC));
+    void cleanupExpiredSessionsDeletesExpiredRows() {
+        MutableClock clock = new MutableClock(T0);
+        McpAuthSessionStore store = store(clock, Duration.ofHours(4));
+        store.create();
 
-        McpAuthSession a = store.create();
-        McpAuthSession b = store.create();
-        McpAuthSession c = store.create();
-        // touch 'a' so 'b' is the least-recently-accessed
-        store.find(a.id());
-        McpAuthSession d = store.create();
+        clock.advance(Duration.ofHours(5));
+        store.cleanupExpiredSessions();
 
-        assertThat(store.find(a.id())).isPresent();
-        assertThat(store.find(b.id())).isEmpty();
-        assertThat(store.find(c.id())).isPresent();
-        assertThat(store.find(d.id())).isPresent();
+        assertThat(store.size()).isZero();
+        assertThat(repository.count()).isZero();
+    }
+
+    @Test
+    void providersSurviveStoreRecreation() {
+        McpAuthSessionStore firstStore = store(T0, Duration.ofHours(4));
+        McpAuthSession session = firstStore.create();
+        firstStore.linkProvider(session.id(), McpProviderType.SAINT, "student-A");
+        firstStore.linkProvider(session.id(), McpProviderType.LIBRARY, "library-session-key");
+
+        McpAuthSessionStore secondStore = store(T0.plusSeconds(1), Duration.ofHours(4));
+
+        McpAuthSession restored = secondStore.find(session.id()).orElseThrow();
+        assertThat(restored.provider(McpProviderType.SAINT).orElseThrow().principalKey())
+                .isEqualTo("student-A");
+        assertThat(restored.provider(McpProviderType.LIBRARY).orElseThrow().principalKey())
+                .isEqualTo("library-session-key");
     }
 
     @Test
@@ -218,12 +254,12 @@ class McpAuthSessionStoreTests {
                 .isEqualTo("student-B");
     }
 
-    private static McpAuthSessionStore store(Instant now, Duration sessionTtl) {
-        return new McpAuthSessionStore(properties(sessionTtl), Clock.fixed(now, ZoneOffset.UTC));
+    private McpAuthSessionStore store(Instant now, Duration sessionTtl) {
+        return store(Clock.fixed(now, ZoneOffset.UTC), sessionTtl);
     }
 
-    private static McpAuthSessionStore store(MutableClock clock, Duration sessionTtl) {
-        return new McpAuthSessionStore(properties(sessionTtl), clock);
+    private McpAuthSessionStore store(Clock clock, Duration sessionTtl) {
+        return new McpAuthSessionStore(repository, objectMapper, properties(sessionTtl), clock);
     }
 
     private static McpAuthProperties properties(Duration sessionTtl) {
