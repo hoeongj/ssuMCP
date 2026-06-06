@@ -132,6 +132,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     private Optional<LibraryReservationResult> parseCurrentChargeResponse(String body) {
         JsonNode root = parseJson(body);
+        log.debug("getCurrentCharge response: {}", body);
         if (NO_RECORD_CODE.equals(root.path("code").asText(""))) {
             return Optional.empty();
         }
@@ -143,7 +144,12 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         if (data.isMissingNode() || data.isNull()) {
             return Optional.empty();
         }
-        return Optional.of(parseChargeData(data));
+        // GET /pyxis-api/1/api/seat-charges may return an array or a single object
+        JsonNode item = data.isArray() ? (data.isEmpty() ? null : data.get(0)) : data;
+        if (item == null) {
+            return Optional.empty();
+        }
+        return Optional.of(parseChargeData(item));
     }
 
     private LibraryReservationResult parseReserveResponse(String body) {
