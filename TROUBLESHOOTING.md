@@ -48,6 +48,45 @@
   3.
 ```
 
+## 2026-06-06 — Grafana dashboard legend template broke ArgoCD Helm rendering
+
+- 맥락: 도서관 MCP action tool 등록 커밋은 CI와 이미지 빌드가 통과했고, ArgoCD Image Updater도
+  `values.yaml`의 backend image tag를 갱신했다. 그런데 운영 Application은 최신 이미지로 sync되지 않았다.
+- 증상:
+  - `kubectl get application -n argocd ssuai-backend`에서 Sync Status가 `Unknown`.
+  - Application condition에 `ComparisonError` 발생.
+  - ArgoCD manifest generation 실패:
+    `parse error at (ssuai-backend/templates/grafana-dashboard-red.yaml:96): function "uri" not defined`.
+- 처음 세운 가설 (틀린 방향):
+  - CI와 GHCR image push가 성공했으므로 ArgoCD가 곧 자동 sync할 것이라고 봤다.
+  - Image Updater commit까지 생성됐으니 남은 것은 rollout 대기라고 생각했다.
+- 실제 원인:
+  - `grafana-dashboard-red.yaml`은 Helm template 파일 안에 Grafana dashboard JSON을 inline으로 넣고 있다.
+  - Grafana/Prometheus legend 문자열 `"{{ uri }}"`를 Helm이 literal JSON 문자열로 보존하지 않고
+    Go template action으로 해석했다.
+  - Helm에는 `uri`라는 함수가 없어서 manifest generation 단계에서 실패했고, 이후 모든 backend sync가 막혔다.
+- 해결:
+  - Grafana legend 문자열을 Helm escape 형태로 변경해 렌더링 결과에는 여전히 `"{{ uri }}"`가 남도록 했다.
+  - 동일한 raw `{{ ... }}` 패턴이 chart template에 더 있는지 검색했다.
+- 핵심 파일/커밋:
+  - `deploy/charts/ssuai-backend/templates/grafana-dashboard-red.yaml`
+  - `TROUBLESHOOTING.md`
+  - 커밋: `fix(deploy): escape grafana legend template`
+- 검증:
+  - 로컬에는 Helm CLI가 없어 `helm template` 검증은 불가했다.
+  - Git push 후 ArgoCD Application 상태와 Kubernetes deployment image/rollout으로 검증한다.
+- 포트폴리오 포인트:
+  - CI green과 이미지 push 성공은 GitOps 배포 성공을 보장하지 않는다. ArgoCD의 manifest generation 단계가
+    별도 failure point다.
+  - Helm chart 안에 Grafana/Prometheus JSON을 inline할 때는 두 시스템 모두 `{{ ... }}` 템플릿 문법을 쓰므로
+    literal escape가 필요하다.
+- 면접 예상 질문:
+  1. GitOps 배포에서 CI 성공 후에도 운영 sync가 실패할 수 있는 단계는 무엇인가?
+  2. Helm template 파일 안에 Grafana dashboard JSON을 넣을 때 `{{ ... }}`를 어떻게 escape해야 하나?
+  3. ArgoCD `ComparisonError`와 Kubernetes rollout failure는 어떻게 구분하나?
+
+---
+
 ## 2026-06-06 — Library seat-map screenshots revealed room-scoped policy and B1 gap
 
 - 맥락: 사용자가 도서관 전체 좌석배치도 캡처 7장을 제공했고, 층별 잔여 좌석 수가 아니라
