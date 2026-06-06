@@ -42,7 +42,8 @@ public class LibraryReservationMcpTool {
             description = "숭실대학교 중앙도서관 좌석 예약을 준비합니다. "
                     + "예약은 이 도구만으로 실행되지 않으며, 사용자가 confirm_action을 호출해야 최종 실행됩니다. "
                     + "Requires mcp_session_id with the LIBRARY provider linked via start_auth. "
-                    + "seat_id는 get_library_seat_status 또는 recommend_library_seats에서 얻을 수 있습니다."
+                    + "seat_id는 recommend_library_seats 응답의 externalSeatId 값(숫자 문자열, 예: '3179')을 사용하세요. "
+                    + "추천 목록 없이 직접 예약하려면 oasis.ssu.ac.kr에서 좌석을 클릭해 URL의 숫자를 확인하세요."
     )
     public McpPrivateToolResponse<String> prepareReserveLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

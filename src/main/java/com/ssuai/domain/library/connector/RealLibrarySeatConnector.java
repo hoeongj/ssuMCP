@@ -2,7 +2,10 @@ package com.ssuai.domain.library.connector;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,6 +49,27 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     private static final String SEAT_ROOMS_PATH =
             "/pyxis-api/1/seat-rooms?smufMethodCode=PC&branchGroupId=1";
     private static final String NEED_LOGIN_CODE = "error.authentication.needLogin";
+
+    private static final Map<Integer, List<String>> ROOM_SEAT_CODES;
+
+    static {
+        Map<Integer, List<String>> map = new LinkedHashMap<>();
+        map.put(54, numericCodes(1, 232));  // 오픈열람실(2F)
+        map.put(53, numericCodes(1, 110));  // 숭실스퀘어ON(2F)
+        map.put(57, numericCodes(1, 245));  // 마루열람실(6F)
+        map.put(58, numericCodes(1, 62));   // 대학원열람실(6F)
+        map.put(59, List.of("R1","R2","R3","R4","R5","R6"));  // 리클라이너(5F)
+        map.put(60, numericCodes(1, 98));   // 숭실멀티라운지(5F)
+        ROOM_SEAT_CODES = Collections.unmodifiableMap(map);
+    }
+
+    private static List<String> numericCodes(int from, int to) {
+        List<String> codes = new ArrayList<>(to - from + 1);
+        for (int i = from; i <= to; i++) {
+            codes.add(String.valueOf(i));
+        }
+        return Collections.unmodifiableList(codes);
+    }
 
     private final LibrarySeatProperties properties;
     private final ObjectMapper objectMapper;
@@ -140,6 +164,7 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
                 continue;
             }
             JsonNode seats = room.path("seats");
+            int roomId       = room.path("id").asInt(-1);
             int roomTotal    = seats.path("total").asInt(0);
             int roomAvail    = seats.path("available").asInt(0);
             int roomOccupied = seats.path("occupied").asInt(0);
@@ -152,8 +177,10 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
             outOfServiceSeats += roomFixed;
 
             String zoneName = textOr(room.path("name"), requestedFloor.displayLabel());
-            // The verified public Pyxis reading-room endpoint exposes counts only.
-            zones.add(new LibrarySeatZone(zoneName, roomTotal, roomAvail, List.of(), List.of()));
+            List<String> seatCodes = roomAvail > 0
+                    ? ROOM_SEAT_CODES.getOrDefault(roomId, List.of())
+                    : List.of();
+            zones.add(new LibrarySeatZone(zoneName, roomTotal, roomAvail, seatCodes, List.of()));
         }
 
         if (totalSeats == 0 && zones.isEmpty()) {
