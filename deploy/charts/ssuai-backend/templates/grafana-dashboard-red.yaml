@@ -114,11 +114,11 @@ data:
         {
           "id": 6,
           "type": "stat",
-          "title": "Action Confirmed (5m rate)",
+          "title": "Action Success (5m rate)",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
-            "expr": "sum(rate(library_action_total{status=\"confirmed\"}[5m]))",
-            "legendFormat": "confirmed/s"
+            "expr": "sum(rate(library_action_total{status=\"success\"}[5m]))",
+            "legendFormat": "success/s"
           }],
           "fieldConfig": {
             "defaults": {
@@ -167,8 +167,12 @@ data:
               "legendFormat": "prepared"
             },
             {
-              "expr": "sum(rate(library_action_total{status=\"confirmed\"}[5m]))",
-              "legendFormat": "confirmed"
+              "expr": "sum(rate(library_action_total{status=\"success\"}[5m]))",
+              "legendFormat": "success"
+            },
+            {
+              "expr": "sum(rate(library_action_total{status=\"failed\"}[5m]))",
+              "legendFormat": "failed"
             },
             {
               "expr": "sum(rate(library_action_total{status=\"expired\"}[5m]))",

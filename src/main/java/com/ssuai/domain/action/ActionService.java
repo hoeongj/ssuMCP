@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class ActionService {
 
     public static final Duration ACTION_TTL = Duration.ofMinutes(5);
+
+    public static final String OUTCOME_SUCCESS = "SUCCESS";
+    public static final String OUTCOME_FAILURE_RACE = "FAILURE_RACE";
+    public static final String OUTCOME_FAILURE_AUTH = "FAILURE_AUTH";
+    public static final String OUTCOME_FAILURE_UPSTREAM = "FAILURE_UPSTREAM";
+    public static final String OUTCOME_TIMEOUT = "TIMEOUT";
 
     private final ActionAuditRepository repository;
     private final ObjectMapper objectMapper;
@@ -46,7 +53,7 @@ public class ActionService {
         String serialized = serialize(payload);
         ActionAudit action = ActionAudit.pending(studentId, actionType, serialized, clock.instant());
         ActionAudit saved = repository.save(action);
-        meterRegistry.counter("library.action", "action_type", actionType, "status", "prepared").increment();
+        count(actionType, "prepared");
         return saved;
     }
 
@@ -55,20 +62,65 @@ public class ActionService {
         return repository.findTopByStudentIdAndStatusOrderByCreatedAtDesc(studentId, ActionStatus.PENDING);
     }
 
+    /**
+     * Atomically claims the most recent PENDING action and moves it to EXECUTING under a
+     * row lock (SELECT ... FOR UPDATE). Two concurrent confirms can never both execute the
+     * same action: the loser finds no PENDING row. The audit row is persisted as EXECUTING
+     * <em>before</em> the upstream call, so a crash mid-call is still reconstructable.
+     *
+     * @throws NoPendingActionException if there is no PENDING action to claim
+     * @throws ActionExpiredException   if the latest PENDING action is past its TTL (it is
+     *                                  marked EXPIRED before throwing)
+     */
     @Transactional
-    public ActionAudit confirmAction(String studentId) {
-        ActionAudit action = findPendingAction(studentId).orElseThrow(NoPendingActionException::new);
+    public ActionAudit claimPendingAction(String studentId) {
+        ActionAudit action = repository
+                .lockByStudentIdAndStatus(studentId, ActionStatus.PENDING, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElseThrow(NoPendingActionException::new);
         Instant now = clock.instant();
         if (isExpired(action, now)) {
             action.expire(now);
             repository.save(action);
-            meterRegistry.counter("library.action", "action_type", action.getActionType(), "status", "expired").increment();
+            count(action.getActionType(), "expired");
             throw new ActionExpiredException();
         }
-        action.confirm(now);
+        action.markExecuting(now);
         ActionAudit saved = repository.save(action);
-        meterRegistry.counter("library.action", "action_type", action.getActionType(), "status", "confirmed").increment();
+        count(action.getActionType(), "executing");
         return saved;
+    }
+
+    /**
+     * Records the terminal outcome of an EXECUTING action. {@code outcomeCode} is one of the
+     * {@code OUTCOME_*} constants; SUCCESS maps to status SUCCESS, anything else to FAILED.
+     * This is the only place an action becomes terminal after its upstream call, so the audit
+     * never reports success for a call that actually failed.
+     */
+    @Transactional
+    public ActionAudit completeAction(ActionAudit action, String outcomeCode, String outcomeMessage) {
+        action.complete(outcomeCode, outcomeMessage, clock.instant());
+        ActionAudit saved = repository.save(action);
+        meterRegistry.counter("library.action",
+                        "action_type", action.getActionType(),
+                        "status", OUTCOME_SUCCESS.equals(outcomeCode) ? "success" : "failed",
+                        "outcome", outcomeCode)
+                .increment();
+        return saved;
+    }
+
+    /** Marks the latest PENDING action EXPIRED if it is past its TTL. No-op otherwise. */
+    @Transactional
+    public void expirePending(String studentId) {
+        findPendingAction(studentId).ifPresent(action -> {
+            Instant now = clock.instant();
+            if (isExpired(action, now)) {
+                action.expire(now);
+                repository.save(action);
+                count(action.getActionType(), "expired");
+            }
+        });
     }
 
     @Transactional
@@ -101,6 +153,10 @@ public class ActionService {
 
     private boolean isExpired(ActionAudit action, Instant now) {
         return action.getCreatedAt().plus(ACTION_TTL).isBefore(now);
+    }
+
+    private void count(String actionType, String status) {
+        meterRegistry.counter("library.action", "action_type", actionType, "status", status).increment();
     }
 
     private String serialize(Object payload) {
