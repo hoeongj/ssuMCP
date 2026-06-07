@@ -1,0 +1,22 @@
+[extend]
+# inherit gitleaks default rule pack
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-api03-[A-Za-z0-9_-]{20,}'''
+keywords = [
+    "sk-ant-api03",
+]
+
+[[allowlists]]
+description = "ssuMCP: docs and committed config that legitimately mention secret types or use ${ENV} placeholders"
+paths = [
+    '''docs/security\.md''',
+    '''docs/architecture\.md''',
+    '''src/main/resources/application-prod\.yml''',
+    '''deploy/charts/ssuai-backend/templates/secret\.example\.yaml''',
+    '''deploy/argocd/image-updater/secret\.example\.yaml''',
+    '''\.env\.example''',
+]
