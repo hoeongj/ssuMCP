@@ -96,6 +96,86 @@ data:
             "legendFormat": "{{ "{{" }} uri {{ "}}" }}"
           }],
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 }
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Action Prepared (5m rate)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(library_action_total{status=\"prepared\"}[5m]))",
+            "legendFormat": "prepared/s"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "ops" }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 12 }
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Action Confirmed (5m rate)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(library_action_total{status=\"confirmed\"}[5m]))",
+            "legendFormat": "confirmed/s"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 12 }
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "Action Expired (5m rate)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "expr": "sum(rate(library_action_total{status=\"expired\"}[5m]))",
+            "legendFormat": "expired/s"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 12 }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Action Audit Timeline",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "expr": "sum(rate(library_action_total{status=\"prepared\"}[5m]))",
+              "legendFormat": "prepared"
+            },
+            {
+              "expr": "sum(rate(library_action_total{status=\"confirmed\"}[5m]))",
+              "legendFormat": "confirmed"
+            },
+            {
+              "expr": "sum(rate(library_action_total{status=\"expired\"}[5m]))",
+              "legendFormat": "expired"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 }
         }
       ]
     }
