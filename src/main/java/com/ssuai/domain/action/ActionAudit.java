@@ -36,11 +36,22 @@ public class ActionAudit {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** When the action was claimed for execution (PENDING -> EXECUTING). */
     @Column(name = "confirmed_at")
     private Instant confirmedAt;
 
     @Column(name = "expired_at")
     private Instant expiredAt;
+
+    /** Terminal outcome detail: SUCCESS | FAILURE_RACE | FAILURE_AUTH | FAILURE_UPSTREAM | TIMEOUT. */
+    @Column(name = "outcome_code", length = 32)
+    private String outcomeCode;
+
+    @Column(name = "outcome_message", columnDefinition = "TEXT")
+    private String outcomeMessage;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
 
     protected ActionAudit() {
         // JPA
@@ -58,12 +69,27 @@ public class ActionAudit {
         return new ActionAudit(studentId, actionType, ActionStatus.PENDING, payload, createdAt);
     }
 
-    public void confirm(Instant confirmedAt) {
+    /** Claims a PENDING action for execution (PENDING -> EXECUTING). */
+    public void markExecuting(Instant startedAt) {
         if (status != ActionStatus.PENDING) {
-            throw new IllegalStateException("Only PENDING actions can be confirmed.");
+            throw new IllegalStateException("Only PENDING actions can start executing.");
         }
-        this.status = ActionStatus.CONFIRMED;
-        this.confirmedAt = Objects.requireNonNull(confirmedAt, "confirmedAt");
+        this.status = ActionStatus.EXECUTING;
+        this.confirmedAt = Objects.requireNonNull(startedAt, "startedAt");
+    }
+
+    /**
+     * Records the terminal outcome (EXECUTING -> SUCCESS/FAILED). {@code outcomeCode}
+     * "SUCCESS" maps to {@link ActionStatus#SUCCESS}; any other code maps to FAILED.
+     */
+    public void complete(String outcomeCode, String outcomeMessage, Instant completedAt) {
+        if (status != ActionStatus.EXECUTING) {
+            throw new IllegalStateException("Only EXECUTING actions can be completed.");
+        }
+        this.outcomeCode = requireNonBlank(outcomeCode, "outcomeCode");
+        this.outcomeMessage = outcomeMessage;
+        this.completedAt = Objects.requireNonNull(completedAt, "completedAt");
+        this.status = "SUCCESS".equals(outcomeCode) ? ActionStatus.SUCCESS : ActionStatus.FAILED;
     }
 
     public void expire(Instant expiredAt) {
@@ -104,6 +130,18 @@ public class ActionAudit {
 
     public Instant getExpiredAt() {
         return expiredAt;
+    }
+
+    public String getOutcomeCode() {
+        return outcomeCode;
+    }
+
+    public String getOutcomeMessage() {
+        return outcomeMessage;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
     }
 
     private static String requireNonBlank(String value, String field) {

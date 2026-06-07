@@ -1,7 +1,7 @@
 # ADR 0015 — Action-tool common infrastructure (prepare + confirm + audit)
 
-- **Status**: Proposed (no code yet — pins the design before Phase 4
-  `reserve_library_seat` starts).
+- **Status**: Accepted — implemented 2026-06-07 (with two pragmatic
+  deviations, see "Implementation" below).
 - **Date**: 2026-05-16
 - **Scope**:
   - `docs/vision.md` §3 Layer 4 (action policy bullets),
@@ -325,3 +325,26 @@ is correct and zero-cost. Swap to Redis when there is a real reason
     dashboard) reuse `prepare`/`confirm` or get a single endpoint.
     Likely reuse — the button does prepare, shows a modal, the modal
     confirms. Pin in the dashboard task when it exists.
+
+## Implementation (2026-06-07)
+
+Shipped in `com.ssuai.domain.action` + `ConfirmActionMcpTool` with two
+deliberate deviations from the design above:
+
+- **D3 (`pending_action_id`)** — `confirm_action(mcp_session_id)` keeps its
+  single argument and claims the **session's most recent PENDING action**
+  rather than taking an opaque id. Single-use is still guaranteed: the claim
+  is a locked `PENDING -> EXECUTING` transition, so a second confirm finds
+  nothing PENDING. This avoids threading an opaque id through the LLM/tool
+  schema for no real safety gain.
+- **D4 (lock)** — instead of an in-process `ReentrantLock`, the claim uses a
+  **Postgres row lock** (`SELECT ... FOR UPDATE` via
+  `ActionAuditRepository.lockByStudentIdAndStatus`). This is correct under
+  multi-pod k3s, where the in-process map would not be; the lock is held only
+  across the short claim transaction, not the upstream HTTP call.
+
+State machine as built: `PENDING -> EXECUTING -> SUCCESS | FAILED`,
+`PENDING -> EXPIRED`. The terminal `outcome_code` (`SUCCESS` / `FAILURE_RACE`
+/ `FAILURE_AUTH` / `FAILURE_UPSTREAM` / `TIMEOUT`) is set **after** the
+upstream call returns, so the audit never reports success for a call that
+failed (Flyway `V7`).

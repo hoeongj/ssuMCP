@@ -3,6 +3,7 @@ package com.ssuai.domain.action;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,11 +12,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Pageable;
 
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 
@@ -39,34 +40,60 @@ class ActionServiceTests {
     }
 
     @Test
-    void createsPendingActionAndConfirmsIt() {
+    void claimMovesPendingToExecutingThenCompletesSuccess() {
         ActionAudit created = service.createPendingAction(
                 STUDENT_ID, ACTION_TYPE, new LibraryReservationRequest(101L));
-        when(repository.findTopByStudentIdAndStatusOrderByCreatedAtDesc(STUDENT_ID, ActionStatus.PENDING))
-                .thenReturn(Optional.of(created));
+        when(repository.lockByStudentIdAndStatus(eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of(created));
 
-        ActionAudit confirmed = service.confirmAction(STUDENT_ID);
+        ActionAudit claimed = service.claimPendingAction(STUDENT_ID);
+        assertThat(claimed.getStatus()).isEqualTo(ActionStatus.EXECUTING);
+        assertThat(claimed.getConfirmedAt()).isEqualTo(NOW);
 
-        assertThat(confirmed.getStatus()).isEqualTo(ActionStatus.CONFIRMED);
-        assertThat(confirmed.getConfirmedAt()).isEqualTo(NOW);
-        assertThat(confirmed.getPayload()).contains("\"seatId\":101");
+        ActionAudit done = service.completeAction(claimed, ActionService.OUTCOME_SUCCESS, "ok");
+        assertThat(done.getStatus()).isEqualTo(ActionStatus.SUCCESS);
+        assertThat(done.getOutcomeCode()).isEqualTo("SUCCESS");
+        assertThat(done.getCompletedAt()).isEqualTo(NOW);
+        assertThat(done.getPayload()).contains("\"seatId\":101");
     }
 
     @Test
-    void confirmFailsAndExpiresActionAfterTtl() {
+    void completeWithFailureOutcomeMarksActionFailedNotSuccess() {
+        ActionAudit executing = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}", NOW);
+        executing.markExecuting(NOW);
+
+        ActionAudit done = service.completeAction(
+                executing, ActionService.OUTCOME_FAILURE_RACE, "좌석 선점됨");
+
+        assertThat(done.getStatus()).isEqualTo(ActionStatus.FAILED);
+        assertThat(done.getOutcomeCode()).isEqualTo("FAILURE_RACE");
+        assertThat(done.getCompletedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void claimThrowsAndExpiresActionAfterTtl() {
         ActionAudit pending = ActionAudit.pending(
                 STUDENT_ID,
                 ACTION_TYPE,
-                "{\"floor\":\"2F\",\"seatId\":\"101\"}",
+                "{\"seatId\":101}",
                 NOW.minus(ActionService.ACTION_TTL).minusSeconds(1));
-        when(repository.findTopByStudentIdAndStatusOrderByCreatedAtDesc(STUDENT_ID, ActionStatus.PENDING))
-                .thenReturn(Optional.of(pending));
+        when(repository.lockByStudentIdAndStatus(eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of(pending));
 
-        assertThatThrownBy(() -> service.confirmAction(STUDENT_ID))
+        assertThatThrownBy(() -> service.claimPendingAction(STUDENT_ID))
                 .isInstanceOf(ActionService.ActionExpiredException.class);
 
         assertThat(pending.getStatus()).isEqualTo(ActionStatus.EXPIRED);
         assertThat(pending.getExpiredAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void claimThrowsWhenNoPendingAction() {
+        when(repository.lockByStudentIdAndStatus(eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.claimPendingAction(STUDENT_ID))
+                .isInstanceOf(ActionService.NoPendingActionException.class);
     }
 
     @Test
