@@ -1,21 +1,18 @@
 package com.ssuai.domain.library.recommendation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.library.dto.LibraryFloor;
-import com.ssuai.domain.library.dto.LibrarySeatItem;
-import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
-import com.ssuai.domain.library.dto.LibrarySeatZone;
-import com.ssuai.domain.library.service.LibrarySeatService;
+import com.ssuai.domain.library.dto.LibraryRoomAvailableSeatsResponse;
+import com.ssuai.domain.library.dto.PyxisSeatInfo;
+import com.ssuai.domain.library.service.LibraryAvailableSeatsService;
 
 @Service
 public class LibrarySeatRecommendationService {
@@ -24,13 +21,23 @@ public class LibrarySeatRecommendationService {
     private static final int MAX_LIMIT = 10;
     private static final int BASE_AVAILABLE_SCORE = 100;
 
-    private final LibrarySeatService seatService;
+    private static final Map<LibraryFloor, List<Integer>> FLOOR_ROOMS;
+
+    static {
+        Map<LibraryFloor, List<Integer>> m = new LinkedHashMap<>();
+        m.put(LibraryFloor.F2, List.of(53, 54));
+        m.put(LibraryFloor.F5, List.of(59, 60));
+        m.put(LibraryFloor.F6, List.of(57, 58));
+        FLOOR_ROOMS = Collections.unmodifiableMap(m);
+    }
+
+    private final LibraryAvailableSeatsService availableSeatsService;
     private final LibrarySeatCatalogService catalogService;
 
     public LibrarySeatRecommendationService(
-            LibrarySeatService seatService,
+            LibraryAvailableSeatsService availableSeatsService,
             LibrarySeatCatalogService catalogService) {
-        this.seatService = seatService;
+        this.availableSeatsService = availableSeatsService;
         this.catalogService = catalogService;
     }
 
@@ -45,13 +52,28 @@ public class LibrarySeatRecommendationService {
                 ? new LibrarySeatPreference(null, null, null, null, null, null)
                 : preference;
 
-        LibrarySeatStatusResponse status = seatService.getSeatStatusForSession(floor, sessionKey);
-        AvailableSeatSnapshot availableSeats = AvailableSeatSnapshot.from(status);
+        List<Integer> roomIds = FLOOR_ROOMS.getOrDefault(floor, List.of());
+        Map<String, String> statusByLabel = new LinkedHashMap<>();
+        int liveSeatItemsSeen = 0;
+
+        for (int roomId : roomIds) {
+            LibraryRoomAvailableSeatsResponse roomData =
+                    availableSeatsService.getRoomAvailableSeats(roomId, sessionKey);
+            for (PyxisSeatInfo seat : roomData.seats()) {
+                statusByLabel.put(seat.label(), seat.status());
+                liveSeatItemsSeen++;
+            }
+        }
+
+        int liveAvailable = (int) statusByLabel.values().stream()
+                .filter("available"::equals)
+                .count();
         int catalogSeatsOnFloor = catalogService.entriesFor(floor).size();
 
-        List<LibrarySeatRecommendation> allRecommendations = availableSeats.seatIds().stream()
-                .flatMap(seatId -> catalogService.find(floor, seatId).stream()
-                        .map(entry -> buildRecommendation(entry, availableSeats.statusOf(seatId), effectivePreference)))
+        List<LibrarySeatRecommendation> allRecommendations = statusByLabel.entrySet().stream()
+                .filter(e -> "available".equals(e.getValue()))
+                .flatMap(e -> catalogService.find(floor, e.getKey()).stream()
+                        .map(entry -> buildRecommendation(entry, e.getValue(), effectivePreference)))
                 .sorted(Comparator
                         .comparingInt(LibrarySeatRecommendation::score).reversed()
                         .thenComparing(LibrarySeatRecommendation::seatId, LibrarySeatCatalogService::compareSeatIds))
@@ -61,16 +83,17 @@ public class LibrarySeatRecommendationService {
                 .limit(limit)
                 .toList();
 
+        String source = liveSeatItemsSeen > 0 ? "live_per_seat" : "no_seats_found";
         return new LibrarySeatRecommendationResponse(
-                status.floor(),
-                status.floorLabel(),
+                floor.code(),
+                floor.displayLabel(),
                 limit,
-                availableSeats.seatIds().size(),
-                availableSeats.liveSeatItemsSeen(),
+                liveAvailable,
+                liveSeatItemsSeen,
                 catalogSeatsOnFloor,
                 allRecommendations.size(),
-                availableSeats.source(),
-                messageFor(availableSeats, allRecommendations, effectivePreference),
+                source,
+                messageFor(liveSeatItemsSeen, liveAvailable, allRecommendations, effectivePreference),
                 limited);
     }
 
@@ -148,16 +171,19 @@ public class LibrarySeatRecommendationService {
     }
 
     private static String messageFor(
-            AvailableSeatSnapshot availableSeats,
+            int liveSeatItemsSeen,
+            int liveAvailable,
             List<LibrarySeatRecommendation> recommendations,
             LibrarySeatPreference preference) {
-        if (availableSeats.liveSeatItemsSeen() == 0 && availableSeats.seatIds().isEmpty()) {
-            return "Only floor-level availability is available from the live connector. "
-                    + "Capture the Pyxis seat-map API to unlock seat-level recommendations.";
+        if (liveSeatItemsSeen == 0) {
+            return "No per-seat data was returned for the requested floor. The library may be closed.";
+        }
+        if (liveAvailable == 0) {
+            return "All seats on this floor are currently occupied.";
         }
         if (recommendations.isEmpty()) {
-            return "No currently available live seats matched the static catalog. "
-                    + "Add the floor's seat IDs to library/seat-catalog.json or capture the live seat-map IDs.";
+            return "No available live seats matched the static catalog. "
+                    + "Add the floor's seat IDs to library/seat-catalog.json.";
         }
         if (!preference.hasAnyPreference()) {
             return "No preferences were provided, so available catalog seats are sorted deterministically.";
@@ -184,59 +210,5 @@ public class LibrarySeatRecommendationService {
             List<String> matched,
             List<String> missing
     ) {
-    }
-
-    private record AvailableSeatSnapshot(
-            Set<String> seatIds,
-            Map<String, String> statusBySeatId,
-            int liveSeatItemsSeen,
-            String source
-    ) {
-
-        static AvailableSeatSnapshot from(LibrarySeatStatusResponse status) {
-            Map<String, String> statusBySeatId = new LinkedHashMap<>();
-            int liveSeatItemsSeen = 0;
-            for (LibrarySeatZone zone : status.zones()) {
-                liveSeatItemsSeen += zone.seats().size();
-                for (LibrarySeatItem seat : zone.seats()) {
-                    statusBySeatId.put(seat.id(), seat.status());
-                }
-            }
-
-            if (liveSeatItemsSeen > 0) {
-                Set<String> liveAvailable = new LinkedHashSet<>();
-                statusBySeatId.forEach((seatId, seatStatus) -> {
-                    if (isAvailable(seatStatus)) {
-                        liveAvailable.add(seatId);
-                    }
-                });
-                return new AvailableSeatSnapshot(
-                        liveAvailable, statusBySeatId, liveSeatItemsSeen, "live_seat_items");
-            }
-
-            Set<String> zoneAvailableSeatIds = new LinkedHashSet<>();
-            for (LibrarySeatZone zone : status.zones()) {
-                zoneAvailableSeatIds.addAll(zone.seatIds());
-                for (String seatId : zone.seatIds()) {
-                    statusBySeatId.put(seatId, "available");
-                }
-            }
-            String source = zoneAvailableSeatIds.isEmpty() ? "floor_only" : "live_available_seat_ids";
-            return new AvailableSeatSnapshot(zoneAvailableSeatIds, statusBySeatId, 0, source);
-        }
-
-        String statusOf(String seatId) {
-            return statusBySeatId.getOrDefault(seatId, "available");
-        }
-
-        private static boolean isAvailable(String status) {
-            if (status == null) {
-                return false;
-            }
-            String normalized = status.trim().toLowerCase(Locale.ROOT);
-            return normalized.equals("available")
-                    || normalized.equals("empty")
-                    || normalized.equals("free");
-        }
     }
 }

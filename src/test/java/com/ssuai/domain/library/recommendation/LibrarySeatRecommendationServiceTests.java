@@ -11,33 +11,37 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ssuai.domain.library.dto.LibraryFloor;
-import com.ssuai.domain.library.dto.LibrarySeatItem;
-import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
-import com.ssuai.domain.library.dto.LibrarySeatZone;
-import com.ssuai.domain.library.service.LibrarySeatService;
+import com.ssuai.domain.library.dto.LibraryRoomAvailableSeatsResponse;
+import com.ssuai.domain.library.dto.PyxisSeatInfo;
+import com.ssuai.domain.library.service.LibraryAvailableSeatsService;
 
 class LibrarySeatRecommendationServiceTests {
 
     private static final String SESSION_KEY = "library-session-key";
+    // Floor F2 rooms per FLOOR_ROOMS constant
+    private static final int ROOM_OPEN = 54;
+    private static final int ROOM_SQUARE = 53;
 
-    private LibrarySeatService seatService;
+    private LibraryAvailableSeatsService availableSeatsService;
     private LibrarySeatRecommendationService recommendationService;
 
     @BeforeEach
     void setUp() {
-        seatService = mock(LibrarySeatService.class);
+        availableSeatsService = mock(LibraryAvailableSeatsService.class);
         recommendationService = new LibrarySeatRecommendationService(
-                seatService, new LibrarySeatCatalogService());
+                availableSeatsService, new LibrarySeatCatalogService());
     }
 
     @Test
     void recommendsOnlyCurrentlyAvailableCatalogedSeats() {
-        when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithSeatItems(List.of(
-                        new LibrarySeatItem("1", "1", "available"),
-                        new LibrarySeatItem("2", "2", "available"),
-                        new LibrarySeatItem("76", "76", "occupied"),
-                        new LibrarySeatItem("101", "101", "available")
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_SQUARE, SESSION_KEY))
+                .thenReturn(emptyRoom(ROOM_SQUARE, "숭실스퀘어ON(2F)"));
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_OPEN, SESSION_KEY))
+                .thenReturn(roomWithSeats(ROOM_OPEN, "오픈열람실(2F)", List.of(
+                        new PyxisSeatInfo(1, "1", "일반용", "available", 0, 0),
+                        new PyxisSeatInfo(2, "2", "일반용", "available", 0, 0),
+                        new PyxisSeatInfo(76, "76", "일반용", "occupied", 0, 120),
+                        new PyxisSeatInfo(101, "101", "일반용", "available", 0, 0)
                 )));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
@@ -46,7 +50,7 @@ class LibrarySeatRecommendationServiceTests {
                 new LibrarySeatPreference(null, null, false, null, true, null),
                 10);
 
-        assertThat(response.availabilitySource()).isEqualTo("live_seat_items");
+        assertThat(response.availabilitySource()).isEqualTo("live_per_seat");
         assertThat(response.liveAvailableSeats()).isEqualTo(3);
         assertThat(response.liveSeatItemsSeen()).isEqualTo(4);
         assertThat(response.catalogMatchedAvailableSeats()).isEqualTo(3);
@@ -60,9 +64,14 @@ class LibrarySeatRecommendationServiceTests {
     }
 
     @Test
-    void usesAvailableSeatIdsWhenConnectorDoesNotExposeSeatItems() {
-        when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithSeatIds(List.of("10", "1")));
+    void returnsAvailableSeatsInSortedOrder() {
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_SQUARE, SESSION_KEY))
+                .thenReturn(emptyRoom(ROOM_SQUARE, "숭실스퀘어ON(2F)"));
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_OPEN, SESSION_KEY))
+                .thenReturn(roomWithSeats(ROOM_OPEN, "오픈열람실(2F)", List.of(
+                        new PyxisSeatInfo(10, "10", "일반용", "available", 0, 0),
+                        new PyxisSeatInfo(1, "1", "일반용", "available", 0, 0)
+                )));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
@@ -70,16 +79,22 @@ class LibrarySeatRecommendationServiceTests {
                 new LibrarySeatPreference(null, null, null, null, null, null),
                 2);
 
-        assertThat(response.availabilitySource()).isEqualTo("live_available_seat_ids");
+        assertThat(response.availabilitySource()).isEqualTo("live_per_seat");
         assertThat(response.recommendations())
                 .extracting(LibrarySeatRecommendation::seatId)
                 .containsExactly("1", "10");
     }
 
     @Test
-    void returnsNoRecommendationWhenOnlyFloorLevelAvailabilityExists() {
-        when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithoutSeatIds());
+    void returnsEmptyRecommendationsWhenAllSeatsOccupied() {
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_SQUARE, SESSION_KEY))
+                .thenReturn(roomWithSeats(ROOM_SQUARE, "숭실스퀘어ON(2F)", List.of(
+                        new PyxisSeatInfo(5, "5", "일반용", "occupied", 0, 60)
+                )));
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_OPEN, SESSION_KEY))
+                .thenReturn(roomWithSeats(ROOM_OPEN, "오픈열람실(2F)", List.of(
+                        new PyxisSeatInfo(100, "100", "일반용", "occupied", 0, 60)
+                )));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
@@ -88,15 +103,19 @@ class LibrarySeatRecommendationServiceTests {
                 null);
 
         assertThat(response.requestedLimit()).isEqualTo(5);
-        assertThat(response.availabilitySource()).isEqualTo("floor_only");
+        assertThat(response.availabilitySource()).isEqualTo("live_per_seat");
         assertThat(response.recommendations()).isEmpty();
-        assertThat(response.message()).contains("Pyxis seat-map API");
+        assertThat(response.message()).contains("occupied");
     }
 
     @Test
     void clampsLimitToTen() {
-        when(seatService.getSeatStatusForSession(LibraryFloor.F2, SESSION_KEY))
-                .thenReturn(statusWithSeatIds(List.of("1")));
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_SQUARE, SESSION_KEY))
+                .thenReturn(emptyRoom(ROOM_SQUARE, "숭실스퀘어ON(2F)"));
+        when(availableSeatsService.getRoomAvailableSeats(ROOM_OPEN, SESSION_KEY))
+                .thenReturn(roomWithSeats(ROOM_OPEN, "오픈열람실(2F)", List.of(
+                        new PyxisSeatInfo(1, "1", "일반용", "available", 0, 0)
+                )));
 
         LibrarySeatRecommendationResponse response = recommendationService.recommend(
                 LibraryFloor.F2,
@@ -107,42 +126,19 @@ class LibrarySeatRecommendationServiceTests {
         assertThat(response.requestedLimit()).isEqualTo(10);
     }
 
-    private static LibrarySeatStatusResponse statusWithSeatItems(List<LibrarySeatItem> seats) {
-        long available = seats.stream()
-                .filter(seat -> "available".equals(seat.status()))
-                .count();
-        return new LibrarySeatStatusResponse(
-                2,
-                "2F",
-                seats.size(),
-                (int) available,
-                seats.size() - (int) available,
-                0,
-                Instant.parse("2026-06-06T10:00:00Z"),
-                List.of(new LibrarySeatZone("2F Zone", seats.size(), (int) available, List.of(), seats)));
+    private static LibraryRoomAvailableSeatsResponse emptyRoom(int roomId, String name) {
+        return new LibraryRoomAvailableSeatsResponse(
+                roomId, name, 0, 0, 0, 0, 0, Instant.parse("2026-06-07T10:00:00Z"), List.of());
     }
 
-    private static LibrarySeatStatusResponse statusWithSeatIds(List<String> seatIds) {
-        return new LibrarySeatStatusResponse(
-                2,
-                "2F",
-                10,
-                seatIds.size(),
-                10 - seatIds.size(),
-                0,
-                Instant.parse("2026-06-06T10:00:00Z"),
-                List.of(new LibrarySeatZone("2F Zone", 10, seatIds.size(), seatIds, List.of())));
-    }
-
-    private static LibrarySeatStatusResponse statusWithoutSeatIds() {
-        return new LibrarySeatStatusResponse(
-                2,
-                "2F",
-                10,
-                3,
-                7,
-                0,
-                Instant.parse("2026-06-06T10:00:00Z"),
-                List.of(new LibrarySeatZone("2F Zone", 10, 3, List.of(), List.of())));
+    private static LibraryRoomAvailableSeatsResponse roomWithSeats(
+            int roomId, String name, List<PyxisSeatInfo> seats) {
+        int available = (int) seats.stream().filter(s -> "available".equals(s.status())).count();
+        int occupied = (int) seats.stream().filter(s -> "occupied".equals(s.status())).count();
+        int away = (int) seats.stream().filter(s -> "away".equals(s.status())).count();
+        int inactive = (int) seats.stream().filter(s -> "inactive".equals(s.status())).count();
+        return new LibraryRoomAvailableSeatsResponse(
+                roomId, name, seats.size(), available, occupied, away, inactive,
+                Instant.parse("2026-06-07T10:00:00Z"), seats);
     }
 }
