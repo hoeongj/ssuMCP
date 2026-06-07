@@ -169,7 +169,7 @@ ssuAI (웹)          Claude Desktop / Cursor / 그 외 MCP 클라이언트
 
 REST와 MCP 두 경로는 동일한 Service 레이어를 공유한다. MCP 도구가 별도 비즈니스 로직을 갖지 않는다.
 
-학칙·졸업·장학 질문은 공식 출처 추적형 하이브리드 RAG로 처리한다. 서버 시작 후와 주기 갱신 시
+학칙·졸업·장학 질문은 공식 출처 추적형 검색으로 처리한다(현재 키워드 lexical 스코어링, 벡터 임베딩 하이브리드는 예정). 서버 시작 후와 주기 갱신 시
 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 인메모리 corpus를 갱신하고, 도구 응답에는
 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`를 포함한다. 개인 졸업 판정은
 u-SAINT 데이터와 이 공식 근거를 함께 반환한다.
@@ -273,7 +273,7 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 | MCP 구현 | Spring AI 1.1 (Streamable HTTP) |
 | 크롤링 | Jsoup 1.22 |
 | u-SAINT 연동 | rusaint — JNA 5.18로 Rust 라이브러리를 JVM에 연결 |
-| 학사 RAG | 공식 출처 추적형 하이브리드 RAG (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus) |
+| 학사 정책 검색 | 공식 출처 추적형 lexical 검색 (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus; 벡터 하이브리드 예정) |
 | 인증 | JJWT 0.13 (HS256), AES-256-GCM |
 | 테스트 | JUnit 5, MockWebServer, WireMock 3 |
 | 인프라 | Oracle Cloud ARM64 · k3s · Traefik · ArgoCD · Helm · GHCR · Prometheus · Grafana |
