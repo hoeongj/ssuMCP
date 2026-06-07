@@ -48,6 +48,64 @@
   3.
 ```
 
+## 2026-06-07 — MCP auth state 소실: Kubernetes in-memory → Postgres 영속화 + peek-then-consume
+
+- 맥락:
+  - MCP 클라이언트(Claude Desktop)에서 `start_auth` 호출 → 도서관 로그인 폼 제출 →
+    "인증 요청이 만료되었거나 유효하지 않습니다" 오류 반복 발생.
+  - ArgoCD 배포 직후, pod rollout 중에 빈번했다.
+  - 비밀번호를 틀리면 폼이 비활성화되어 `start_auth`를 다시 호출해야 했다.
+- 증상:
+  - `INVALID_STATE` 응답이 state TTL(10분) 내에도 발생.
+  - 크리덴셜 실패 후 로그인 폼 disabled → 재시도 불가.
+- 처음 세운 가설 (틀린 방향):
+  - "이미 로그인된 세션이 남아서 충돌한다"고 의심 → 자동 로그아웃/재로그인을 고려했다.
+  - state TTL이 너무 짧다고 의심했다.
+- 실제 원인:
+  1. `McpAuthStateStore`가 in-memory `LinkedHashMap`으로 구현되어 있었다.
+     Kubernetes(k3s)에서 pod가 재시작(배포 rollout, OOM kill 등)되면 모든 in-memory 상태가 소실된다.
+     `start_auth`와 로그인 폼 제출 사이에 pod가 재시작되면 state를 찾을 수 없다.
+  2. `consumeState()`가 크리덴셜 검증 **전에** 호출되었다.
+     비밀번호가 틀려도 state가 삭제되어 폼이 비활성화됨.
+- 해결:
+  1. **V6 Flyway 마이그레이션**: `mcp_auth_states` Postgres 테이블 생성.
+     `McpAuthStateStore`를 `McpAuthStateRepository` JPA 기반으로 전면 재작성.
+     `@Scheduled(fixedDelay=3_600_000)` 만료 state 정리 스케줄러 추가.
+  2. **peek-then-consume 패턴**: 콜백에서 `peekState()` 먼저(조회만, 삭제 없음) →
+     크리덴셜 검증 → 성공 시에만 `consumeState()`.
+     크리덴셜 실패 시 state 보존 → 사용자 폼 재시도 가능.
+  3. **ssuAI 프론트**: `AUTH_FAILED` 시 폼 활성화 유지. `isRetryable()` 함수 도입.
+     오류 메시지에서 "start_auth 재호출" 안내 제거 → "다시 입력해 주세요."로 수정.
+- 핵심 파일:
+  - `src/main/resources/db/migration/V6__create_mcp_auth_states.sql`
+  - `src/main/java/com/ssuai/domain/auth/mcp/McpAuthStateEntity.java` (신규)
+  - `src/main/java/com/ssuai/domain/auth/mcp/McpAuthStateRepository.java` (신규)
+  - `src/main/java/com/ssuai/domain/auth/mcp/McpAuthStateStore.java` (전면 재작성)
+  - `src/main/java/com/ssuai/domain/auth/mcp/McpLibraryAuthController.java` (peek-then-consume)
+  - `ssuAI: app/mcp/auth/library/page.tsx`
+- 검증:
+  - `McpAuthStateStoreTests`: `peekReturnsEntryWithoutDeletingFromDb`, `peekThenConsumeSucceeds` 포함 전체 통과
+  - `McpLibraryAuthControllerTests`: `callbackAuthFailureReturns401AndPreservesState`,
+    `callbackSuccessConsumesStateLinksLibraryProviderAndReturns200` 통과
+  - ssuAI `page.test.tsx`: `form remains enabled after AUTH_FAILED` 통과
+- 포트폴리오 포인트:
+  - **Kubernetes stateless pod 함정**: in-memory 상태는 pod 생애주기에 종속된다.
+    auth state처럼 pod 경계를 넘어야 하는 데이터는 반드시 외부 persistent storage가 필요하다.
+    해결책보다 **"어떻게 진단했는가"** 자체가 면접 포인트다.
+  - **Redis vs Postgres 트레이드오프**: short-lived token에는 Redis(TTL 네이티브)가 표준.
+    그러나 이 서버는 McpAuthSession을 7일 장기 유지하는 구조이고 트래픽이 1인 MCP 서버라,
+    새 인프라 컴포넌트(Redis pod) 추가보다 기존 Postgres 활용으로 단순성을 선택한 이유 설명 가능.
+  - **peek-then-consume 패턴**: OAuth RFC 6749는 state 즉시 소진이 표준.
+    그러나 MCP 환경은 브라우저 쿠키가 없어 state가 세션 연결 역할까지 한다.
+    credential login 재시도 UX를 위한 불가피한 확장 설계임을 설명 가능.
+- 면접 예상 질문:
+  1. Kubernetes에서 in-memory 상태를 쓰면 안 되는 상황은 어떤 경우인가?
+     Pod 재시작 시 어떤 데이터가 소실되고 어떤 데이터가 보존되나?
+  2. OAuth state를 즉시 소진하는 것이 보안 표준인데, peek-then-consume은 어떤 보안 가정을 전제하는가?
+  3. short-lived token 저장에 Redis가 아닌 Postgres를 선택한 이유와 그 트레이드오프는?
+
+---
+
 ## 2026-06-06 — Grafana dashboard legend template broke ArgoCD Helm rendering
 
 - 맥락: 도서관 MCP action tool 등록 커밋은 CI와 이미지 빌드가 통과했고, ArgoCD Image Updater도
