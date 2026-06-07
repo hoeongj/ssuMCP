@@ -89,7 +89,7 @@ public class SystemPromptBuilder {
                필수 동시 호출: check_graduation_requirements + get_my_grades + get_my_chapel_info
                결과에서 unmet 항목의 completed/remaining 수치를 그대로 읽어 구체적으로 답해.
                예: "졸업학점 133 중 현재 89학점, **44학점** 더 필요해요."
-            4. 한 번에 최대 5개 도구까지 호출할 수 있어. 단, 불필요한 다중 호출은 하지 마.
+            4. 꼭 필요한 도구만 호출하고, 한 번에 불필요하게 많은 도구를 호출하지 마.
                단순 질문(학식, 시간표, 공지 하나)은 1개만 써. 졸업/종합 분석만 다중 호출.
             5. 할루시네이션 금지: 도구 결과에 없는 수치·이름·날짜는 절대 만들지 마.
                도구가 반환한 값 그대로만 사용해.
