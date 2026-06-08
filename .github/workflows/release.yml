@@ -34,7 +34,7 @@ jobs:
           mv build/libs/ssuai-backend-*.jar build/libs/ssuMCP-${{ steps.ver.outputs.VERSION }}.jar
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: build/libs/ssuMCP-${{ steps.ver.outputs.VERSION }}.jar
           generate_release_notes: true
