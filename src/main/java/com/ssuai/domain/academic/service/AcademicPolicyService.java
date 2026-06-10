@@ -48,7 +48,8 @@ public class AcademicPolicyService {
         String safeQuery = query == null ? "" : query.trim();
         String normalizedCategory = normalizeCategory(category);
         int safeLimit = safeLimit(limit);
-        AcademicPolicyCorpusSnapshot snapshot = corpusCache.snapshot(Boolean.TRUE.equals(live));
+        boolean callerRequestedLive = Boolean.TRUE.equals(live);
+        AcademicPolicyCorpusSnapshot snapshot = corpusCache.snapshot(callerRequestedLive);
         List<String> rawTokens = tokens(safeQuery);
         List<String> searchTokens = rawTokens.isEmpty() && normalizedCategory != null
                 ? List.of(normalizedCategory)
@@ -65,8 +66,10 @@ public class AcademicPolicyService {
         return new AcademicPolicySearchResponse(
                 safeQuery,
                 normalizedCategory,
-                snapshot.liveRequested(),
+                callerRequestedLive,
+                callerRequestedLive && snapshot.liveRequested(),
                 snapshot.fallbackUsed(),
+                corpusType(snapshot),
                 snapshot.fetchedAt(),
                 (int) snapshot.sources().stream()
                         .filter(source -> matchesCategory(source, normalizedCategory))
@@ -134,6 +137,18 @@ public class AcademicPolicyService {
 
     public AcademicQuestionClassifier classifier() {
         return classifier;
+    }
+
+    /**
+     * Corpus provenance: "live" only when the snapshot was fetched from official sources
+     * without any per-source fallback, "mixed" when live fetch partially fell back to the
+     * seed corpus, "seed" when the snapshot never touched the official sources.
+     */
+    private static String corpusType(AcademicPolicyCorpusSnapshot snapshot) {
+        if (!snapshot.liveRequested()) {
+            return "seed";
+        }
+        return snapshot.fallbackUsed() ? "mixed" : "live";
     }
 
     private static String buildScholarshipQuery(String query, List<String> facts) {

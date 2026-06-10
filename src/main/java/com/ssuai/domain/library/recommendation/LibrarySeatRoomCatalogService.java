@@ -28,11 +28,18 @@ public class LibrarySeatRoomCatalogService {
     }
 
     public LibrarySeatRoomCatalogResponse catalog(String floorCode, String roomCode, Boolean includeLayout) {
+        return catalog(floorCode, roomCode, includeLayout, null);
+    }
+
+    public LibrarySeatRoomCatalogResponse catalog(
+            String floorCode, String roomCode, Boolean includeLayout, Boolean debug) {
         boolean withLayout = Boolean.TRUE.equals(includeLayout);
+        boolean withCaptureNotes = Boolean.TRUE.equals(debug);
         List<LibrarySeatRoomCatalogEntry> filtered = rooms.stream()
                 .filter(room -> matchesFloor(room, floorCode))
                 .filter(room -> matchesRoom(room, roomCode))
                 .map(room -> withLayout ? room : room.withoutLayout())
+                .map(room -> withCaptureNotes ? room : room.withoutCaptureNotes())
                 .toList();
 
         return new LibrarySeatRoomCatalogResponse(

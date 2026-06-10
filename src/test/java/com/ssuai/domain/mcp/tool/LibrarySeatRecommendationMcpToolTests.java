@@ -52,10 +52,10 @@ class LibrarySeatRecommendationMcpToolTests {
                 .thenReturn(stub);
 
         McpPrivateToolResponse<LibrarySeatRecommendationResponse> response =
-                tool.recommendLibrarySeats(2, true, null, null, null, null, null, 5, null);
+                tool.recommendLibrarySeats(2, true, null, null, null, null, null, null, 5, null);
 
         assertThat(response.status()).isEqualTo("AUTH_REQUIRED");
-        verify(recommendationService, never()).recommend(any(), any(), any(), any());
+        verify(recommendationService, never()).recommend(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -64,15 +64,15 @@ class LibrarySeatRecommendationMcpToolTests {
         LibrarySeatRecommendationResponse stub = recommendationResponse();
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
                 .thenReturn(Optional.of(OPAQUE_KEY));
-        when(recommendationService.recommend(LibraryFloor.F2, OPAQUE_KEY, preference, 3))
+        when(recommendationService.recommend(LibraryFloor.F2, OPAQUE_KEY, preference, 3, null))
                 .thenReturn(stub);
 
         McpPrivateToolResponse<LibrarySeatRecommendationResponse> response =
-                tool.recommendLibrarySeats(2, true, true, false, null, null, false, 3, SESSION_ID);
+                tool.recommendLibrarySeats(2, true, true, false, null, null, false, null, 3, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data()).isSameAs(stub);
-        verify(recommendationService).recommend(LibraryFloor.F2, OPAQUE_KEY, preference, 3);
+        verify(recommendationService).recommend(LibraryFloor.F2, OPAQUE_KEY, preference, 3, null);
     }
 
     @Test
@@ -81,13 +81,13 @@ class LibrarySeatRecommendationMcpToolTests {
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
                 .thenReturn(Optional.of(OPAQUE_KEY));
-        when(recommendationService.recommend(any(), any(), any(), any()))
+        when(recommendationService.recommend(any(), any(), any(), any(), any()))
                 .thenThrow(new LibraryAuthRequiredException());
         when(authHelper.<LibrarySeatRecommendationResponse>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY))
                 .thenReturn(stub);
 
         McpPrivateToolResponse<LibrarySeatRecommendationResponse> response =
-                tool.recommendLibrarySeats(2, true, null, null, null, null, null, null, SESSION_ID);
+                tool.recommendLibrarySeats(2, true, null, null, null, null, null, null, null, SESSION_ID);
 
         assertThat(response.status()).isEqualTo("AUTH_REQUIRED");
     }
@@ -95,7 +95,7 @@ class LibrarySeatRecommendationMcpToolTests {
     @Test
     void rejectsUnsupportedFloorBeforeAuthentication() {
         assertThatThrownBy(() ->
-                tool.recommendLibrarySeats(4, null, null, null, null, null, null, null, SESSION_ID))
+                tool.recommendLibrarySeats(4, null, null, null, null, null, null, null, null, SESSION_ID))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("floor");
         verify(authHelper, never()).principalKey(any(), any());
@@ -105,11 +105,11 @@ class LibrarySeatRecommendationMcpToolTests {
     void connectorErrorMapsToFriendlyMessage() {
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
                 .thenReturn(Optional.of(OPAQUE_KEY));
-        when(recommendationService.recommend(any(), any(), any(), any()))
+        when(recommendationService.recommend(any(), any(), any(), any(), any()))
                 .thenThrow(new ConnectorTimeoutException());
 
         assertThatThrownBy(() ->
-                tool.recommendLibrarySeats(2, true, null, null, null, null, null, null, SESSION_ID))
+                tool.recommendLibrarySeats(2, true, null, null, null, null, null, null, null, SESSION_ID))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("library seats");
     }
@@ -125,6 +125,8 @@ class LibrarySeatRecommendationMcpToolTests {
                 1,
                 "live_seat_items",
                 "Recommendations are ranked by live availability and the requested seat preferences.",
+                List.of(),
+                List.of(),
                 List.of(new LibrarySeatRecommendation(
                 "2-A-001",
                 "1",

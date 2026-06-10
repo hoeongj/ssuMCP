@@ -15,10 +15,26 @@ class LibrarySeatCatalogMcpToolTests {
     @Test
     void returnsStaticCatalogWithoutAuthentication() {
         LibrarySeatRoomCatalogResponse response =
-                tool.getLibrarySeatCatalog("B1", null, true);
+                tool.getLibrarySeatCatalog("B1", null, true, null);
 
         assertThat(response.roomCount()).isEqualTo(1);
         assertThat(response.rooms().getFirst().roomCode()).isEqualTo("basement-reading-b1");
         assertThat(response.rooms().getFirst().textLayout()).isNotEmpty();
+    }
+
+    @Test
+    void hidesInternalCaptureNotesByDefault() {
+        LibrarySeatRoomCatalogResponse response =
+                tool.getLibrarySeatCatalog("B1", null, false, null);
+
+        assertThat(response.rooms().getFirst().captureNotes()).isEmpty();
+    }
+
+    @Test
+    void includesCaptureNotesOnlyInDebugMode() {
+        LibrarySeatRoomCatalogResponse response =
+                tool.getLibrarySeatCatalog("B1", null, false, true);
+
+        assertThat(response.rooms().getFirst().captureNotes()).isNotEmpty();
     }
 }

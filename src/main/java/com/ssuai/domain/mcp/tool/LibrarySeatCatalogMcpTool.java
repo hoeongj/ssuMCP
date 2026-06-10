@@ -28,8 +28,11 @@ public class LibrarySeatCatalogMcpTool {
             @ToolParam(description = "Optional roomCode filter, such as open-reading-2f.", required = false)
             String room_code,
             @ToolParam(description = "Whether to include compact textLayout lines. Default false.", required = false)
-            Boolean include_layout
+            Boolean include_layout,
+            @ToolParam(description = "Include internal captureNotes (data-collection TODOs). Default false.",
+                    required = false)
+            Boolean debug
     ) {
-        return roomCatalogService.catalog(floor_code, room_code, include_layout);
+        return roomCatalogService.catalog(floor_code, room_code, include_layout, debug);
     }
 }

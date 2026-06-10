@@ -47,7 +47,12 @@ class LibrarySeatRoomCatalogServiceTests {
         LibrarySeatRoomCatalogEntry room = response.rooms().getFirst();
         assertThat(room.graduateOnly()).isTrue();
         assertThat(room.audience()).isEqualTo("graduate_only");
-        assertThat(room.captureNotes()).anySatisfy(note ->
+        // captureNotes are internal data-collection notes — hidden unless debug=true
+        assertThat(room.captureNotes()).isEmpty();
+
+        LibrarySeatRoomCatalogResponse debugResponse =
+                catalogService.catalog(null, "graduate-reading", false, true);
+        assertThat(debugResponse.rooms().getFirst().captureNotes()).anySatisfy(note ->
                 assertThat(note).contains("해당유형은 사용이 불가능한 신분입니다"));
     }
 

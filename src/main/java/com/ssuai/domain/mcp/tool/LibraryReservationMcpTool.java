@@ -10,6 +10,7 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.recommendation.LibrarySeatCatalogService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
@@ -24,16 +25,19 @@ public class LibraryReservationMcpTool {
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
+    private final LibrarySeatCatalogService catalogService;
     private final McpAuthHelper authHelper;
 
     public LibraryReservationMcpTool(
             ActionService actionService,
             LibrarySessionStore sessionStore,
             LibraryReservationConnector reservationConnector,
+            LibrarySeatCatalogService catalogService,
             McpAuthHelper authHelper) {
         this.actionService = actionService;
         this.sessionStore = sessionStore;
         this.reservationConnector = reservationConnector;
+        this.catalogService = catalogService;
         this.authHelper = authHelper;
     }
 
@@ -82,8 +86,9 @@ public class LibraryReservationMcpTool {
         actionService.createPendingAction(sessionKey, ACTION_TYPE, request);
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
-                request.seatId() + "번 좌석 예약을 준비했습니다. "
-                        + "confirm_action을 호출해 최종 확인하세요.");
+                SeatDisplay.describe(catalogService, request.seatId()) + " 예약을 준비했습니다. "
+                        + "confirm_action을 호출해 최종 확인하세요."
+                        + SeatDisplay.graduateOnlyWarning(catalogService, request.seatId()));
     }
 
     private static long parseSeatId(String seatId) {

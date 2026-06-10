@@ -10,6 +10,7 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.recommendation.LibrarySeatCatalogService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
@@ -24,16 +25,19 @@ public class LibrarySwapMcpTool {
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
+    private final LibrarySeatCatalogService catalogService;
     private final McpAuthHelper authHelper;
 
     public LibrarySwapMcpTool(
             ActionService actionService,
             LibrarySessionStore sessionStore,
             LibraryReservationConnector reservationConnector,
+            LibrarySeatCatalogService catalogService,
             McpAuthHelper authHelper) {
         this.actionService = actionService;
         this.sessionStore = sessionStore;
         this.reservationConnector = reservationConnector;
+        this.catalogService = catalogService;
         this.authHelper = authHelper;
     }
 
@@ -76,9 +80,11 @@ public class LibrarySwapMcpTool {
 
         actionService.createPendingAction(sessionKey, ACTION_TYPE, new LibrarySwapRequest(current.chargeId(), newSeatId));
         return McpPrivateToolResponse.ok(mcpSessionId, String.format(
-                "현재 %s %s번(예약번호: %d) → 새 %d번 좌석으로 변경을 준비했습니다. "
-                        + "confirm_action을 호출해 최종 확인하세요.",
-                current.roomName(), current.seatCode(), current.chargeId(), newSeatId));
+                "현재 %s %s번(예약번호: %d) → 새 %s으로 변경을 준비했습니다. "
+                        + "confirm_action을 호출해 최종 확인하세요.%s",
+                current.roomName(), current.seatCode(), current.chargeId(),
+                SeatDisplay.describe(catalogService, newSeatId),
+                SeatDisplay.graduateOnlyWarning(catalogService, newSeatId)));
     }
 
     private static long parseSeatId(String seatId) {

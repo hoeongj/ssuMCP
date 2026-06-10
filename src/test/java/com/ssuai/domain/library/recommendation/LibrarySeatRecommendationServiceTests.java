@@ -126,6 +126,47 @@ class LibrarySeatRecommendationServiceTests {
         assertThat(response.requestedLimit()).isEqualTo(10);
     }
 
+    @Test
+    void excludesGraduateOnlySeatsByDefault() {
+        // Floor 6: label "1" resolves to 대학원열람실(graduate_only), label "91" to 마루열람실
+        when(availableSeatsService.getRoomAvailableSeats(57, SESSION_KEY))
+                .thenReturn(emptyRoom(57, "마루열람실(6F)"));
+        when(availableSeatsService.getRoomAvailableSeats(58, SESSION_KEY))
+                .thenReturn(roomWithSeats(58, "대학원열람실(6F)", List.of(
+                        new PyxisSeatInfo(1, "1", "일반용", "available", 0, 0),
+                        new PyxisSeatInfo(91, "91", "일반용", "available", 0, 0)
+                )));
+
+        LibrarySeatRecommendationResponse response = recommendationService.recommend(
+                LibraryFloor.F6, SESSION_KEY, null, 10);
+
+        assertThat(response.recommendations())
+                .extracting(LibrarySeatRecommendation::audience)
+                .doesNotContain(LibrarySeatRecommendationService.GRADUATE_ONLY_AUDIENCE);
+        assertThat(response.excludedRooms()).containsExactly("대학원열람실(6F)");
+        assertThat(response.warnings()).isEmpty();
+        assertThat(response.message()).contains("대학원");
+    }
+
+    @Test
+    void includesGraduateOnlySeatsWithWarningWhenExplicitlyRequested() {
+        when(availableSeatsService.getRoomAvailableSeats(57, SESSION_KEY))
+                .thenReturn(emptyRoom(57, "마루열람실(6F)"));
+        when(availableSeatsService.getRoomAvailableSeats(58, SESSION_KEY))
+                .thenReturn(roomWithSeats(58, "대학원열람실(6F)", List.of(
+                        new PyxisSeatInfo(1, "1", "일반용", "available", 0, 0)
+                )));
+
+        LibrarySeatRecommendationResponse response = recommendationService.recommend(
+                LibraryFloor.F6, SESSION_KEY, null, 10, true);
+
+        assertThat(response.recommendations())
+                .extracting(LibrarySeatRecommendation::audience)
+                .contains(LibrarySeatRecommendationService.GRADUATE_ONLY_AUDIENCE);
+        assertThat(response.excludedRooms()).isEmpty();
+        assertThat(response.warnings()).anyMatch(warning -> warning.contains("대학원"));
+    }
+
     private static LibraryRoomAvailableSeatsResponse emptyRoom(int roomId, String name) {
         return new LibraryRoomAvailableSeatsResponse(
                 roomId, name, 0, 0, 0, 0, 0, Instant.parse("2026-06-07T10:00:00Z"), List.of());

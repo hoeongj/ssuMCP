@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,7 @@ public class LibrarySeatRecommendationService {
     private static final int DEFAULT_LIMIT = 5;
     private static final int MAX_LIMIT = 10;
     private static final int BASE_AVAILABLE_SCORE = 100;
+    public static final String GRADUATE_ONLY_AUDIENCE = "graduate_only";
 
     private static final Map<LibraryFloor, List<Integer>> FLOOR_ROOMS;
 
@@ -47,7 +50,18 @@ public class LibrarySeatRecommendationService {
             LibrarySeatPreference preference,
             Integer requestedLimit
     ) {
+        return recommend(floor, sessionKey, preference, requestedLimit, null);
+    }
+
+    public LibrarySeatRecommendationResponse recommend(
+            LibraryFloor floor,
+            String sessionKey,
+            LibrarySeatPreference preference,
+            Integer requestedLimit,
+            Boolean includeGraduateOnly
+    ) {
         int limit = normalizeLimit(requestedLimit);
+        boolean withGraduateOnly = Boolean.TRUE.equals(includeGraduateOnly);
         LibrarySeatPreference effectivePreference = preference == null
                 ? new LibrarySeatPreference(null, null, null, null, null, null)
                 : preference;
@@ -70,9 +84,17 @@ public class LibrarySeatRecommendationService {
                 .count();
         int catalogSeatsOnFloor = catalogService.entriesFor(floor).size();
 
+        Set<String> excludedRooms = new LinkedHashSet<>();
         List<LibrarySeatRecommendation> allRecommendations = statusByLabel.entrySet().stream()
                 .filter(e -> "available".equals(e.getValue()))
                 .flatMap(e -> catalogService.find(floor, e.getKey()).stream()
+                        .filter(entry -> {
+                            if (!withGraduateOnly && GRADUATE_ONLY_AUDIENCE.equals(entry.audience())) {
+                                excludedRooms.add(entry.roomName());
+                                return false;
+                            }
+                            return true;
+                        })
                         .map(entry -> buildRecommendation(entry, e.getValue(), effectivePreference)))
                 .sorted(Comparator
                         .comparingInt(LibrarySeatRecommendation::score).reversed()
@@ -82,6 +104,12 @@ public class LibrarySeatRecommendationService {
         List<LibrarySeatRecommendation> limited = allRecommendations.stream()
                 .limit(limit)
                 .toList();
+
+        List<String> warnings = new ArrayList<>();
+        if (withGraduateOnly && limited.stream()
+                .anyMatch(item -> GRADUATE_ONLY_AUDIENCE.equals(item.audience()))) {
+            warnings.add("대학원열람실은 대학원생 전용일 수 있습니다. 이용 자격을 확인하세요.");
+        }
 
         String source = liveSeatItemsSeen > 0 ? "live_per_seat" : "no_seats_found";
         return new LibrarySeatRecommendationResponse(
@@ -93,7 +121,9 @@ public class LibrarySeatRecommendationService {
                 catalogSeatsOnFloor,
                 allRecommendations.size(),
                 source,
-                messageFor(liveSeatItemsSeen, liveAvailable, allRecommendations, effectivePreference),
+                messageFor(liveSeatItemsSeen, liveAvailable, allRecommendations, effectivePreference, excludedRooms),
+                List.copyOf(excludedRooms),
+                warnings,
                 limited);
     }
 
@@ -174,7 +204,12 @@ public class LibrarySeatRecommendationService {
             int liveSeatItemsSeen,
             int liveAvailable,
             List<LibrarySeatRecommendation> recommendations,
-            LibrarySeatPreference preference) {
+            LibrarySeatPreference preference,
+            Set<String> excludedRooms) {
+        String exclusionSuffix = excludedRooms.isEmpty()
+                ? ""
+                : " 대학원 전용 열람실(" + String.join(", ", excludedRooms)
+                        + ")은 기본 제외했습니다. 포함하려면 include_graduate_only=true.";
         if (liveSeatItemsSeen == 0) {
             return "No per-seat data was returned for the requested floor. The library may be closed.";
         }
@@ -182,13 +217,18 @@ public class LibrarySeatRecommendationService {
             return "All seats on this floor are currently occupied.";
         }
         if (recommendations.isEmpty()) {
+            if (!excludedRooms.isEmpty()) {
+                return "사용 가능한 좌석이 대학원 전용 열람실에만 있습니다." + exclusionSuffix;
+            }
             return "No available live seats matched the static catalog. "
                     + "Add the floor's seat IDs to library/seat-catalog.json.";
         }
         if (!preference.hasAnyPreference()) {
-            return "No preferences were provided, so available catalog seats are sorted deterministically.";
+            return "No preferences were provided, so available catalog seats are sorted deterministically."
+                    + exclusionSuffix;
         }
-        return "Recommendations are ranked by live availability and the requested seat preferences.";
+        return "Recommendations are ranked by live availability and the requested seat preferences."
+                + exclusionSuffix;
     }
 
     private static int normalizeLimit(Integer requestedLimit) {

@@ -47,6 +47,24 @@ public record LibrarySeatRoomCatalogEntry(
                 captureNotes);
     }
 
+    /** captureNotes are internal data-collection TODOs, not user-facing room metadata. */
+    public LibrarySeatRoomCatalogEntry withoutCaptureNotes() {
+        return new LibrarySeatRoomCatalogEntry(
+                floorCode,
+                floor,
+                roomCode,
+                roomName,
+                audience,
+                reservable,
+                graduateOnly,
+                containsFreeUseSeats,
+                seatIdPattern,
+                seatTypes,
+                zones,
+                textLayout,
+                List.of());
+    }
+
     private static String requireText(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " is required");

@@ -3,11 +3,20 @@ package com.ssuai.domain.academic.dto;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * @param liveRequested what the caller actually asked for (the {@code live} tool parameter)
+ * @param liveExecuted  whether this request was served by a corpus that was live-fetched
+ *                      because of this call (false when serving the cached/seed corpus)
+ * @param corpusType    provenance of the corpus snapshot used: "live", "mixed" (live with
+ *                      partial fallback), or "seed"
+ */
 public record AcademicPolicySearchResponse(
         String query,
         String category,
         boolean liveRequested,
+        boolean liveExecuted,
         boolean fallbackUsed,
+        String corpusType,
         Instant searchedAt,
         int totalSources,
         int totalMatches,

@@ -17,6 +17,7 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.recommendation.LibrarySeatCatalogService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
@@ -40,7 +41,8 @@ class LibrarySwapMcpToolTests {
         sessionStore = mock(LibrarySessionStore.class);
         reservationConnector = mock(LibraryReservationConnector.class);
         authHelper = mock(McpAuthHelper.class);
-        tool = new LibrarySwapMcpTool(actionService, sessionStore, reservationConnector, authHelper);
+        tool = new LibrarySwapMcpTool(
+                actionService, sessionStore, reservationConnector, new LibrarySeatCatalogService(), authHelper);
     }
 
     @Test
@@ -88,6 +90,30 @@ class LibrarySwapMcpToolTests {
 
     @Test
     void createsPendingSwapActionWithOldChargeAndNewSeat() {
+        // E2E fixture: current seat 마루열람실(6F) 89, target externalSeatId 3196 = visible seat 91
+        LibraryReservationResult current =
+                new LibraryReservationResult(1968552L, "마루열람실(6F)", "89", "09:00", "18:00");
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(SESSION_KEY));
+        when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
+        when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
+
+        McpPrivateToolResponse<String> response = tool.prepareSwapLibrarySeat(SESSION_ID, "3196");
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("1968552")
+                .contains("마루열람실(6F) 91번 좌석")
+                .contains("confirm_action")
+                .doesNotContain("3196번");
+        verify(actionService).createPendingAction(
+                SESSION_KEY,
+                LibrarySwapMcpTool.ACTION_TYPE,
+                new LibrarySwapRequest(1968552L, 3196L));
+    }
+
+    @Test
+    void fallsBackToSeatIdNoticeWhenSeatNotInCatalog() {
         LibraryReservationResult current =
                 new LibraryReservationResult(1966801L, "열람실", "74", "09:00", "18:00");
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
@@ -95,17 +121,28 @@ class LibrarySwapMcpToolTests {
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
 
-        McpPrivateToolResponse<String> response = tool.prepareSwapLibrarySeat(SESSION_ID, "3200");
+        McpPrivateToolResponse<String> response = tool.prepareSwapLibrarySeat(SESSION_ID, "999999");
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data())
-                .contains("1966801")
-                .contains("3200")
-                .contains("confirm_action");
-        verify(actionService).createPendingAction(
-                SESSION_KEY,
-                LibrarySwapMcpTool.ACTION_TYPE,
-                new LibrarySwapRequest(1966801L, 3200L));
+                .contains("좌석ID 999999")
+                .contains("좌석 번호 미확인");
+    }
+
+    @Test
+    void warnsWhenTargetSeatIsGraduateOnly() {
+        LibraryReservationResult current =
+                new LibraryReservationResult(1966801L, "마루열람실(6F)", "74", "09:00", "18:00");
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(SESSION_KEY));
+        when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
+        when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
+
+        // externalSeatId 3044 is in 대학원열람실(6F), audience graduate_only
+        McpPrivateToolResponse<String> response = tool.prepareSwapLibrarySeat(SESSION_ID, "3044");
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("대학원 전용");
     }
 
     @Test

@@ -15,11 +15,15 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.recommendation.LibrarySeatCatalogService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 
 class LibraryReservationMcpToolTests {
 
     private static final Instant EXPIRES = Instant.parse("2026-06-05T10:05:00Z");
+    private static final String SESSION_ID = "session-abc";
+    private static final String SESSION_KEY = "key-xyz";
+    private static final String TOKEN = "pyxis-tok";
 
     private ActionService actionService;
     private LibrarySessionStore sessionStore;
@@ -33,7 +37,8 @@ class LibraryReservationMcpToolTests {
         sessionStore = mock(LibrarySessionStore.class);
         reservationConnector = mock(LibraryReservationConnector.class);
         authHelper = mock(McpAuthHelper.class);
-        tool = new LibraryReservationMcpTool(actionService, sessionStore, reservationConnector, authHelper);
+        tool = new LibraryReservationMcpTool(
+                actionService, sessionStore, reservationConnector, new LibrarySeatCatalogService(), authHelper);
     }
 
     @Test
@@ -50,5 +55,38 @@ class LibraryReservationMcpToolTests {
         assertThat(response.provider()).isEqualTo("LIBRARY");
         verifyNoInteractions(sessionStore);
         verifyNoInteractions(actionService);
+    }
+
+    @Test
+    void prepareMessageShowsVisibleSeatLabelNotExternalSeatId() {
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(SESSION_KEY));
+        when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
+        when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+
+        // externalSeatId 3196 is visible seat 91 in 마루열람실(6F)
+        McpPrivateToolResponse<String> response =
+                tool.prepareReserveLibrarySeat(SESSION_ID, "3196");
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("마루열람실(6F) 91번 좌석")
+                .contains("confirm_action")
+                .doesNotContain("3196번");
+    }
+
+    @Test
+    void prepareWarnsWhenSeatIsGraduateOnly() {
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(SESSION_KEY));
+        when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
+        when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+
+        // externalSeatId 3044 is in 대학원열람실(6F), audience graduate_only
+        McpPrivateToolResponse<String> response =
+                tool.prepareReserveLibrarySeat(SESSION_ID, "3044");
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("대학원 전용");
     }
 }

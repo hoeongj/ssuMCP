@@ -28,6 +28,7 @@ public class LibrarySeatCatalogService {
 
     private final List<LibrarySeatCatalogEntry> entries;
     private final Map<Integer, Map<String, LibrarySeatCatalogEntry>> entriesByFloorAndSeatId;
+    private final Map<String, LibrarySeatCatalogEntry> entriesByExternalSeatId;
 
     public LibrarySeatCatalogService() {
         this(new ClassPathResource(DEFAULT_CATALOG_PATH), new ObjectMapper());
@@ -42,6 +43,12 @@ public class LibrarySeatCatalogService {
                                 entry -> normalizeSeatId(entry.seatId()),
                                 entry -> entry,
                                 (left, right) -> left)));
+        this.entriesByExternalSeatId = this.entries.stream()
+                .filter(entry -> entry.externalSeatId() != null && !entry.externalSeatId().isBlank())
+                .collect(Collectors.toUnmodifiableMap(
+                        entry -> entry.externalSeatId().trim(),
+                        entry -> entry,
+                        (left, right) -> left));
     }
 
     public List<LibrarySeatCatalogEntry> entriesFor(LibraryFloor floor) {
@@ -58,6 +65,18 @@ public class LibrarySeatCatalogService {
         return Optional.ofNullable(entriesByFloorAndSeatId
                 .getOrDefault(floor.code(), Map.of())
                 .get(normalizeSeatId(seatId)));
+    }
+
+    /**
+     * Looks up a catalog entry by the Pyxis-internal seat id (externalSeatId).
+     * The visible seat number users know is {@code label}/{@code seatId}, not this id,
+     * so user-facing messages must resolve through this lookup instead of echoing the raw id.
+     */
+    public Optional<LibrarySeatCatalogEntry> findByExternalSeatId(String externalSeatId) {
+        if (externalSeatId == null || externalSeatId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(entriesByExternalSeatId.get(externalSeatId.trim()));
     }
 
     private static List<LibrarySeatCatalogEntry> load(Resource catalogResource, ObjectMapper objectMapper) {
