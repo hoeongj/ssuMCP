@@ -58,7 +58,8 @@ class AcademicPolicyMcpToolsTests {
     @Test
     void searchDelegatesToPolicyService() {
         var expected = new AcademicPolicySearchResponse(
-                "장학", "scholarship", true, true, false, "live", Instant.parse("2026-06-06T00:00:00Z"),
+                "장학", "scholarship", true, true, false, "live", false, "lexical",
+                Instant.parse("2026-06-06T00:00:00Z"),
                 1, 0, List.of(), List.of());
         when(policyService.search("장학", "scholarship", 5, true)).thenReturn(expected);
 

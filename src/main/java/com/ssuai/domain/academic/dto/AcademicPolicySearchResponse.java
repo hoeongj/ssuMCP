@@ -9,6 +9,9 @@ import java.util.List;
  *                      because of this call (false when serving the cached/seed corpus)
  * @param corpusType    provenance of the corpus snapshot used: "live", "mixed" (live with
  *                      partial fallback), or "seed"
+ * @param embeddingUsed whether semantic (embedding) ranking contributed; false means the
+ *                      result is lexical-only (embeddings disabled or upstream unavailable)
+ * @param fusionMethod  "rrf" when lexical + vector rankings were fused, else "lexical"
  */
 public record AcademicPolicySearchResponse(
         String query,
@@ -17,6 +20,8 @@ public record AcademicPolicySearchResponse(
         boolean liveExecuted,
         boolean fallbackUsed,
         String corpusType,
+        boolean embeddingUsed,
+        String fusionMethod,
         Instant searchedAt,
         int totalSources,
         int totalMatches,

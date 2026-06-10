@@ -1,11 +1,12 @@
 package com.ssuai.domain.academic.service;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -18,21 +19,32 @@ import com.ssuai.domain.academic.dto.AcademicPolicyEvidence;
 import com.ssuai.domain.academic.dto.AcademicPolicySearchResponse;
 import com.ssuai.domain.academic.dto.AcademicPolicySource;
 import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse;
+import com.ssuai.domain.academic.embedding.AcademicEmbeddingClient;
+import com.ssuai.domain.academic.embedding.AcademicTextChunker;
+import com.ssuai.domain.academic.embedding.EmbeddedChunk;
+import com.ssuai.domain.academic.embedding.EmbeddedCorpus;
 
 @Service
 public class AcademicPolicyService {
 
     private static final int DEFAULT_LIMIT = 5;
     private static final int MAX_LIMIT = 10;
-    private static final int CHUNK_SIZE = 700;
-    private static final int CHUNK_OVERLAP = 160;
+    /** RRF smoothing constant. 60 is the industry default (Elastic/Azure/Mongo/Weaviate). */
+    private static final int RRF_K = 60;
+    /** Vector hits considered before fusion — bounded so a large corpus stays cheap. */
+    private static final int VECTOR_CANDIDATE_LIMIT = 50;
     private static final Pattern TOKEN_SPLIT = Pattern.compile("[\\s,.;:!?()\\[\\]{}<>\"'`/|]+");
 
     private final AcademicPolicyCorpusCache corpusCache;
+    private final AcademicEmbeddingClient embeddingClient;
     private final AcademicQuestionClassifier classifier;
 
-    public AcademicPolicyService(AcademicPolicyCorpusCache corpusCache, AcademicQuestionClassifier classifier) {
+    public AcademicPolicyService(
+            AcademicPolicyCorpusCache corpusCache,
+            AcademicEmbeddingClient embeddingClient,
+            AcademicQuestionClassifier classifier) {
         this.corpusCache = corpusCache;
+        this.embeddingClient = embeddingClient;
         this.classifier = classifier;
     }
 
@@ -49,18 +61,30 @@ public class AcademicPolicyService {
         String normalizedCategory = normalizeCategory(category);
         int safeLimit = safeLimit(limit);
         boolean callerRequestedLive = Boolean.TRUE.equals(live);
-        AcademicPolicyCorpusSnapshot snapshot = corpusCache.snapshot(callerRequestedLive);
+
+        EmbeddedCorpus corpus = corpusCache.embeddedCorpus(callerRequestedLive);
+        AcademicPolicyCorpusSnapshot snapshot = corpus.snapshot();
+
         List<String> rawTokens = tokens(safeQuery);
         List<String> searchTokens = rawTokens.isEmpty() && normalizedCategory != null
                 ? List.of(normalizedCategory)
                 : rawTokens;
 
-        List<AcademicPolicyEvidence> evidence = snapshot.documents().stream()
-                .filter(document -> matchesCategory(document.source(), normalizedCategory))
-                .flatMap(document -> scoreDocument(document, searchTokens).stream())
-                .sorted(Comparator.comparingInt(AcademicPolicyEvidence::score).reversed()
-                        .thenComparing(AcademicPolicyEvidence::title))
+        // Lexical ranking over chunks shared with the embedding path (same chunk indices).
+        List<Candidate> lexicalRanked = lexicalCandidates(snapshot, normalizedCategory, searchTokens);
+
+        float[] queryVector = (corpus.embeddingActive() && !safeQuery.isBlank())
+                ? embeddingClient.embedQuery(safeQuery)
+                : new float[0];
+        boolean embeddingUsed = queryVector.length > 0;
+        List<Candidate> ranked = embeddingUsed
+                ? fuseWithRrf(lexicalRanked, vectorCandidates(corpus, normalizedCategory, queryVector))
+                : lexicalRanked;
+
+        Map<String, AcademicPolicyDocument> documentsBySourceId = documentsBySourceId(snapshot);
+        List<AcademicPolicyEvidence> evidence = ranked.stream()
                 .limit(safeLimit)
+                .map(candidate -> toEvidence(candidate, documentsBySourceId))
                 .toList();
 
         return new AcademicPolicySearchResponse(
@@ -70,6 +94,8 @@ public class AcademicPolicyService {
                 callerRequestedLive && snapshot.liveRequested(),
                 snapshot.fallbackUsed(),
                 corpusType(snapshot),
+                embeddingUsed,
+                embeddingUsed ? "rrf" : "lexical",
                 snapshot.fetchedAt(),
                 (int) snapshot.sources().stream()
                         .filter(source -> matchesCategory(source, normalizedCategory))
@@ -139,55 +165,109 @@ public class AcademicPolicyService {
         return classifier;
     }
 
-    /**
-     * Corpus provenance: "live" only when the snapshot was fetched from official sources
-     * without any per-source fallback, "mixed" when live fetch partially fell back to the
-     * seed corpus, "seed" when the snapshot never touched the official sources.
-     */
-    private static String corpusType(AcademicPolicyCorpusSnapshot snapshot) {
-        if (!snapshot.liveRequested()) {
-            return "seed";
-        }
-        return snapshot.fallbackUsed() ? "mixed" : "live";
-    }
+    // --- ranking ---------------------------------------------------------
 
-    private static String buildScholarshipQuery(String query, List<String> facts) {
-        String safe = query == null || query.isBlank() ? "장학금 성적 기준 취득학점 중복수혜" : query.trim();
-        if (facts.isEmpty()) {
-            return safe;
-        }
-        return safe + " " + String.join(" ", facts);
-    }
-
-    private static List<AcademicPolicyEvidence> scoreDocument(AcademicPolicyDocument document, List<String> tokens) {
-        List<AcademicPolicyEvidence> matches = new ArrayList<>();
+    private List<Candidate> lexicalCandidates(
+            AcademicPolicyCorpusSnapshot snapshot, String category, List<String> tokens) {
         if (tokens.isEmpty()) {
-            return matches;
+            return List.of();
         }
-        List<String> chunks = chunks(document.text());
-        for (int index = 0; index < chunks.size(); index++) {
-            String chunk = chunks.get(index);
-            Score score = score(chunk, document.source(), tokens);
-            if (score.value() > 0) {
-                matches.add(new AcademicPolicyEvidence(
-                        document.source().id(),
-                        document.source().title(),
-                        document.source().category(),
-                        document.source().sourceType(),
-                        document.source().url(),
-                        document.source().revision(),
-                        document.source().effectiveDate(),
-                        document.live(),
-                        document.fallbackUsed(),
-                        document.fetchedAt(),
-                        score.value(),
-                        document.source().title() + " #" + (index + 1),
-                        snippet(chunk, score.matchedTerms()),
-                        score.matchedTerms()));
+        List<Candidate> candidates = new ArrayList<>();
+        for (AcademicPolicyDocument document : snapshot.documents()) {
+            if (!matchesCategory(document.source(), category)) {
+                continue;
+            }
+            List<String> chunks = AcademicTextChunker.chunk(document.text());
+            for (int index = 0; index < chunks.size(); index++) {
+                Score score = score(chunks.get(index), document.source(), tokens);
+                if (score.value() > 0) {
+                    candidates.add(new Candidate(
+                            document.source(), index, chunks.get(index), score.value(), score.matchedTerms()));
+                }
             }
         }
-        return matches;
+        candidates.sort(Comparator.comparingInt(Candidate::lexScore).reversed()
+                .thenComparing(candidate -> candidate.source().title()));
+        return candidates;
     }
+
+    private List<Candidate> vectorCandidates(EmbeddedCorpus corpus, String category, float[] queryVector) {
+        return corpus.chunks().stream()
+                .filter(chunk -> matchesCategory(chunk.source(), category))
+                .map(chunk -> Map.entry(chunk, chunk.cosineSimilarity(queryVector)))
+                .filter(entry -> entry.getValue() > 0)
+                .sorted(Map.Entry.<EmbeddedChunk, Double>comparingByValue().reversed())
+                .limit(VECTOR_CANDIDATE_LIMIT)
+                .map(entry -> {
+                    EmbeddedChunk chunk = entry.getKey();
+                    return new Candidate(chunk.source(), chunk.chunkIndex(), chunk.text(), 0, List.of());
+                })
+                .toList();
+    }
+
+    /**
+     * Reciprocal Rank Fusion: each candidate scores Σ 1/(k + rank) across the lexical
+     * and vector lists. Works on rank positions, not raw scores, so the two
+     * incomparable score scales need no normalization.
+     */
+    private List<Candidate> fuseWithRrf(List<Candidate> lexicalRanked, List<Candidate> vectorRanked) {
+        Map<String, Candidate> byKey = new LinkedHashMap<>();
+        Map<String, Double> rrfScore = new LinkedHashMap<>();
+
+        accumulate(lexicalRanked, byKey, rrfScore);
+        accumulate(vectorRanked, byKey, rrfScore);
+
+        return rrfScore.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed()
+                        .thenComparing(entry -> byKey.get(entry.getKey()).source().title()))
+                .map(entry -> byKey.get(entry.getKey()))
+                .toList();
+    }
+
+    private static void accumulate(
+            List<Candidate> ranked, Map<String, Candidate> byKey, Map<String, Double> rrfScore) {
+        for (int i = 0; i < ranked.size(); i++) {
+            Candidate candidate = ranked.get(i);
+            String key = candidate.source().id() + "#" + candidate.chunkIndex();
+            // Prefer the candidate that carries matched lexical terms for richer evidence.
+            byKey.merge(key, candidate, (existing, incoming) ->
+                    existing.matchedTerms().isEmpty() ? incoming : existing);
+            rrfScore.merge(key, 1.0 / (RRF_K + i + 1), Double::sum);
+        }
+    }
+
+    private static Map<String, AcademicPolicyDocument> documentsBySourceId(AcademicPolicyCorpusSnapshot snapshot) {
+        Map<String, AcademicPolicyDocument> map = new LinkedHashMap<>();
+        for (AcademicPolicyDocument document : snapshot.documents()) {
+            map.putIfAbsent(document.source().id(), document);
+        }
+        return map;
+    }
+
+    private static AcademicPolicyEvidence toEvidence(
+            Candidate candidate, Map<String, AcademicPolicyDocument> documentsBySourceId) {
+        AcademicPolicySource source = candidate.source();
+        AcademicPolicyDocument document = documentsBySourceId.get(source.id());
+        boolean live = document != null && document.live();
+        boolean fallbackUsed = document != null && document.fallbackUsed();
+        return new AcademicPolicyEvidence(
+                source.id(),
+                source.title(),
+                source.category(),
+                source.sourceType(),
+                source.url(),
+                source.revision(),
+                source.effectiveDate(),
+                live,
+                fallbackUsed,
+                document != null ? document.fetchedAt() : null,
+                candidate.lexScore(),
+                source.title() + " #" + (candidate.chunkIndex() + 1),
+                snippet(candidate.chunkText(), candidate.matchedTerms()),
+                candidate.matchedTerms());
+    }
+
+    // --- scoring helpers (lexical) --------------------------------------
 
     private static Score score(String chunk, AcademicPolicySource source, List<String> tokens) {
         String haystack = normalize(chunk + " " + source.title() + " " + source.category() + " " + source.note());
@@ -210,27 +290,6 @@ public class AcademicPolicyService {
             score += 2;
         }
         return new Score(score, List.copyOf(matched));
-    }
-
-    private static List<String> chunks(String text) {
-        if (text == null || text.isBlank()) {
-            return List.of();
-        }
-        String clean = text.replaceAll("\\s+", " ").trim();
-        if (clean.length() <= CHUNK_SIZE) {
-            return List.of(clean);
-        }
-        List<String> chunks = new ArrayList<>();
-        int start = 0;
-        while (start < clean.length()) {
-            int end = Math.min(clean.length(), start + CHUNK_SIZE);
-            chunks.add(clean.substring(start, end));
-            if (end == clean.length()) {
-                break;
-            }
-            start = Math.max(end - CHUNK_OVERLAP, start + 1);
-        }
-        return chunks;
     }
 
     private static String snippet(String chunk, List<String> matchedTerms) {
@@ -301,16 +360,41 @@ public class AcademicPolicyService {
                 || source.note().toLowerCase(Locale.ROOT).contains(category);
     }
 
-    private static int safeLimit(Integer limit) {
-        if (limit == null) {
-            return DEFAULT_LIMIT;
+    /**
+     * Corpus provenance: "live" only when fetched from official sources without any
+     * per-source fallback, "mixed" when live fetch partially fell back to seed,
+     * "seed" when the snapshot never touched the official sources.
+     */
+    private static String corpusType(AcademicPolicyCorpusSnapshot snapshot) {
+        if (!snapshot.liveRequested()) {
+            return "seed";
         }
-        if (limit < 1) {
+        return snapshot.fallbackUsed() ? "mixed" : "live";
+    }
+
+    private static String buildScholarshipQuery(String query, List<String> facts) {
+        String safe = query == null || query.isBlank() ? "장학금 성적 기준 취득학점 중복수혜" : query.trim();
+        if (facts.isEmpty()) {
+            return safe;
+        }
+        return safe + " " + String.join(" ", facts);
+    }
+
+    private static int safeLimit(Integer limit) {
+        if (limit == null || limit < 1) {
             return DEFAULT_LIMIT;
         }
         return Math.min(limit, MAX_LIMIT);
     }
 
     private record Score(int value, List<String> matchedTerms) {
+    }
+
+    private record Candidate(
+            AcademicPolicySource source,
+            int chunkIndex,
+            String chunkText,
+            int lexScore,
+            List<String> matchedTerms) {
     }
 }

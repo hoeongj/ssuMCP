@@ -123,6 +123,16 @@ ssuai:
     refresh-enabled: ${SSUAI_ACADEMIC_POLICY_REFRESH_ENABLED:true}
     initial-delay-ms: ${SSUAI_ACADEMIC_POLICY_INITIAL_DELAY_MS:30000}
     refresh-interval-ms: ${SSUAI_ACADEMIC_POLICY_REFRESH_INTERVAL_MS:21600000}
+    # Hybrid RAG: lexical + embedding cosine fused with RRF. OFF by default —
+    # when disabled or the embedding API is unreachable, search stays lexical-only.
+    # Reuses the Gemini OpenAI-compatible endpoint + key (no new credential).
+    embedding:
+      enabled: ${SSUAI_ACADEMIC_EMBEDDING_ENABLED:false}
+      base-url: ${SSUAI_GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
+      api-key: ${SSUAI_GEMINI_API_KEY:}
+      model: ${SSUAI_ACADEMIC_EMBEDDING_MODEL:gemini-embedding-001}
+      dimensions: ${SSUAI_ACADEMIC_EMBEDDING_DIMENSIONS:768}
+      batch-size: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE:96}
   library:
     session:
       # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream

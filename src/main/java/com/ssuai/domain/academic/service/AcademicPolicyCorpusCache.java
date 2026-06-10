@@ -1,11 +1,12 @@
 package com.ssuai.domain.academic.service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,6 +14,11 @@ import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.academic.connector.AcademicPolicyConnector;
 import com.ssuai.domain.academic.dto.AcademicPolicyCorpusSnapshot;
+import com.ssuai.domain.academic.dto.AcademicPolicyDocument;
+import com.ssuai.domain.academic.embedding.AcademicEmbeddingClient;
+import com.ssuai.domain.academic.embedding.AcademicTextChunker;
+import com.ssuai.domain.academic.embedding.EmbeddedChunk;
+import com.ssuai.domain.academic.embedding.EmbeddedCorpus;
 
 @Service
 public class AcademicPolicyCorpusCache {
@@ -20,19 +26,23 @@ public class AcademicPolicyCorpusCache {
     private static final Logger log = LoggerFactory.getLogger(AcademicPolicyCorpusCache.class);
 
     private final AcademicPolicyConnector connector;
-    private final AtomicReference<AcademicPolicyCorpusSnapshot> current = new AtomicReference<>();
+    private final AcademicEmbeddingClient embeddingClient;
+    private final AtomicReference<EmbeddedCorpus> current = new AtomicReference<>();
     private final boolean refreshEnabled;
 
     public AcademicPolicyCorpusCache(
             AcademicPolicyConnector connector,
-            @Value("${ssuai.academic-policy.refresh-enabled:true}") boolean refreshEnabled) {
+            AcademicEmbeddingClient embeddingClient,
+            @org.springframework.beans.factory.annotation.Value("${ssuai.academic-policy.refresh-enabled:true}")
+            boolean refreshEnabled) {
         this.connector = connector;
+        this.embeddingClient = embeddingClient;
         this.refreshEnabled = refreshEnabled;
     }
 
     @PostConstruct
     void loadFastFallbackCorpus() {
-        current.set(connector.loadCorpus(false));
+        current.set(enrich(connector.loadCorpus(false)));
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -47,39 +57,81 @@ public class AcademicPolicyCorpusCache {
         refreshFromOfficialSources();
     }
 
+    /** Backward-compatible accessor: the lexical search path only needs the snapshot. */
     public AcademicPolicyCorpusSnapshot snapshot(boolean forceOfficialRefresh) {
+        return embeddedCorpus(forceOfficialRefresh).snapshot();
+    }
+
+    /** Snapshot + per-chunk embeddings, read atomically so a live refresh cannot split them. */
+    public EmbeddedCorpus embeddedCorpus(boolean forceOfficialRefresh) {
         if (forceOfficialRefresh) {
             return refreshFromOfficialSources();
         }
-        AcademicPolicyCorpusSnapshot snapshot = current.get();
-        if (snapshot != null) {
-            return snapshot;
+        EmbeddedCorpus corpus = current.get();
+        if (corpus != null) {
+            return corpus;
         }
         return refreshFromOfficialSources();
     }
 
-    public AcademicPolicyCorpusSnapshot refreshFromOfficialSources() {
-        AcademicPolicyCorpusSnapshot existing = current.get();
+    public EmbeddedCorpus refreshFromOfficialSources() {
+        EmbeddedCorpus existing = current.get();
         if (!refreshEnabled) {
-            return existing != null ? existing : connector.loadCorpus(false);
+            return existing != null ? existing : enrich(connector.loadCorpus(false));
         }
         try {
-            AcademicPolicyCorpusSnapshot refreshed = connector.loadCorpus(true);
+            EmbeddedCorpus refreshed = enrich(connector.loadCorpus(true));
             current.set(refreshed);
             log.debug(
-                    "academic-policy corpus refreshed sources={} documents={} fallbackUsed={}",
-                    refreshed.sources().size(),
-                    refreshed.documents().size(),
-                    refreshed.fallbackUsed());
+                    "academic-policy corpus refreshed sources={} documents={} fallbackUsed={} embeddingActive={} chunks={}",
+                    refreshed.snapshot().sources().size(),
+                    refreshed.snapshot().documents().size(),
+                    refreshed.snapshot().fallbackUsed(),
+                    refreshed.embeddingActive(),
+                    refreshed.chunks().size());
             return refreshed;
         } catch (RuntimeException exception) {
             log.warn("academic-policy corpus refresh failed; using previous snapshot", exception);
             if (existing != null) {
                 return existing;
             }
-            AcademicPolicyCorpusSnapshot fallback = connector.loadCorpus(false);
+            EmbeddedCorpus fallback = enrich(connector.loadCorpus(false));
             current.set(fallback);
             return fallback;
         }
+    }
+
+    /**
+     * Chunks each document and embeds the chunks. On any embedding failure (disabled,
+     * no key, upstream error) returns a lexical-only corpus so search still works.
+     */
+    private EmbeddedCorpus enrich(AcademicPolicyCorpusSnapshot snapshot) {
+        if (!embeddingClient.isUsable()) {
+            return EmbeddedCorpus.lexicalOnly(snapshot);
+        }
+        List<String> chunkTexts = new ArrayList<>();
+        List<EmbeddedChunk> pending = new ArrayList<>();
+        for (AcademicPolicyDocument document : snapshot.documents()) {
+            List<String> chunks = AcademicTextChunker.chunk(document.text());
+            for (int index = 0; index < chunks.size(); index++) {
+                chunkTexts.add(chunks.get(index));
+                pending.add(new EmbeddedChunk(document.source(), index, chunks.get(index), null));
+            }
+        }
+        if (chunkTexts.isEmpty()) {
+            return EmbeddedCorpus.lexicalOnly(snapshot);
+        }
+        List<float[]> vectors = embeddingClient.embed(chunkTexts);
+        if (vectors.size() != chunkTexts.size()) {
+            log.warn("academic-policy embedding incomplete ({}/{}); using lexical-only",
+                    vectors.size(), chunkTexts.size());
+            return EmbeddedCorpus.lexicalOnly(snapshot);
+        }
+        List<EmbeddedChunk> embedded = new ArrayList<>(pending.size());
+        for (int i = 0; i < pending.size(); i++) {
+            EmbeddedChunk base = pending.get(i);
+            embedded.add(new EmbeddedChunk(base.source(), base.chunkIndex(), base.text(), vectors.get(i)));
+        }
+        return new EmbeddedCorpus(snapshot, embedded, true);
     }
 }
