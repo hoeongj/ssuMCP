@@ -21,6 +21,7 @@ import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
+import com.ssuai.global.resilience.PyxisResilience;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.library-reservation", havingValue = "real")
@@ -38,15 +39,18 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
     private final LibraryReservationProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    private final PyxisResilience pyxisResilience;
 
     public RealLibraryReservationConnector(
             LibraryReservationProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("libraryReservationRestClient") RestClient restClient
+            @Qualifier("libraryReservationRestClient") RestClient restClient,
+            PyxisResilience pyxisResilience
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+        this.pyxisResilience = pyxisResilience;
     }
 
     @Override
@@ -82,52 +86,58 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         parseDischargeResponse(response);
     }
 
+    // Reads are idempotent → circuit breaker + retry.
     private String get(String pyxisAuthToken, String path, String referer) {
-        try {
-            return restClient.get()
-                    .uri(path)
-                    .accept(org.springframework.http.MediaType.APPLICATION_JSON)
-                    .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
-                    .header("Referer", referer)
-                    .header("Accept-Language", "ko")
-                    .retrieve()
-                    .body(String.class);
-        } catch (ResourceAccessException exception) {
-            log.warn("library reservation connector timeout/io: path={}", path);
-            throw new ConnectorTimeoutException(exception);
-        } catch (RestClientResponseException exception) {
-            HttpStatusCode status = exception.getStatusCode();
-            log.warn("library reservation connector http error: path={} status={}", path, status.value());
-            if (status.is5xxServerError()) {
-                throw new ConnectorUnavailableException(exception);
+        return pyxisResilience.read(() -> {
+            try {
+                return restClient.get()
+                        .uri(path)
+                        .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
+                        .header("Referer", referer)
+                        .header("Accept-Language", "ko")
+                        .retrieve()
+                        .body(String.class);
+            } catch (ResourceAccessException exception) {
+                log.warn("library reservation connector timeout/io: path={}", path);
+                throw new ConnectorTimeoutException(exception);
+            } catch (RestClientResponseException exception) {
+                HttpStatusCode status = exception.getStatusCode();
+                log.warn("library reservation connector http error: path={} status={}", path, status.value());
+                if (status.is5xxServerError()) {
+                    throw new ConnectorUnavailableException(exception);
+                }
+                throw new ConnectorParseException(exception);
             }
-            throw new ConnectorParseException(exception);
-        }
+        });
     }
 
+    // Writes (reserve/discharge) are NOT idempotent → circuit breaker only, never retried.
     private String post(String pyxisAuthToken, String path, String referer, Map<String, Object> body) {
-        try {
-            return restClient.post()
-                    .uri(path)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
-                    .header("Referer", referer)
-                    .header("Accept-Language", "ko")
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
-        } catch (ResourceAccessException exception) {
-            log.warn("library reservation connector timeout/io: path={}", path);
-            throw new ConnectorTimeoutException(exception);
-        } catch (RestClientResponseException exception) {
-            HttpStatusCode status = exception.getStatusCode();
-            log.warn("library reservation connector http error: path={} status={}", path, status.value());
-            if (status.is5xxServerError()) {
-                throw new ConnectorUnavailableException(exception);
+        return pyxisResilience.write(() -> {
+            try {
+                return restClient.post()
+                        .uri(path)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header("Pyxis-Auth-Token", pyxisAuthToken != null ? pyxisAuthToken : "")
+                        .header("Referer", referer)
+                        .header("Accept-Language", "ko")
+                        .body(body)
+                        .retrieve()
+                        .body(String.class);
+            } catch (ResourceAccessException exception) {
+                log.warn("library reservation connector timeout/io: path={}", path);
+                throw new ConnectorTimeoutException(exception);
+            } catch (RestClientResponseException exception) {
+                HttpStatusCode status = exception.getStatusCode();
+                log.warn("library reservation connector http error: path={} status={}", path, status.value());
+                if (status.is5xxServerError()) {
+                    throw new ConnectorUnavailableException(exception);
+                }
+                throw new ConnectorParseException(exception);
             }
-            throw new ConnectorParseException(exception);
-        }
+        });
     }
 
     private Optional<LibraryReservationResult> parseCurrentChargeResponse(String body) {

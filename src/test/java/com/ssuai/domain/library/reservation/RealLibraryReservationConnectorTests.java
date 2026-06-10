@@ -25,6 +25,9 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.resilience.PyxisResilience;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class RealLibraryReservationConnectorTests {
 
@@ -42,7 +45,9 @@ class RealLibraryReservationConnectorTests {
         properties.setBaseUrl(BASE_URL);
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         server = MockRestServiceServer.bindTo(builder).build();
-        connector = new RealLibraryReservationConnector(properties, new ObjectMapper(), builder.build());
+        connector = new RealLibraryReservationConnector(
+                properties, new ObjectMapper(), builder.build(),
+                new PyxisResilience(new SimpleMeterRegistry()));
     }
 
     @Test
