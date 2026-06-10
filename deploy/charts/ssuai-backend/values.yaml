@@ -44,6 +44,10 @@ env:
   llmMaxProviderAttempts: "6"
   llmMaxModelsPerProvider: "2"
   llmMaxToolCalls: "2"
+  # Hybrid RAG embedding (lexical + Gemini cosine, RRF fusion). Reuses
+  # SSUAI_GEMINI_API_KEY from the secret; falls back to lexical-only if the
+  # embedding API is unreachable.
+  academicEmbeddingEnabled: "true"
 secretRef:
   enabled: true
   name: ssuai-backend-secrets

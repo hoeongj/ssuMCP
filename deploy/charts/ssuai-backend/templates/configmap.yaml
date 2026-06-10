@@ -32,3 +32,4 @@ data:
   SSUAI_LLM_MAX_PROVIDER_ATTEMPTS: {{ .Values.env.llmMaxProviderAttempts | quote }}
   SSUAI_LLM_MAX_MODELS_PER_PROVIDER: {{ .Values.env.llmMaxModelsPerProvider | quote }}
   SSUAI_LLM_MAX_TOOL_CALLS: {{ .Values.env.llmMaxToolCalls | quote }}
+  SSUAI_ACADEMIC_EMBEDDING_ENABLED: {{ .Values.env.academicEmbeddingEnabled | quote }}
