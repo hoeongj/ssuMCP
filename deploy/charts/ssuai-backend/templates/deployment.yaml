@@ -19,6 +19,11 @@ spec:
       {{- include "ssuai-backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        # Roll pods when the ConfigMap changes — envFrom values are read once
+        # at container start, so without this a ConfigMap-only sync would
+        # leave running pods on stale env vars.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "ssuai-backend.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/part-of: ssuai
