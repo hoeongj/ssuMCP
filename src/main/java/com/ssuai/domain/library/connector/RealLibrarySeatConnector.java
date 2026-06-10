@@ -30,6 +30,7 @@ import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.resilience.PyxisResilience;
 
 /**
  * Fetches real seat data from oasis.ssu.ac.kr via the Pyxis API.
@@ -75,15 +76,18 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     private final LibrarySeatProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    private final PyxisResilience pyxisResilience;
 
     public RealLibrarySeatConnector(
             LibrarySeatProperties properties,
             ObjectMapper objectMapper,
-            @Qualifier("librarySeatRestClient") RestClient restClient
+            @Qualifier("librarySeatRestClient") RestClient restClient,
+            PyxisResilience pyxisResilience
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = restClient;
+        this.pyxisResilience = pyxisResilience;
     }
 
     @Override
@@ -100,26 +104,28 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
 
     private String callUpstream(String token) {
         randomDelay();
-        try {
-            return restClient.get()
-                    .uri(SEAT_ROOMS_PATH)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .header("Pyxis-Auth-Token", token != null ? token : "")
-                    .header("Referer", properties.getReferer())
-                    .header("Accept-Language", "ko")
-                    .retrieve()
-                    .body(String.class);
-        } catch (ResourceAccessException exception) {
-            log.warn("library seat connector timeout/io");
-            throw alert(new ConnectorTimeoutException(exception));
-        } catch (RestClientResponseException exception) {
-            HttpStatusCode status = exception.getStatusCode();
-            log.warn("library seat connector http error: status={}", status.value());
-            if (status.is5xxServerError()) {
-                throw alert(new ConnectorUnavailableException(exception));
+        return pyxisResilience.read(() -> {
+            try {
+                return restClient.get()
+                        .uri(SEAT_ROOMS_PATH)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header("Pyxis-Auth-Token", token != null ? token : "")
+                        .header("Referer", properties.getReferer())
+                        .header("Accept-Language", "ko")
+                        .retrieve()
+                        .body(String.class);
+            } catch (ResourceAccessException exception) {
+                log.warn("library seat connector timeout/io");
+                throw alert(new ConnectorTimeoutException(exception));
+            } catch (RestClientResponseException exception) {
+                HttpStatusCode status = exception.getStatusCode();
+                log.warn("library seat connector http error: status={}", status.value());
+                if (status.is5xxServerError()) {
+                    throw alert(new ConnectorUnavailableException(exception));
+                }
+                throw new ConnectorParseException(exception);
             }
-            throw new ConnectorParseException(exception);
-        }
+        });
     }
 
     private static ConnectorException alert(ConnectorException exception) {
@@ -207,26 +213,28 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     }
 
     private String callRoomSeatsUpstream(int roomId, String token) {
-        try {
-            return restClient.get()
-                    .uri("/pyxis-api/1/api/rooms/{roomId}/seats", roomId)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .header("Pyxis-Auth-Token", token != null ? token : "")
-                    .header("Referer", properties.getReferer())
-                    .header("Accept-Language", "ko")
-                    .retrieve()
-                    .body(String.class);
-        } catch (ResourceAccessException exception) {
-            log.warn("library per-seat connector timeout/io: roomId={}", roomId);
-            throw alert(new ConnectorTimeoutException(exception));
-        } catch (RestClientResponseException exception) {
-            HttpStatusCode status = exception.getStatusCode();
-            log.warn("library per-seat connector http error: roomId={} status={}", roomId, status.value());
-            if (status.is5xxServerError()) {
-                throw alert(new ConnectorUnavailableException(exception));
+        return pyxisResilience.read(() -> {
+            try {
+                return restClient.get()
+                        .uri("/pyxis-api/1/api/rooms/{roomId}/seats", roomId)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .header("Pyxis-Auth-Token", token != null ? token : "")
+                        .header("Referer", properties.getReferer())
+                        .header("Accept-Language", "ko")
+                        .retrieve()
+                        .body(String.class);
+            } catch (ResourceAccessException exception) {
+                log.warn("library per-seat connector timeout/io: roomId={}", roomId);
+                throw alert(new ConnectorTimeoutException(exception));
+            } catch (RestClientResponseException exception) {
+                HttpStatusCode status = exception.getStatusCode();
+                log.warn("library per-seat connector http error: roomId={} status={}", roomId, status.value());
+                if (status.is5xxServerError()) {
+                    throw alert(new ConnectorUnavailableException(exception));
+                }
+                throw new ConnectorParseException(exception);
             }
-            throw new ConnectorParseException(exception);
-        }
+        });
     }
 
     private List<PyxisSeatInfo> parseRoomSeatsBody(String body) {
