@@ -2,6 +2,7 @@ package com.ssuai.domain.library.connector;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -28,6 +29,9 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.resilience.PyxisResilience;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class RealLibrarySeatConnectorTests {
 
@@ -45,7 +49,9 @@ class RealLibrarySeatConnectorTests {
         properties.setBaseUrl(BASE_URL);
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         server = MockRestServiceServer.bindTo(builder).build();
-        connector = new RealLibrarySeatConnector(properties, new ObjectMapper(), builder.build());
+        connector = new RealLibrarySeatConnector(
+                properties, new ObjectMapper(), builder.build(),
+                new PyxisResilience(new SimpleMeterRegistry()));
     }
 
     @Test
@@ -125,20 +131,23 @@ class RealLibrarySeatConnectorTests {
 
     @Test
     void serverErrorMapsToConnectorUnavailable() {
-        server.expect(requestTo(SEAT_ROOMS_URL))
+        // Reads are retried (3 attempts) before the transient failure surfaces.
+        server.expect(times(3), requestTo(SEAT_ROOMS_URL))
                 .andRespond(withServerError());
 
         assertThatThrownBy(() -> connector.fetchSeatStatus(LibraryFloor.F2, TOKEN))
                 .isInstanceOf(ConnectorUnavailableException.class);
+        server.verify();
     }
 
     @Test
     void ioExceptionMapsToConnectorTimeout() {
-        server.expect(requestTo(SEAT_ROOMS_URL))
+        server.expect(times(3), requestTo(SEAT_ROOMS_URL))
                 .andRespond(withException(new IOException("connect timed out")));
 
         assertThatThrownBy(() -> connector.fetchSeatStatus(LibraryFloor.F2, TOKEN))
                 .isInstanceOf(ConnectorTimeoutException.class);
+        server.verify();
     }
 
     private String loadFixture(String classpath) {
