@@ -163,6 +163,15 @@ ssuai:
       base-url: ${SSUAI_LIBRARY_RESERVATION_BASE_URL:https://oasis.ssu.ac.kr}
       referer: https://oasis.ssu.ac.kr/library-services/smuf/reading-rooms
       timeout: 10s
+    reservation-intent:
+      poll-interval: 1s
+      batch-size: 10
+      lease-seconds: 30s
+      default-expiry: 2h
+      backoff: 30s
+      max-backoff: 5m
+      relay-interval: 2s
+      relay-batch-size: 50
     book:
       # Per-(query,page,size) cache TTL. Longer than seat (which is volatile);
       # checkout state shifts on the order of minutes, not seconds.

@@ -29,6 +29,7 @@ import com.ssuai.domain.mcp.tool.LibraryRoomAvailableSeatsMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySeatRecommendationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySwapMcpTool;
+import com.ssuai.domain.mcp.tool.LibraryWaitMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
 import com.ssuai.domain.mcp.tool.McpAuthMcpTools;
@@ -50,7 +51,7 @@ class McpServerConfig {
      * Tools that write/modify state: auth session creation and logout.
      * All other tools are read-only data queries.
      */
-    private static final Set<String> DESTRUCTIVE_TOOLS = Set.of("logout_provider", "logout_all");
+    private static final Set<String> DESTRUCTIVE_TOOLS = Set.of("logout_provider", "logout_all", "cancel_library_wait");
     private static final Set<String> WRITE_TOOLS = Set.of(
             "start_auth",
             "logout_provider",
@@ -58,6 +59,8 @@ class McpServerConfig {
             "prepare_reserve_library_seat",
             "prepare_cancel_library_seat",
             "prepare_swap_library_seat",
+            "wait_for_library_seat",
+            "cancel_library_wait",
             "confirm_action");
 
     @Bean
@@ -77,6 +80,7 @@ class McpServerConfig {
             LibraryCancelMcpTool libraryCancelMcpTool,
             LibraryCurrentSeatMcpTool libraryCurrentSeatMcpTool,
             LibrarySwapMcpTool librarySwapMcpTool,
+            LibraryWaitMcpTool libraryWaitMcpTool,
             ConfirmActionMcpTool confirmActionMcpTool,
             SaintScheduleMcpTool saintScheduleMcpTool,
             SaintGradesMcpTool saintGradesMcpTool,
@@ -102,6 +106,7 @@ class McpServerConfig {
                         libraryCancelMcpTool,
                         libraryCurrentSeatMcpTool,
                         librarySwapMcpTool,
+                        libraryWaitMcpTool,
                         confirmActionMcpTool,
                         saintScheduleMcpTool,
                         saintGradesMcpTool,

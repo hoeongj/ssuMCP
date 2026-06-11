@@ -152,7 +152,8 @@ com.ssuai
     │   ├── dto         // LibraryBook, LibrarySeatStatusResponse, PyxisSeatInfo, LibraryRoomAvailableSeatsResponse 등
     │   ├── mcp         // LibraryToolContext — ThreadLocal 범위 (챗봇 경로 전용)
     │   ├── reservation // LibraryReservationConnector (mock / real)
-    │   │               // — reserve, discharge, getCurrentCharge (GET /pyxis-api/1/api/seat-charges)
+    │   │   └── intent  // LibraryReservationIntent queue, SKIP LOCKED worker, polling outbox
+    │   │               // reserve, discharge, getCurrentCharge (GET /pyxis-api/1/api/seat-charges)
     │   │               // ActionService — prepare_* → PREPARED pending action → confirm_action 실행
     │   └── service     // LibraryBookService (LRU 200, 60s TTL), LibrarySeatService (30s TTL)
     │                   // LibraryAvailableSeatsService, LibraryLoansService
@@ -164,7 +165,7 @@ com.ssuai
     │   └── service     // LmsAssignmentsService
     ├── mcp
     │   ├── config      // McpServerConfig — ToolCallbackProvider 빈 + tool readOnly/destructive 어노테이션
-    │   └── tool        // 모든 @Tool 클래스 (총 42개 — §11 참조)
+    │   └── tool        // 모든 @Tool 클래스 (총 45개 — §11 참조)
     │                   // McpAuthHelper — 공유 principalKey 조회 + AUTH_REQUIRED 팩토리
     ├── meal
     │   ├── config      // MealFanOutConfig — 주간 export용 parallelStream fan-out
@@ -468,11 +469,14 @@ Claude Desktop / IDE
 | `prepare_reserve_library_seat` | LIBRARY | `ActionService` | PREPARED pending action 생성 |
 | `prepare_swap_library_seat` | LIBRARY | `ActionService` | |
 | `prepare_cancel_library_seat` | LIBRARY | `ActionService` | |
+| `wait_for_library_seat` | LIBRARY | `LibraryReservationIntentTransactions` | 직접 등록 = 동의, worker가 좌석 발견 시 자율 예약 |
+| `get_library_wait_status` | LIBRARY | `LibraryReservationIntentTransactions` | 최신 intent 상태 조회 |
+| `cancel_library_wait` | LIBRARY | `LibraryReservationIntentTransactions` | WAITING intent 취소 |
 | `confirm_action` | LIBRARY | `ActionService` | upstream 실행 + audit 상태 전이 |
 | `get_my_library_seat` | LIBRARY | `LibraryReservationConnector` | GET /pyxis-api/1/api/seat-charges |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
-도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 35개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
+도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 36개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`·`cancel_library_wait`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
 
 학칙·졸업·장학 RAG는 `AcademicPolicyCorpusCache`가 공식 URL에서 주기적으로 갱신한
 인메모리 corpus를 사용한다. URL registry는 코드/설정에 고정하지만 본문은
@@ -484,7 +488,7 @@ Claude Desktop / IDE
 
 - **MCP 도구는 절대 Service 레이어를 우회하지 않는다.** 어떤 도구도 Connector나 Repository에 직접 접근하지 않는다. 이를 통해 REST와 MCP에서 캐싱·검증·에러 처리가 일관되게 유지된다.
 - 도구 입력과 출력은 명시적 DTO다 — 불투명한 map이나 출력으로서의 자유 형식 문자열이 없다.
-- Phase 4 쓰기 도구 (좌석 예약 등)는 감사 로깅이 포함된 `prepare_X` + `confirm_action` 2단계 패턴을 따른다 (ADR 0015, `docs/mcp-tools.md` §8 참조).
+- Phase 4 즉시 실행 쓰기 도구 (예약/이석/반납)는 감사 로깅이 포함된 `prepare_X` + `confirm_action` 2단계 패턴을 따른다 (ADR 0015, `docs/mcp-tools.md` §8 참조). 장기 대기형 `wait_for_library_seat`는 등록 호출 자체가 동의이며, intent queue와 outbox는 ADR 0022를 따른다.
 
 ---
 
@@ -523,13 +527,13 @@ Claude Desktop / IDE
 | SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
 | LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |
 | MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
-| **도서관 좌석 예약 에이전트** | 계획 중 | 별도 write 도구 + 확인 및 감사 정책 |
-| Action MCP 인프라 | 계획 중 | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md) |
+| **도서관 좌석 예약 에이전트** | 부분 구현 | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 |
+| Action MCP 인프라 | 구현 중 | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md), [ADR 0022](adr/0022-library-reservation-intent-queue.md) |
 | 알림 / 모바일 앱 | 미정 | 현재 API와 보안 계약 재사용 필요 |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. 확인·감사·잠금·시크릿 처리 규칙이 구현되기 전까지 출시할 수 없다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/ghdtjdwn/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
+**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. 기존 즉시 예약/이석/반납은 PR2 전까지 `prepare_*` + `confirm_action` 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/ghdtjdwn/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
 
 ---
 
@@ -582,7 +586,8 @@ domain.mcp.tool
 ├── SaintGradesMcpTool     // get_my_grades(mcp_session_id)
 ├── LmsAssignmentsMcpTool  // get_my_assignments(mcp_session_id)
 ├── LibrarySeatMcpTool     // get_library_seat_status(floor, mcp_session_id)
-└── LibraryLoansMcpTool    // get_my_library_loans(mcp_session_id)
+├── LibraryLoansMcpTool    // get_my_library_loans(mcp_session_id)
+└── LibraryWaitMcpTool     // wait_for_library_seat, get_library_wait_status, cancel_library_wait
 ```
 
 ### principalKey 매핑
