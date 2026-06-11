@@ -25,13 +25,17 @@
 |------|------|------|
 | start_auth(LIBRARY) + 로그인 | ✅ 완료 | |
 | get_library_available_seats | ✅ 완료 | 470개 available 좌석 확인 |
-| prepare_reserve → confirm_action | ✅ 완료 | seat 950 (오픈열람실 25번) 예약 성공, chargeId: 1967740 |
+| prepare_reserve → confirm_action | ✅ 완료 | seat 950 (오픈열람실 25번) 예약 성공, chargeId: 1967740 / 재검증 2026-06-11: seat 3321 (마루열람실 216번), chargeId 1984615 |
 | 점유 좌석 예약 시 실패 메시지 | ✅ 완료 | "좌석이 이미 선점됐습니다" 정상 반환 |
-| get_my_library_seat | 🔄 배포 대기 | chargeId=0 버그 수정 커밋 `c6ef8f3` CI 완료 후 배포 |
-| prepare_swap → confirm_action | ⏳ 미검증 | get_my_library_seat 수정 후 진행 |
-| prepare_cancel → confirm_action | ⏳ 미검증 | get_my_library_seat 수정 후 진행 |
+| get_my_library_seat | ✅ 완료 (2026-06-11) | 예약 표시·반납 후 "없음" 표시 모두 정상 |
+| recommend_library_seats | ✅ 완료 (2026-06-11) | 만석 층(2F, 0/354) 안내, 대학원열람실 기본 제외, label↔externalSeatId 매핑 정상 |
+| prepare_swap → confirm_action | ⚠️ 조건부 검증 (2026-06-11) | **미입실 배정 상태에서는 Pyxis가 discharge를 `warning.smuf.notAvailableState`로 거부** → swap 1단계(기존 좌석 반납)에서 안전하게 중단, 기존 예약 유지 확인. happy-path는 입실(게이트/NFC) 상태에서만 가능 — 사용자가 도서관에 있을 때 재검증 |
+| prepare_cancel → confirm_action | ⚠️ 조건부 검증 (2026-06-11) | 동일 사유로 미입실 상태 반납 불가 (T+1m/T+6m/T+13m 모두 거부). 미입실 좌석은 Pyxis가 자동취소(13:32 배정 → 14:1x 해제 확인) |
 
-현재 active reservation: seat 950 (오픈열람실 25번), 이용시간: 2026-06-06 22:10 ~ 2026-06-07 02:10
+2026-06-11 발견 (상세: `TROUBLESHOOTING.md`):
+- oasis 웹 클라이언트(`returnSeat$`)도 동일 endpoint/body를 쓰므로 요청 형태 문제 아님 — Pyxis 상태 규칙.
+- swap의 discharge-first 설계가 실패 시 기존 예약을 보존하는 안전한 실패 모드로 동작함을 실증.
+- pod 롤링 후에도 MCP 세션·provider 링크·도서관 토큰(V4/V5 Postgres 영속화)이 살아남는 것 실증. 단 Pyxis 토큰이 업스트림에서 needLogin으로 무효화되는 사례 관찰(원인 미확정 — 단일 세션 정책 의심).
 
 ## 완성 판정 기준
 
