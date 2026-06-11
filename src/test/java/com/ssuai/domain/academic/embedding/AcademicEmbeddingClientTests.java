@@ -39,4 +39,31 @@ class AcademicEmbeddingClientTests {
         assertThat(client.embed(List.of("anything"))).isEmpty();
         assertThat(client.embedQuery("anything")).isEmpty();
     }
+
+    @Test
+    void propertiesTrimCredentialAndUrlAtBinding() {
+        // kubectl create secret from echo without -n leaves a trailing LF; an LF
+        // inside an Authorization header crashes the JDK HttpClient (prod
+        // 2026-06-11). Binding must hand consumers clean values.
+        AcademicEmbeddingProperties props = new AcademicEmbeddingProperties();
+        props.setApiKey("AIzaSy-example\n");
+        props.setBaseUrl(" https://generativelanguage.googleapis.com/v1beta/openai \n");
+        props.setModel("gemini-embedding-001\n");
+        props.setEnabled(true);
+
+        assertThat(props.getApiKey()).isEqualTo("AIzaSy-example");
+        assertThat(props.getBaseUrl()).isEqualTo("https://generativelanguage.googleapis.com/v1beta/openai");
+        assertThat(props.getModel()).isEqualTo("gemini-embedding-001");
+        assertThat(props.isUsable()).isTrue();
+    }
+
+    @Test
+    void nullCredentialBindsToEmptyAndStaysUnusable() {
+        AcademicEmbeddingProperties props = new AcademicEmbeddingProperties();
+        props.setApiKey(null);
+        props.setEnabled(true);
+
+        assertThat(props.getApiKey()).isEmpty();
+        assertThat(props.isUsable()).isFalse();
+    }
 }

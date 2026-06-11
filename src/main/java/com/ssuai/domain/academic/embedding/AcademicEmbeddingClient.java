@@ -80,7 +80,11 @@ public class AcademicEmbeddingClient {
                 for (EmbeddingResponse.Item item : response.data()) {
                     vectors.add(normalizeAndTruncate(item.embedding(), properties.getDimensions()));
                 }
-            } catch (RestClientException exception) {
+            } catch (RuntimeException exception) {
+                // Catch wider than RestClientException: invalid header values (e.g. a
+                // credential with a stray newline) surface as IllegalArgumentException
+                // from the HTTP client and must degrade, not propagate. Log only the
+                // exception class — messages can echo header contents (the secret).
                 log.warn("academic-embedding: request failed ({}); falling back to lexical",
                         exception.getClass().getSimpleName());
                 return List.of();
