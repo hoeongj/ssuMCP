@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Calls Gemini's OpenAI-compatible {@code /embeddings} endpoint.
@@ -63,34 +63,80 @@ public class AcademicEmbeddingClient {
         List<float[]> vectors = new ArrayList<>(texts.size());
         int batchSize = Math.max(1, properties.getBatchSize());
         for (int start = 0; start < texts.size(); start += batchSize) {
+            // Pace consecutive batches: the Gemini free tier allows only a few
+            // embedding requests per minute, and firing the corpus batches
+            // back-to-back 429'd everything after the first (prod 2026-06-11).
+            if (start > 0 && !sleep(properties.getBatchIntervalMs())) {
+                return List.of();
+            }
             List<String> batch = texts.subList(start, Math.min(texts.size(), start + batchSize));
+            EmbeddingResponse response = embedBatchWithRetry(batch);
+            if (response == null || response.data() == null || response.data().size() != batch.size()) {
+                log.warn("academic-embedding: batch failed or had unexpected size; falling back to lexical");
+                return List.of();
+            }
+            for (EmbeddingResponse.Item item : response.data()) {
+                vectors.add(normalizeAndTruncate(item.embedding(), properties.getDimensions()));
+            }
+        }
+        return vectors;
+    }
+
+    /** Retries 429s with exponential backoff; any other failure gives up at once. */
+    private EmbeddingResponse embedBatchWithRetry(List<String> batch) {
+        long backoffMs = Math.max(1, properties.getRetryBackoffMs());
+        for (int attempt = 0; ; attempt++) {
             try {
-                EmbeddingResponse response = restClient.post()
-                        .uri("/embeddings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .accept(MediaType.APPLICATION_JSON)
-                        .headers(headers -> headers.setBearerAuth(properties.getApiKey()))
-                        .body(new EmbeddingRequest(properties.getModel(), batch, properties.getDimensions()))
-                        .retrieve()
-                        .body(EmbeddingResponse.class);
-                if (response == null || response.data() == null || response.data().size() != batch.size()) {
-                    log.warn("academic-embedding: unexpected response size; falling back to lexical");
-                    return List.of();
-                }
-                for (EmbeddingResponse.Item item : response.data()) {
-                    vectors.add(normalizeAndTruncate(item.embedding(), properties.getDimensions()));
-                }
+                return callEmbeddings(batch);
             } catch (RuntimeException exception) {
                 // Catch wider than RestClientException: invalid header values (e.g. a
                 // credential with a stray newline) surface as IllegalArgumentException
                 // from the HTTP client and must degrade, not propagate. Log only the
                 // exception class — messages can echo header contents (the secret).
-                log.warn("academic-embedding: request failed ({}); falling back to lexical",
-                        exception.getClass().getSimpleName());
-                return List.of();
+                if (!isRateLimited(exception) || attempt >= properties.getRetryMaxAttempts()) {
+                    log.warn("academic-embedding: request failed ({}); falling back to lexical",
+                            exception.getClass().getSimpleName());
+                    return null;
+                }
+                log.info("academic-embedding: rate limited; retrying in {}ms (attempt {}/{})",
+                        backoffMs, attempt + 1, properties.getRetryMaxAttempts());
+                if (!sleep(backoffMs)) {
+                    return null;
+                }
+                backoffMs *= 2;
             }
         }
-        return vectors;
+    }
+
+    // Visible for tests: overriding this simulates upstream behaviour without HTTP.
+    EmbeddingResponse callEmbeddings(List<String> batch) {
+        return restClient.post()
+                .uri("/embeddings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> headers.setBearerAuth(properties.getApiKey()))
+                .body(new EmbeddingRequest(properties.getModel(), batch, properties.getDimensions()))
+                .retrieve()
+                .body(EmbeddingResponse.class);
+    }
+
+    private static boolean isRateLimited(RuntimeException exception) {
+        return exception instanceof RestClientResponseException response
+                && response.getStatusCode().value() == 429;
+    }
+
+    /** Interruptible sleep; false = interrupted, caller abandons the refresh. */
+    private static boolean sleep(long millis) {
+        if (millis <= 0) {
+            return true;
+        }
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     static float[] normalizeAndTruncate(List<Double> raw, int dimensions) {

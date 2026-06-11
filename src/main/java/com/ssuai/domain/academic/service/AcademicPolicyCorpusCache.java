@@ -42,12 +42,18 @@ public class AcademicPolicyCorpusCache {
 
     @PostConstruct
     void loadFastFallbackCorpus() {
-        current.set(enrich(connector.loadCorpus(false)));
+        // Lexical-only on the bean-init path: no embedding network calls during
+        // startup, so a slow or rate-limited embedding API can never delay or
+        // crash boot. The post-startup refresh below embeds with pacing.
+        current.set(EmbeddedCorpus.lexicalOnly(connector.loadCorpus(false)));
     }
 
     @EventListener(ApplicationReadyEvent.class)
     void refreshAfterStartup() {
-        refreshFromOfficialSources();
+        // Background thread: this listener runs before the readiness probe flips
+        // to ACCEPTING_TRAFFIC, and a paced embedding refresh (batch interval +
+        // 429 backoff) can legitimately take minutes.
+        Thread.ofVirtual().name("academic-corpus-refresh").start(this::refreshFromOfficialSources);
     }
 
     @Scheduled(
