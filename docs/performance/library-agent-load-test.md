@@ -49,8 +49,8 @@ MCP JSON-RPC + Tomcat + 직렬화 오버헤드다. max 1.31s가 진짜 업스트
 `RealLibrarySeatConnector`의 good-citizen jitter 300~1200ms + WireMock 120ms + 처리.
 **50 RPS에서 30초당 층당 1번만 풀 비용을 내는 캐시 설계가 동작함을 수치로 확인.**
 바꿔 말하면 같은 5분간 WireMock(=Pyxis)이 받은 콜은 수십 건 수준 — 업스트림 보호 L1
-전략의 효과가 이미 read 경로에 있다. (남은 것: 캐시 만료 순간 동시 미스를 1콜로 합치는
-single-flight — 백로그)
+전략의 효과가 이미 read 경로에 있다. 이후 `LibraryRoomSeatCache`를 추가해 per-seat live room
+read의 캐시 만료 순간 동시 miss도 room별 1콜로 합쳐지도록 보강했다(PR #39, 2026-06-12).
 
 ### 3-2. write baseline — prepare→confirm 100명 동시 burst
 

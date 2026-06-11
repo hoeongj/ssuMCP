@@ -315,6 +315,20 @@ class MockMealConnector implements MealConnector { ... }
 도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 특히 도서관 좌석 캐시는 요청이 인증되어 있는지 여부를 키에 포함시켜, MCP나 REST 익명 호출자가 인증된 호출자의 캐시 결과를 받지 못하도록 한다.
 좌석 read 캐시는 모두 single-flight(request coalescing)를 포함한다. 캐시 만료 직후 같은 층/열람실을 동시에 요청해도 첫 요청만 Pyxis로 나가고 나머지는 같은 `CompletableFuture` 결과를 기다린다.
 
+### 결정 기록 — 도서관 live room read single-flight (2026-06-12)
+
+**배경**: EPIC 3 intent worker와 MCP read tool이 동시에 같은 열람실의 live 좌석 상태를 조회하면, 짧은 시간에 같은 Pyxis room-seats 호출이 반복될 수 있다. 이 서버는 단일 k3s 노드와 단일 backend pod가 같은 egress IP로 학교 시스템을 호출하므로, read 경로부터 upstream에 좋은 시민으로 동작해야 한다.
+
+**대안과 기각 이유**:
+
+- TTL 캐시만 유지: 평균 호출량은 줄지만 TTL 만료 직후 동시 miss가 생기면 thundering herd가 그대로 발생한다.
+- Spring Cache/Caffeine 추상화로 교체: 코드량은 줄지만 현재 필요한 인증 경계 키, in-flight future 공유, 예외 시 캐시 오염 방지를 명시적으로 드러내기 어렵다.
+- Redis/Redisson 공유 캐시 선도입: multi-pod 전환 전에는 인프라 비용이 크고, Redis 도입은 EPIC 4에서 분산 락·SSE 순서와 함께 별도 검증하는 편이 더 증명 가능하다.
+
+**선정 이유와 근거**: 기존 인프로세스 캐시 패턴을 유지하면서 누락된 per-seat live room read만 `LibraryRoomSeatCache`로 분리했다. request coalescing/single-flight는 동일 키의 concurrent miss를 하나의 upstream call로 합치는 표준 방어 패턴이며, 프로젝트의 "공유 egress IP에서 외부 레거시 시스템 보호" 포트폴리오 서사와 직접 연결된다. 참고 근거: https://dev.to/serifcolakel/singleflight-smart-request-deduplication-33og, https://oneuptime.com/blog/post/2026-01-25-request-coalescing/view.
+
+**동작 방식**: key는 `roomId + 인증 경계`다. fresh value가 있으면 즉시 반환하고, miss 상태에서 첫 요청은 `CompletableFuture`를 `inFlight` 맵에 등록한 뒤 Pyxis를 호출한다. 같은 key의 후속 요청은 새 Pyxis 호출을 만들지 않고 같은 future를 기다린다. 성공하면 5초 TTL 캐시에 저장하고, 실패하면 future만 완료하며 실패 결과를 캐시에 남기지 않는다. 완료 후에는 `inFlight` 항목을 제거해 다음 TTL 만료 시 다시 하나의 대표 요청만 upstream으로 나간다.
+
 ---
 
 ## 8. 설정 및 프로파일
