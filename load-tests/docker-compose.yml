@@ -1,0 +1,108 @@
+# Load-test stack for the library seat agent (EPIC 1 baseline).
+#
+# Never points at real school systems: Pyxis (oasis.ssu.ac.kr) is replaced by
+# WireMock with latency/fault injection, so the backend's real connector +
+# resilience path is exercised without sending a single request upstream.
+#
+#   docker compose up -d                      # postgres + wiremock + prometheus + grafana
+#   # run the backend on the host (see README.md), then:
+#   docker compose run --rm k6 run -o experimental-prometheus-rw /scripts/library-seat-read-baseline.js
+#
+# The optional "full" profile builds and runs the backend in a container too:
+#   docker compose --profile full up -d --build
+
+name: ssumcp-loadtest
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ssuai
+      POSTGRES_USER: ssuai
+      POSTGRES_PASSWORD: loadtest
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssuai -d ssuai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  wiremock:
+    image: wiremock/wiremock:3.13.0
+    command: ["--disable-banner", "--global-response-templating"]
+    volumes:
+      - ./wiremock/mappings:/home/wiremock/mappings:ro
+      - ./wiremock/__files:/home/wiremock/__files:ro
+    ports:
+      - "8089:8080"
+
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # k6 pushes its metrics here via remote write (experimental-prometheus-rw).
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  k6:
+    image: grafana/k6:1.0.0
+    profiles: ["cli"]
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(99),p(95),p(90),med,avg,min,max"
+      BASE_URL: http://host.docker.internal:8080
+      WIREMOCK_URL: http://wiremock:8080
+    volumes:
+      - ./k6:/scripts:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - prometheus
+      - wiremock
+
+  backend:
+    profiles: ["full"]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      SSUAI_DB_URL: jdbc:postgresql://postgres:5432/ssuai
+      SSUAI_DB_USERNAME: ssuai
+      SSUAI_DB_PASSWORD: loadtest
+      SSUAI_FRONTEND_ORIGIN: http://localhost:3000
+      SSUAI_CONNECTOR_LIBRARY_SEAT: real
+      SSUAI_CONNECTOR_LIBRARY_RESERVATION: real
+      SSUAI_LIBRARY_SEAT_BASE_URL: http://wiremock:8080
+      SSUAI_LIBRARY_RESERVATION_BASE_URL: http://wiremock:8080
+      SSUAI_LIBRARY_LOGIN_BASE_URL: http://wiremock:8080
+      # chat=llm mirrors prod AND is required with real library connectors:
+      # the shared com.fasterxml ObjectMapper bean (primaryObjectMapper) is
+      # only registered when the chat connector is llm. No LLM key needed —
+      # providers are constructed lazily and chat is not load-tested here.
+      SSUAI_CONNECTOR_CHAT: llm
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      wiremock:
+        condition: service_started

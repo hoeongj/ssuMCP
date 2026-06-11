@@ -1,0 +1,21 @@
+{
+  "name": "Pyxis credential login — always accepts (load-test only)",
+  "request": {
+    "method": "POST",
+    "urlPath": "/pyxis-api/api/login"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json;charset=UTF-8" },
+    "jsonBody": {
+      "success": true,
+      "code": "success.loggedIn",
+      "message": "로그인되었습니다.",
+      "data": {
+        "accessToken": "LOADTEST-{{randomValue length=24 type='ALPHANUMERIC'}}",
+        "isPrivacyPolicyAgree": true
+      }
+    },
+    "delayDistribution": { "type": "lognormal", "median": 150, "sigma": 0.35 }
+  }
+}

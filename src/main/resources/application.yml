@@ -140,6 +140,10 @@ ssuai:
       # unlimited. 7d covers the common JVM-restart-between-sessions case.
       ttl: 7d
       encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+    login:
+      # Pyxis credential login origin. Production uses real oasis; the
+      # load-test stack overrides this to point logins at WireMock.
+      base-url: ${SSUAI_LIBRARY_LOGIN_BASE_URL:https://oasis.ssu.ac.kr}
     seat:
       # Per-floor cache TTL. Short enough that students get fresh data
       # before walking over, long enough that the library page is not

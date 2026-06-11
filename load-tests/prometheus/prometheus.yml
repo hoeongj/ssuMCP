@@ -1,0 +1,29 @@
+# Prometheus for the load-test stack.
+#
+# Two sources land here:
+#  1. Backend Micrometer metrics (scraped): RED metrics, pyxis circuit
+#     breaker state, library.action audit counters.
+#  2. k6 metrics (pushed): the k6 service runs with
+#     -o experimental-prometheus-rw against /api/v1/write
+#     (enabled by --web.enable-remote-write-receiver).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Backend running on the host JVM (default workflow).
+  - job_name: ssumcp-backend-host
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  # Backend running inside compose (--profile full). Target is down unless
+  # that profile is active — Prometheus just marks it as such.
+  - job_name: ssumcp-backend-container
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

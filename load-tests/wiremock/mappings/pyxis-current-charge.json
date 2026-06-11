@@ -1,0 +1,18 @@
+{
+  "name": "Pyxis current charge — no active reservation",
+  "request": {
+    "method": "GET",
+    "urlPath": "/pyxis-api/1/api/seat-charges"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json;charset=UTF-8" },
+    "jsonBody": {
+      "success": true,
+      "code": "success.noRecord",
+      "message": "데이터가 없습니다.",
+      "data": null
+    },
+    "delayDistribution": { "type": "lognormal", "median": 100, "sigma": 0.35 }
+  }
+}

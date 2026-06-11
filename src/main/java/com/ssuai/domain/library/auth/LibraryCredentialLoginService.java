@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -30,20 +31,22 @@ public class LibraryCredentialLoginService {
     private static final Logger log = LoggerFactory.getLogger(LibraryCredentialLoginService.class);
 
     private static final String LOGIN_PATH = "/pyxis-api/api/login";
-    private static final String OASIS_BASE = "https://oasis.ssu.ac.kr";
     private static final String OASIS_REFERER = "https://oasis.ssu.ac.kr/login";
+    private static final String OASIS_ORIGIN = "https://oasis.ssu.ac.kr";
 
     private final LibrarySessionStore sessionStore;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public LibraryCredentialLoginService(LibrarySessionStore sessionStore) {
+    public LibraryCredentialLoginService(
+            LibrarySessionStore sessionStore,
+            @Value("${ssuai.library.login.base-url:https://oasis.ssu.ac.kr}") String baseUrl) {
         this.sessionStore = sessionStore;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
         factory.setReadTimeout((int) Duration.ofSeconds(10).toMillis());
         this.restClient = RestClient.builder()
-                .baseUrl(OASIS_BASE)
+                .baseUrl(baseUrl)
                 .requestFactory(factory)
                 .build();
     }
@@ -70,7 +73,7 @@ public class LibraryCredentialLoginService {
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .header("Referer", OASIS_REFERER)
-                    .header("Origin", OASIS_BASE)
+                    .header("Origin", OASIS_ORIGIN)
                     .body(new OasisLoginBody(request.loginId(), request.password(), false, false))
                     .retrieve()
                     .body(String.class);
