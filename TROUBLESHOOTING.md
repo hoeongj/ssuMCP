@@ -48,6 +48,63 @@
   3.
 ```
 
+## 2026-06-12 — docs/test-only 이미지가 ArgoCD Image Updater rollout으로 이어지지 않음
+
+- 맥락:
+  - `library_action_total` 터미널 outcome 태그 백로그를 정리하면서 운영 코드는 이미 존재했고,
+    PR #37은 회귀 테스트와 문서 수정만 포함했다.
+  - main push 후 CI가 `ghcr.io/ghdtjdwn/ssumcp:sha-48e91f3ae59a4a642bd589ee9b768bdc8a76a12f`
+    이미지를 정상 push했다. 예상은 Image Updater가 Helm values의 image tag를 새 sha로 바꾸고
+    ArgoCD가 rollout하는 흐름이었다.
+- 증상:
+  - CI image job은 성공했고 새 tag/digest(`sha256:2560574...`)가 GHCR에 존재했다.
+  - 그런데 Image Updater 로그는 반복해서 `images_updated=0 errors=0`였고,
+    `ssuai-backend` Application은 `Synced/Healthy` 상태를 유지했다.
+  - 운영 Deployment는 계속 `sha-1678c73c5f471d41c514d651c144046d76254483` 이미지를 사용했다.
+- 처음 세운 가설 (틀린 방향):
+  - "main의 image job이 성공하면 새 sha tag가 항상 최신 build로 선택되어 rollout된다."
+  - "`newest-build` 전략은 commit sha tag의 push 시각이나 OCI label created를 기준으로 고른다."
+- 실제 원인:
+  - PR #37은 테스트와 문서만 바꿨고 런타임 산출물은 바뀌지 않았다. Dockerfile은 builder stage에서
+    `COPY src ./src` 후 `bootJar -x test`를 실행하고, runtime stage는 jar와 native library만 복사한다.
+  - BuildKit cache 때문에 새 tag의 Docker config `created`는 `2026-06-11T14:21:48Z`로 남았고,
+    현재 운영 tag `sha-1678c73...`의 Docker config `created`(`2026-06-11T14:28:58Z`)보다 과거였다.
+  - 새 tag의 OCI label `org.opencontainers.image.created=2026-06-11T17:44:19Z`와 revision label은
+    새 commit을 가리키지만, ArgoCD Image Updater `newest-build`는 이 label이 아니라 Docker config
+    created 계열을 기준으로 비교하는 것으로 관측됐다. 따라서 "새 tag는 있지만 newest build는 아님"으로
+    판단되어 no-op이 됐다.
+- 해결:
+  - 강제 `kubectl set image`나 rollout restart는 하지 않았다. 이번 변경은 운영 런타임 동작을 바꾸지 않는
+    테스트/문서 변경이므로, 현재 pod가 건강하고 ArgoCD가 `Synced/Healthy`이면 배포 검증은 "rollout 없음"으로
+    기록하는 것이 맞다.
+  - 이후 배포 검증에서는 "CI가 새 image tag를 push했는가"와 "Image Updater가 실제 운영 image tag를
+    바꿨는가"를 분리해서 본다. 런타임 변경 PR이면 운영 Deployment image가 해당 sha로 바뀌어야 하고,
+    docs/test-only PR이면 Image Updater no-op도 정상 가능하다.
+- 핵심 파일/커밋:
+  - `Dockerfile`
+  - `deploy/argocd/application-ssuai-backend.yaml`
+  - `src/test/java/com/ssuai/domain/action/ActionServiceTests.java`
+  - `docs/performance/library-agent-load-test.md`
+  - PR #37, commit `48e91f3ae59a4a642bd589ee9b768bdc8a76a12f`
+- 검증:
+  - `gh run watch 27365989067 --exit-status` 성공: backend test + ARM64 image build/push green.
+  - `docker buildx imagetools inspect` 비교:
+    - old tag Docker config created = `2026-06-11T14:28:58Z`
+    - new tag Docker config created = `2026-06-11T14:21:48Z`
+    - new tag OCI revision label = `48e91f3ae59a4a642bd589ee9b768bdc8a76a12f`
+  - `kubectl -n argocd get applications.argoproj.io ssuai-backend`: `Synced/Healthy`
+  - `kubectl -n ssuai-prod rollout status deployment/ssuai-backend`: successfully rolled out
+- 포트폴리오 포인트:
+  - GitOps 배포 검증은 "CI 성공"만으로 끝나지 않는다. registry tag, image metadata, Image Updater 선택
+    규칙, ArgoCD sync 상태, 실제 Deployment image를 분리해서 봐야 한다.
+  - 특히 `newest-build`처럼 이미지 메타데이터에 의존하는 자동화는 BuildKit cache와 상호작용한다.
+    docs/test-only 변경에서 rollout이 없다는 사실은 장애가 아니라 런타임 artifact가 바뀌지 않았다는
+    운영 신호로 해석해야 한다.
+- 면접 예상 질문:
+  1. CI가 새 container tag를 push했는데 운영 pod image가 그대로인 경우, 어떤 순서로 원인을 좁힐 것인가?
+  2. ArgoCD Image Updater의 `newest-build` 전략과 BuildKit cache가 충돌할 수 있는 이유는 무엇인가?
+  3. docs/test-only 변경과 runtime 변경의 배포 검증 기준을 왜 다르게 잡아야 하는가?
+
 ## 2026-06-07 — MCP auth state 소실: Kubernetes in-memory → Postgres 영속화 + peek-then-consume
 
 - 맥락:
