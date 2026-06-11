@@ -133,6 +133,13 @@ ssuai:
       model: ${SSUAI_ACADEMIC_EMBEDDING_MODEL:gemini-embedding-001}
       dimensions: ${SSUAI_ACADEMIC_EMBEDDING_DIMENSIONS:768}
       batch-size: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE:96}
+      # Free-tier RPM protection (prod 429s, 2026-06-11): space out batch
+      # requests and retry rate-limited batches with exponential backoff
+      # (30s -> 60s -> 120s). Refresh runs off the startup path, so pacing
+      # never delays boot or readiness.
+      batch-interval-ms: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_INTERVAL_MS:15000}
+      retry-max-attempts: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_MAX_ATTEMPTS:3}
+      retry-backoff-ms: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_BACKOFF_MS:30000}
   library:
     session:
       # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream
