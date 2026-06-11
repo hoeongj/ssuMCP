@@ -1,0 +1,25 @@
+{
+  "name": "Pyxis reserve — generic success (any seat except the contested one)",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/pyxis-api/1/api/seat-charges"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json;charset=UTF-8" },
+    "jsonBody": {
+      "success": true,
+      "code": "success.charged",
+      "message": "예약되었습니다.",
+      "data": {
+        "id": "{{randomValue length=9 type='NUMERIC'}}",
+        "room": { "name": "오픈열람실(2F)" },
+        "seat": { "code": "{{jsonPath request.body '$.seatId'}}" },
+        "beginTime": "{{now format='yyyy-MM-dd HH:mm'}}",
+        "endTime": "{{now offset='4 hours' format='yyyy-MM-dd HH:mm'}}"
+      }
+    },
+    "delayDistribution": { "type": "lognormal", "median": 250, "sigma": 0.4 }
+  }
+}

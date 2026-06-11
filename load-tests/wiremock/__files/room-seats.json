@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "code": "success.retrieved",
+  "message": "조회되었습니다.",
+  "data": {
+    "totalCount": 12,
+    "list": [
+      { "id": 3101, "code": "1", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3102, "code": "2", "isActive": true, "isOccupied": true, "seatChargeState": "CHARGE", "remainingTime": 180, "chargeTime": 240, "seatType": { "name": "일반용" } },
+      { "id": 3103, "code": "3", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3104, "code": "4", "isActive": true, "isOccupied": true, "seatChargeState": "TEMP_CHARGE", "remainingTime": 25, "chargeTime": 240, "seatType": { "name": "일반용" } },
+      { "id": 3105, "code": "5", "isActive": false, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3106, "code": "6", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3107, "code": "7", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "노트북용" } },
+      { "id": 3108, "code": "8", "isActive": true, "isOccupied": true, "seatChargeState": "CHARGE", "remainingTime": 95, "chargeTime": 240, "seatType": { "name": "일반용" } },
+      { "id": 3109, "code": "9", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3110, "code": "10", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } },
+      { "id": 3111, "code": "11", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "스탠딩" } },
+      { "id": 3112, "code": "12", "isActive": true, "isOccupied": false, "seatChargeState": null, "remainingTime": 0, "chargeTime": 0, "seatType": { "name": "일반용" } }
+    ]
+  }
+}
