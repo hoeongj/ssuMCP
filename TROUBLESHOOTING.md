@@ -48,6 +48,36 @@
   3.
 ```
 
+## 2026-06-12 — Spring bean 생성자 선택 실패: 테스트용 보조 생성자 추가 후 no default constructor
+
+- 맥락:
+  - intent queue에 PostgreSQL `LISTEN/NOTIFY` wake 보조를 붙이면서 `JdbcLibraryReservationIntentWakeNotifier`를 추가했다.
+  - 운영 생성자는 `DataSource`, `LibraryReservationIntentProperties`, `Environment`를 받고, 단위 테스트를 위해 `JdbcTemplate`, properties, datasource URL을 받는 보조 생성자도 같이 뒀다.
+- 증상:
+  - `LibraryReservationIntentRepositoryTests` Spring context 생성이 실패했다.
+  - 실패 메시지는 `jdbcLibraryReservationIntentWakeNotifier` bean 생성 중 `No default constructor found`.
+- 처음 세운 가설 (틀린 방향):
+  - "Spring은 생성자가 여러 개 있어도 주입 가능한 생성자를 자동으로 고를 것이다."
+- 실제 원인:
+  - 생성자가 2개가 되면서 Spring이 어떤 생성자를 autowire해야 하는지 확정하지 못했다.
+  - 기본 생성자는 없으므로 fallback 생성도 불가능했고, context bootstrap 단계에서 실패했다.
+- 해결:
+  - 운영 주입 생성자에 `@Autowired`를 명시해 Spring의 선택 지점을 고정했다.
+  - 테스트용 보조 생성자는 package-private으로 유지하고, H2 URL no-op과 PostgreSQL URL `pg_notify` 호출은 단위 테스트에서 직접 검증했다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/library/reservation/intent/JdbcLibraryReservationIntentWakeNotifier.java`
+  - `src/test/java/com/ssuai/domain/library/reservation/intent/JdbcLibraryReservationIntentWakeNotifierTests.java`
+  - 커밋: `feat(library): wake intent worker with postgres notify` (part2 Task 2 PR)
+- 검증:
+  - `.\gradlew.bat test --tests com.ssuai.domain.library.reservation.intent.*` green.
+- 포트폴리오 포인트:
+  - 기능 자체보다 "테스트 편의용 생성자"가 DI 프레임워크의 생성자 선택 규칙을 바꾸는 점이 non-obvious였다.
+  - production bean 생성 규칙과 unit-test seam을 분리할 때 `@Autowired`/factory/test-only constructor 경계를 명확히 해야 한다.
+- 면접 예상 질문:
+  1. Spring은 생성자가 여러 개일 때 어떤 생성자를 autowire 대상으로 선택하나요?
+  2. 테스트 편의성을 위해 보조 생성자를 둘 때 production DI에 영향을 주지 않게 하려면 어떤 방법이 있나요?
+  3. 이런 context bootstrap 실패를 unit test와 integration test 중 어디서 잡는 것이 적절한가요?
+
 ## 2026-06-12 — docs/test-only 이미지가 ArgoCD Image Updater rollout으로 이어지지 않음
 
 - 맥락:
