@@ -472,7 +472,7 @@ Claude Desktop / IDE
 | `wait_for_library_seat` | LIBRARY | `LibraryReservationIntentTransactions` | 직접 등록 = 동의, worker가 좌석 발견 시 자율 예약 |
 | `get_library_wait_status` | LIBRARY | `LibraryReservationIntentTransactions` | 최신 intent 상태 조회 |
 | `cancel_library_wait` | LIBRARY | `LibraryReservationIntentTransactions` | WAITING intent 취소 |
-| `confirm_action` | LIBRARY | `ActionService` | upstream 실행 + audit 상태 전이 |
+| `confirm_action` | LIBRARY | `ActionService`, `LibraryReservationIntentTransactions` | 예약은 immediate intent 큐 실행 + audit 연결, 반납/이석은 직접 실행 |
 | `get_my_library_seat` | LIBRARY | `LibraryReservationConnector` | GET /pyxis-api/1/api/seat-charges |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
@@ -488,7 +488,7 @@ Claude Desktop / IDE
 
 - **MCP 도구는 절대 Service 레이어를 우회하지 않는다.** 어떤 도구도 Connector나 Repository에 직접 접근하지 않는다. 이를 통해 REST와 MCP에서 캐싱·검증·에러 처리가 일관되게 유지된다.
 - 도구 입력과 출력은 명시적 DTO다 — 불투명한 map이나 출력으로서의 자유 형식 문자열이 없다.
-- Phase 4 즉시 실행 쓰기 도구 (예약/이석/반납)는 감사 로깅이 포함된 `prepare_X` + `confirm_action` 2단계 패턴을 따른다 (ADR 0015, `docs/mcp-tools.md` §8 참조). 장기 대기형 `wait_for_library_seat`는 등록 호출 자체가 동의이며, intent queue와 outbox는 ADR 0022를 따른다.
+- Phase 4 쓰기 도구는 감사 로깅이 포함된 `prepare_X` + `confirm_action` 2단계 패턴을 따른다 (ADR 0015, `docs/mcp-tools.md` §8 참조). 예약 confirm은 PR2부터 `action_audit`를 동의 증적으로 남긴 뒤 immediate intent를 만들어 worker가 실행한다. 장기 대기형 `wait_for_library_seat`는 등록 호출 자체가 동의이며, intent queue와 outbox는 ADR 0022를 따른다.
 
 ---
 
@@ -527,13 +527,13 @@ Claude Desktop / IDE
 | SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
 | LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |
 | MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
-| **도서관 좌석 예약 에이전트** | 부분 구현 | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 |
+| **도서관 좌석 예약 에이전트** | 구현 중 | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 + same-seat k6 100→1 검증 |
 | Action MCP 인프라 | 구현 중 | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md), [ADR 0022](adr/0022-library-reservation-intent-queue.md) |
 | 알림 / 모바일 앱 | 미정 | 현재 API와 보안 계약 재사용 필요 |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. 기존 즉시 예약/이석/반납은 PR2 전까지 `prepare_*` + `confirm_action` 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
+**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. PR2부터 즉시 예약 confirm도 같은 큐를 통과한다: `action_audit`는 사용자 동의 증적, `library_reservation_intents`는 실행 단위다. 반납/이석 confirm은 아직 직접 실행 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
 
 ---
 

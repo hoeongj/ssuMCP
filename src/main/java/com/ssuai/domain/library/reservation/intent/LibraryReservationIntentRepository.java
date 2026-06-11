@@ -21,6 +21,20 @@ public interface LibraryReservationIntentRepository extends JpaRepository<Librar
 
     long countByStatusIn(Collection<LibraryReservationIntentStatus> statuses);
 
+    @Query("""
+            select count(i) > 0
+              from LibraryReservationIntent i
+             where i.targetSeatId = :seatId
+               and i.actionAuditId is not null
+               and i.status in :statuses
+               and i.completedAt is not null
+               and i.expiresAt > :now
+            """)
+    boolean existsActiveCompletedImmediateAttemptForSeat(
+            @Param("seatId") Long seatId,
+            @Param("statuses") Collection<LibraryReservationIntentStatus> statuses,
+            @Param("now") Instant now);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from LibraryReservationIntent i where i.id = :id")
     Optional<LibraryReservationIntent> findByIdForUpdate(@Param("id") Long id);
@@ -28,7 +42,10 @@ public interface LibraryReservationIntentRepository extends JpaRepository<Librar
     @Query(value = """
             SELECT *
               FROM library_reservation_intents
-             WHERE status = 'WAITING_FOR_SEAT'
+             WHERE (
+                    status = 'WAITING_FOR_SEAT'
+                    OR (status = 'REQUESTED' AND action_audit_id IS NOT NULL)
+                   )
                AND next_attempt_at <= :now
                AND expires_at > :now
              ORDER BY next_attempt_at, id
@@ -65,4 +82,7 @@ public interface LibraryReservationIntentRepository extends JpaRepository<Librar
     List<LibraryReservationIntent> findExpiredWaitingForUpdate(
             @Param("now") Instant now,
             @Param("limit") int limit);
+
+    @Query("select i from LibraryReservationIntent i where i.id = :id")
+    Optional<LibraryReservationIntent> findSnapshotById(@Param("id") Long id);
 }

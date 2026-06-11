@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LibraryReservationIntentTransactions {
+
+    private static final Set<LibraryReservationIntentStatus> COMPLETED_SEAT_ATTEMPT_STATUSES = Set.of(
+            LibraryReservationIntentStatus.SUCCEEDED,
+            LibraryReservationIntentStatus.FAILED_RACE);
 
     private final LibraryReservationIntentRepository intentRepository;
     private final LibraryReservationOutboxRepository outboxRepository;
@@ -65,10 +70,45 @@ public class LibraryReservationIntentTransactions {
         return new LibraryReservationRegistrationResult(LibraryReservationIntentView.from(saved), true);
     }
 
+    @Transactional
+    public LibraryReservationIntentView createImmediateReservation(
+            String sessionKey,
+            Long actionAuditId,
+            Long targetSeatId,
+            Duration expiresIn) {
+        Instant now = clock.instant();
+        Duration expiryDuration = expiresIn == null ? properties.getDefaultExpiry() : expiresIn;
+        LibraryReservationIntent intent = LibraryReservationIntent.immediateReservation(
+                sessionKey,
+                sessionKey,
+                targetSeatId,
+                actionAuditId,
+                now,
+                now.plus(expiryDuration));
+        LibraryReservationIntent saved = intentRepository.save(intent);
+        append(saved, LibraryReservationIntentEventType.WAIT_REGISTERED, "Immediate reservation intent created");
+        metrics.countTransition(saved.getStatus(), saved.getOutcomeCode());
+        return LibraryReservationIntentView.from(saved);
+    }
+
     @Transactional(readOnly = true)
     public Optional<LibraryReservationIntentView> latestForSession(String sessionKey) {
         return intentRepository.findTopByStudentIdOrderByCreatedAtDesc(sessionKey)
                 .map(LibraryReservationIntentView::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<LibraryReservationIntentView> findById(Long intentId) {
+        return intentRepository.findSnapshotById(intentId)
+                .map(LibraryReservationIntentView::from);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasActiveCompletedImmediateAttemptForSeat(Long seatId) {
+        return intentRepository.existsActiveCompletedImmediateAttemptForSeat(
+                seatId,
+                COMPLETED_SEAT_ATTEMPT_STATUSES,
+                clock.instant());
     }
 
     @Transactional

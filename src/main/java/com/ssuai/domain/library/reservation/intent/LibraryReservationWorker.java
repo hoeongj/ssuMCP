@@ -65,6 +65,9 @@ public class LibraryReservationWorker {
             return Optional.empty();
         }
         try {
+            if (intent.isImmediateReservation()) {
+                return Optional.of(new ReadyIntent(intent.getId(), token, intent.getTargetSeatId()));
+            }
             Optional<Long> seatId = seatSelector.findAvailableSeat(intent);
             if (seatId.isEmpty()) {
                 transactions.returnToWaiting(intent.getId());
@@ -82,6 +85,13 @@ public class LibraryReservationWorker {
     }
 
     private void processSeatGroup(Long seatId, List<ReadyIntent> intents) {
+        if (transactions.hasActiveCompletedImmediateAttemptForSeat(seatId)) {
+            intents.forEach(intent -> transactions.failRace(
+                    intent.intentId(),
+                    seatId,
+                    "Another recent immediate reservation intent already resolved this seat."));
+            return;
+        }
         ReadyIntent winner = intents.get(0);
         for (int index = 1; index < intents.size(); index++) {
             transactions.failRace(

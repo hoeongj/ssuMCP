@@ -81,13 +81,43 @@ current-charge 100ms)과 100동시 burst 시 WireMock 큐잉이 대부분이고,
 신호(스레드 고갈·에러·서킷 오픈)는 없었다. 실측 Pyxis 지연으로 교체하면 이 숫자가
 "사용자 체감 예약 시간"의 근사치가 된다.
 
+### 3-3. PR2 재측정 — `confirm_action` 예약 경로를 intent 큐로 통합한 뒤
+
+측정일: 2026-06-11. 실행 조건은 같은 로컬 docker-compose + host JVM이며, PR2 측정에서는
+`SSUAI_LIBRARY_RESERVATION_INTENT_BATCH_SIZE=100`,
+`SSUAI_LIBRARY_RESERVATION_INTENT_POLL_INTERVAL=200ms`를 사용했다. k6 teardown은
+WireMock request journal을 직접 세서 `POST /pyxis-api/1/api/seat-charges` with
+`seatId=9999`가 정확히 1건인지 검증한다.
+
+| 항목 | EPIC 1 baseline (직접 confirm) | EPIC 3 PR2 (intent 큐 confirm) |
+|---|---:|---:|
+| k6 사용자 결과 | SUCCESS 2 · RACE 98 | **SUCCESS 1 · RACE 99 · OTHER 0** |
+| 권위 DB 결과 | action_audit `SUCCESS` 2 · `FAILURE_RACE` 98 | action_audit `SUCCESS` 1 · `FAILURE_RACE` 99 |
+| intent 실행 결과 | 없음 | `SUCCEEDED/SUCCESS` 1 · `FAILED_RACE/FAILED_RACE` 99 |
+| WireMock reserve POST | 100건(각 confirm이 직접 Pyxis 호출) | **1건** |
+| confirm 지연 | p50 887ms / p95 1.50s / max 1.79s | p50 2.69s / p95 3.08s / max 3.26s |
+| threshold | 상태 수렴 검증 | checks 100% · `reserve_success==1` · `reserve_race==99` · WireMock count==1 |
+
+**해석**: PR2의 핵심 개선은 사용자 latency가 아니라 업스트림 보호다. confirm은 이제 worker
+tick과 DB 상태 전이를 기다리므로 p50/p95가 baseline보다 늘었다. 대신 같은 좌석 100명 burst가
+Pyxis write 100건에서 1건으로 줄었다. 이 수치가 "단일 egress IP 서버가 학교 시스템에 좋은
+시민으로 동작한다"는 포트폴리오 근거다.
+
+**중간 실패에서 얻은 보정**: 첫 PR2 k6 run은 사용자 결과가 이미 1/99였지만 WireMock reserve
+POST가 2건이었다. 원인은 worker tick이 burst를 여러 번 claim하면서 다음 tick의 winner가 같은
+좌석을 다시 Pyxis에 물은 것. PR2는 same-tick grouping에 더해, action TTL 안의 최근 immediate
+same-seat terminal attempt가 있으면 후속 group을 로컬 `FAILED_RACE`로 닫는다. 세부 원인과
+면접용 해석은 [`TROUBLESHOOTING.md`](../../TROUBLESHOOTING.md)의 2026-06-11 PR2 k6 항목에
+기록했다.
+
 ## 4. 다음 비교 측정 (개선 후 같은 시나리오 재실행)
 
-1. **EPIC 3 intent 큐**: 같은 좌석 100 intent → 업스트림 reserve 콜 1건만 발생하는지
-2. **single-flight 캐시**: 캐시 만료 직후 동시 read 미스 → 업스트림 콜 1건 합쳐지는지
-3. **장애 주입 확장**: WireMock 500 연속·timeout 스텁으로 서킷 OPEN 전이 + 복구를 부하
+1. **single-flight 캐시**: 캐시 만료 직후 동시 read 미스 → 업스트림 콜 1건 합쳐지는지
+2. **장애 주입 확장**: WireMock 500 연속·timeout 스텁으로 서킷 OPEN 전이 + 복구를 부하
    중에 관측 (EPIC 2 남은 항목과 연동)
-4. read RPS 상향(50→200+)으로 무릎(knee point) 탐색
+3. read RPS 상향(50→200+)으로 무릎(knee point) 탐색
+4. EPIC 4 Redis/Redisson 도입 후 same-seat suppress를 in-memory/DB 최근 결과가 아니라
+   seat-level distributed lock으로 검증
 
 ## 5. 운영 메모
 

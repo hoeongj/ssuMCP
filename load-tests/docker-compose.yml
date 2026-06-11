@@ -94,6 +94,8 @@ services:
       SSUAI_LIBRARY_SEAT_BASE_URL: http://wiremock:8080
       SSUAI_LIBRARY_RESERVATION_BASE_URL: http://wiremock:8080
       SSUAI_LIBRARY_LOGIN_BASE_URL: http://wiremock:8080
+      SSUAI_LIBRARY_RESERVATION_INTENT_BATCH_SIZE: 100
+      SSUAI_LIBRARY_RESERVATION_INTENT_POLL_INTERVAL: 200ms
       # chat=llm mirrors prod AND is required with real library connectors:
       # the shared com.fasterxml ObjectMapper bean (primaryObjectMapper) is
       # only registered when the chat connector is llm. No LLM key needed —

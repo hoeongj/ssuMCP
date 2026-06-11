@@ -42,6 +42,8 @@ $env:SSUAI_CONNECTOR_LIBRARY_RESERVATION = 'real'
 $env:SSUAI_LIBRARY_SEAT_BASE_URL = 'http://localhost:8089'
 $env:SSUAI_LIBRARY_RESERVATION_BASE_URL = 'http://localhost:8089'
 $env:SSUAI_LIBRARY_LOGIN_BASE_URL = 'http://localhost:8089'
+$env:SSUAI_LIBRARY_RESERVATION_INTENT_BATCH_SIZE = '100'
+$env:SSUAI_LIBRARY_RESERVATION_INTENT_POLL_INTERVAL = '200ms'
 $env:SSUAI_FRONTEND_ORIGIN = 'http://localhost:3000'
 # prod 미러 + 필수: real 커넥터가 쓰는 ObjectMapper 빈이 chat=llm일 때만 등록된다
 # (LlmProviderConfig.primaryObjectMapper — LLM 키 없어도 기동엔 문제 없음)
@@ -80,10 +82,14 @@ setup()이 브라우저 없이 MCP 세션 100개를 만든다: `start_auth`의 l
 ```powershell
 docker exec -it ssumcp-loadtest-postgres-1 psql -U ssuai -d ssuai -c `
   "SELECT action_type, status, outcome_code, count(*) FROM action_audit GROUP BY 1,2,3 ORDER BY 1,2,3;"
+
+docker exec -it ssumcp-loadtest-postgres-1 psql -U ssuai -d ssuai -c `
+  "SELECT status, outcome_code, count(*) FROM library_reservation_intents GROUP BY 1,2 ORDER BY 1,2;"
 ```
 
 기대값 (same-seat 모드, SESSIONS=100): `SUCCESS/SUCCESS` 1건, `FAILED/FAILURE_RACE` 99건,
-중간 상태(EXECUTING/PENDING) 잔류 0건.
+중간 상태(EXECUTING/PENDING, REQUESTED/RESERVING) 잔류 0건. intent 테이블도
+`SUCCEEDED/SUCCESS` 1건, `FAILED_RACE/FAILED_RACE` 99건이어야 한다.
 
 ### 6. Grafana
 
@@ -100,7 +106,7 @@ docker exec -it ssumcp-loadtest-postgres-1 psql -U ssuai -d ssuai -c `
    랜덤 지연을 깐다(사람 패턴 모사). 캐시 미스 요청의 지연은 대부분 이 jitter다.
 3. **WireMock 지연은 가정치** — lognormal(median 120~250ms)은 캠퍼스망 실측 전 가정.
    실측치가 생기면 mappings의 `delayDistribution`만 바꾸면 된다.
-4. **contested-seat 시나리오의 한계** — WireMock 시나리오 상태 전이는 완전한 CAS가
-   아니라 극단적 동시성에서 2건이 통과할 수 있다. 그 경우에도 백엔드가 보장해야 하는
-   것은 "각 action row가 정확히 한 번 실행되고 터미널 상태로 끝난다"이며, 이는
-   action_audit SQL로 검증한다 (실제 Pyxis는 원자적으로 1건만 수락).
+4. **PR2 이후 same-seat 기준** — `confirm_action`의 예약 경로는 intent 큐를 거친다.
+   같은 좌석 100건은 worker가 한 batch에서 좌석별로 그룹화하므로 WireMock
+   `/pyxis-api/1/api/seat-charges` POST가 정확히 1건이어야 한다. k6 teardown이
+   WireMock request journal로 이를 자동 검증한다.

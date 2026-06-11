@@ -79,6 +79,41 @@ class LibraryReservationIntentRepositoryTests {
         }
     }
 
+    @Test
+    void claimQueryIncludesRequestedImmediateReservationIntent() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.executeWithoutResult(status -> repository.save(immediateIntent(3179L, NOW.plus(Duration.ofMinutes(5)))));
+
+        List<LibraryReservationIntent> claimed = template.execute(status ->
+                repository.findClaimableWaitingForUpdate(NOW.plusSeconds(1), 10));
+
+        assertThat(claimed).hasSize(1);
+        assertThat(claimed.get(0).isImmediateReservation()).isTrue();
+    }
+
+    @Test
+    void activeCompletedImmediateAttemptExistsOnlyUntilIntentExpiry() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.executeWithoutResult(status -> {
+            LibraryReservationIntent intent = immediateIntent(9999L, NOW.plus(Duration.ofMinutes(5)));
+            intent.claimForReservation(NOW.plusSeconds(1), Duration.ofSeconds(30));
+            intent.succeed(NOW.plusSeconds(2), "ok");
+            repository.save(intent);
+        });
+
+        boolean active = repository.existsActiveCompletedImmediateAttemptForSeat(
+                9999L,
+                List.of(LibraryReservationIntentStatus.SUCCEEDED, LibraryReservationIntentStatus.FAILED_RACE),
+                NOW.plus(Duration.ofMinutes(1)));
+        boolean expired = repository.existsActiveCompletedImmediateAttemptForSeat(
+                9999L,
+                List.of(LibraryReservationIntentStatus.SUCCEEDED, LibraryReservationIntentStatus.FAILED_RACE),
+                NOW.plus(Duration.ofMinutes(6)));
+
+        assertThat(active).isTrue();
+        assertThat(expired).isFalse();
+    }
+
     private static LibraryReservationIntent waitingIntent() {
         LibraryReservationIntent intent = LibraryReservationIntent.requested(
                 "student",
@@ -91,5 +126,15 @@ class LibraryReservationIntentRepositoryTests {
                 NOW.plus(Duration.ofHours(2)));
         intent.markWaitingForSeat(NOW);
         return intent;
+    }
+
+    private static LibraryReservationIntent immediateIntent(Long seatId, Instant expiresAt) {
+        return LibraryReservationIntent.immediateReservation(
+                "student-" + seatId,
+                "session-" + seatId,
+                seatId,
+                seatId,
+                NOW,
+                expiresAt);
     }
 }

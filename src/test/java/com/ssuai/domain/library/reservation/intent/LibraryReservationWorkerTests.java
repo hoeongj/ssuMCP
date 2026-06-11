@@ -91,6 +91,39 @@ class LibraryReservationWorkerTests {
     }
 
     @Test
+    void immediateReservationSkipsSeatScanAndUsesTargetSeat() {
+        LibraryReservationIntent intent = claimedImmediateIntent(1L, "session-1");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
+                .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
+
+        worker.poll();
+
+        verify(seatSelector, never()).findAvailableSeat(intent);
+        verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
+        verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+    }
+
+    @Test
+    void recentImmediateSeatAttemptFailsLaterClaimedGroupLocally() {
+        LibraryReservationIntent first = claimedImmediateIntent(1L, "session-1");
+        LibraryReservationIntent second = claimedImmediateIntent(2L, "session-2");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(first, second));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(sessionStore.token("session-2")).thenReturn(Optional.of(TOKEN));
+        when(transactions.hasActiveCompletedImmediateAttemptForSeat(SEAT_ID)).thenReturn(true);
+
+        worker.poll();
+
+        verify(connector, never()).reserve(any(), any());
+        verify(transactions).failRace(
+                1L, SEAT_ID, "Another recent immediate reservation intent already resolved this seat.");
+        verify(transactions).failRace(
+                2L, SEAT_ID, "Another recent immediate reservation intent already resolved this seat.");
+    }
+
+    @Test
     void reaperVerifiesCurrentChargeForExpiredLease() {
         LibraryReservationIntent intent = claimedIntent(7L, "session-7");
         when(transactions.claimWaitingBatch()).thenReturn(List.of());
@@ -116,6 +149,19 @@ class LibraryReservationWorkerTests {
                 NOW,
                 NOW.plus(Duration.ofHours(2)));
         intent.markWaitingForSeat(NOW);
+        intent.claimForReservation(NOW, Duration.ofSeconds(30));
+        ReflectionTestUtils.setField(intent, "id", id);
+        return intent;
+    }
+
+    private static LibraryReservationIntent claimedImmediateIntent(long id, String sessionKey) {
+        LibraryReservationIntent intent = LibraryReservationIntent.immediateReservation(
+                sessionKey,
+                sessionKey,
+                SEAT_ID,
+                77L,
+                NOW,
+                NOW.plus(Duration.ofMinutes(5)));
         intent.claimForReservation(NOW, Duration.ofSeconds(30));
         ReflectionTestUtils.setField(intent, "id", id);
         return intent;

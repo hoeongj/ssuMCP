@@ -68,6 +68,25 @@ class LibraryReservationIntentTransactionsTests {
     }
 
     @Test
+    void createImmediateReservationLinksActionAuditAndSkipsWaitingState() {
+        when(intentRepository.save(any(LibraryReservationIntent.class))).thenAnswer(invocation -> {
+            LibraryReservationIntent intent = invocation.getArgument(0);
+            ReflectionTestUtils.setField(intent, "id", 9L);
+            return intent;
+        });
+
+        LibraryReservationIntentView view =
+                transactions.createImmediateReservation("session", 77L, 3179L, Duration.ofMinutes(5));
+
+        assertThat(view.intentId()).isEqualTo(9L);
+        assertThat(view.status()).isEqualTo(LibraryReservationIntentStatus.REQUESTED);
+        assertThat(view.targetSeatId()).isEqualTo(3179L);
+        assertThat(view.actionAuditId()).isEqualTo(77L);
+        verify(outboxRepository).save(any(LibraryReservationOutbox.class));
+        verify(metrics).countTransition(LibraryReservationIntentStatus.REQUESTED, null);
+    }
+
+    @Test
     void returnToWaitingAppliesExponentialBackoff() {
         LibraryReservationIntent intent = waitingIntent(4L, "session");
         intent.claimForReservation(NOW, Duration.ofSeconds(30));
