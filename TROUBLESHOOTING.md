@@ -48,6 +48,48 @@
   3.
 ```
 
+## 2026-06-12 — force-push 교정 후 Image Updater가 orphan image tag를 유지함
+
+- 맥락:
+  - PR #40을 GitHub squash merge한 뒤 merge commit author/committer가 `GitHub` 계정으로 찍혀
+    프로젝트 authorship 규칙을 위반했다.
+  - 사용자 확인을 받고 latest main commit을 `hoengj` author/committer로 amend한 뒤
+    `git push --force-with-lease origin main`으로 history를 교정했다.
+- 증상:
+  - 교정된 main commit은 `97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`였고 CI image도 push됐다.
+  - 그러나 ArgoCD Image Updater가 force-push 직전 commit `ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`
+    기반 image tag를 Helm values에 자동 반영했다.
+  - 두 번의 대기 확인 뒤에도 Deployment image는 `sha-ff41b9dd...`로 유지됐다. 코드는 같지만
+    git history에는 없는 orphan tag라 배포 증거로 부적절했다.
+- 처음 세운 가설 (틀린 방향):
+  - "force-push 후 새 main commit image가 push되면 Image Updater가 다음 주기에서
+    자동으로 `sha-97a3dc4...`로 다시 수렴할 것이다."
+- 실제 원인:
+  - Image Updater는 GHCR tag의 build/newest 기준만 보고 Helm values를 갱신한다.
+  - force-push로 git history에서 사라진 commit tag라도 GHCR에는 계속 남아 있고,
+    Image Updater가 이를 유효한 최신 image로 볼 수 있다.
+  - 즉 git branch history와 container registry tag lifecycle은 자동으로 정합화되지 않는다.
+- 해결:
+  - `deploy/charts/ssuai-backend/values.yaml`의 image tag를 authored main commit
+    `sha-97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`로 수동 교정했다.
+  - 사용자에게 pod 교체가 발생함을 알리고 확인을 받은 뒤 push/rollout을 진행했다.
+- 핵심 파일/커밋:
+  - `deploy/charts/ssuai-backend/values.yaml`
+  - 잘못 배포된 orphan image tag: `sha-ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`
+  - 올바른 authored commit image tag: `sha-97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`
+  - 교정 커밋: `build(deploy): pin backend image to authored notify commit`
+- 검증:
+  - `.\gradlew.bat test` green.
+  - main CI green, ArgoCD `Synced/Healthy`, Deployment `1/1 ready`, `/actuator/health` `UP`.
+- 포트폴리오 포인트:
+  - Git history rewrite와 container registry tag는 별개 lifecycle이다.
+  - GitOps에서 "원하는 상태"는 Git에 남아야 하며, registry에 남은 orphan tag를 운영 증거로 삼으면
+    추적성이 깨진다.
+- 면접 예상 질문:
+  1. force-push가 필요한 상황에서 GitOps 배포 추적성을 어떻게 보존하나요?
+  2. ArgoCD Image Updater가 git history와 무관한 registry tag를 선택할 수 있는 이유는 무엇인가요?
+  3. orphan image tag를 운영에서 제거하거나 방지하려면 어떤 registry cleanup/annotation 전략을 쓸 수 있나요?
+
 ## 2026-06-12 — Spring bean 생성자 선택 실패: 테스트용 보조 생성자 추가 후 no default constructor
 
 - 맥락:
