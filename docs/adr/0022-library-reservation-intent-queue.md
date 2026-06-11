@@ -156,6 +156,32 @@ idempotent. PR1's consumer is intentionally small: metrics/log listener. EPIC 5
 SSE becomes the second consumer. When there are two or more real consumers,
 Redpanda is reconsidered.
 
+### D6. Polling mainline + PostgreSQL LISTEN/NOTIFY wake assist (2026-06-12)
+
+**배경**: PR1/PR2의 worker는 1초 주기 polling으로 충분히 안전하지만, 즉시 예약 confirm 경로에서는 사용자가 worker tick을 기다리면서 tail latency가 생긴다. 목표는 durable queue 계약을 유지하면서 새 intent가 commit된 직후 worker를 한 번 더 깨우는 것이다.
+
+**대안과 기각 이유**:
+
+- DB trigger에서 `pg_notify`: 앱 코드 누락 가능성은 낮지만 PostgreSQL 전용 trigger/function migration이 필요하다. H2에서 같은 Flyway를 돌리는 현재 원칙과 맞지 않아 기각했다.
+- polling interval 축소: 구현은 가장 작지만 DB wake 비용이 지속적으로 늘고 LISTEN/NOTIFY 백로그를 해결하지 못한다.
+- LISTEN/NOTIFY 단독 queue: listener down 중 알림이 유실되고, 미래 시각의 `next_attempt_at` 도래는 여전히 polling이 필요하므로 primary로는 부적합하다.
+
+**선정 이유와 근거**: 앱 트랜잭션이 intent row와 outbox row를 commit한 뒤 `pg_notify(channel, intentId)`를 보낸다. PostgreSQL 문서는 transaction 안의 `NOTIFY`가 commit 이후에만 전달된다고 설명하므로, durable row가 없는 알림은 나가지 않는다. `LISTEN`은 세션 단위이며 최초 등록 race가 있으므로 listener 시작 직후 한 번 `worker.wake()`를 호출해 현재 DB 상태를 먼저 훑고 이후 알림을 wake 신호로만 쓴다. pgJDBC의 `PGConnection.getNotifications(timeoutMillis)`를 사용하되 dedicated connection을 잡아 다른 쿼리와 섞지 않는다.
+
+**동작 방식**:
+
+- `LibraryReservationIntentTransactions`는 `registerWait`와 `createImmediateReservation`에서 `TransactionSynchronization.afterCommit`에 wake notify를 예약한다.
+- H2/test/dev 기본 URL에서는 `JdbcLibraryReservationIntentWakeNotifier`가 no-op이므로 PostgreSQL 전용 기능이 테스트 DB를 깨지 않는다.
+- prod PostgreSQL에서는 `PostgresLibraryReservationIntentWakeListener`가 `LISTEN library_reservation_intent_wake`를 유지한다. 알림을 받으면 `LibraryReservationWorker.wake()`를 호출한다.
+- worker는 scheduled poll과 notify wake가 동시에 들어와도 `AtomicBoolean` guard로 한 번만 실행한다.
+- notify 실패나 listener disconnect는 기능 실패가 아니다. 1초 polling이 계속 primary 경로라 intent는 다음 tick에서 처리된다.
+
+Sources:
+
+- https://www.postgresql.org/docs/current/sql-notify.html
+- https://www.postgresql.org/docs/current/sql-listen.html
+- https://jdbc.postgresql.org/documentation/publicapi/org/postgresql/PGConnection.html
+
 ## Alternatives Considered
 
 ### JobRunr / db-scheduler
@@ -191,8 +217,8 @@ Sources:
 Rejected as the primary mechanism. LISTEN/NOTIFY is useful for low-latency
 wake-up, but it is not durable enough to be the only dispatcher. A listener that
 is down misses notifications, and future scheduled/backoff jobs still require
-polling when time "ticks over." The backlog item is therefore "polling mainline +
-LISTEN/NOTIFY wake-up optimization."
+polling when time "ticks over." PR #40 implements the optimization as D6 while
+keeping polling as the primary execution path.
 
 Sources:
 

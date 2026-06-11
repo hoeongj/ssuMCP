@@ -17,6 +17,9 @@ public class LibraryReservationIntentProperties {
     private Duration maxBackoff = Duration.ofMinutes(5);
     private Duration relayInterval = Duration.ofSeconds(2);
     private int relayBatchSize = 50;
+    private boolean notifyWakeEnabled = true;
+    private Duration notifyListenTimeout = Duration.ofSeconds(1);
+    private Duration notifyReconnectDelay = Duration.ofSeconds(5);
 
     public Duration backoffForAttempt(int attemptCount) {
         int exponent = Math.max(0, attemptCount - 1);
@@ -93,6 +96,30 @@ public class LibraryReservationIntentProperties {
             throw new IllegalArgumentException("relayBatchSize must be positive");
         }
         this.relayBatchSize = relayBatchSize;
+    }
+
+    public boolean isNotifyWakeEnabled() {
+        return notifyWakeEnabled;
+    }
+
+    public void setNotifyWakeEnabled(boolean notifyWakeEnabled) {
+        this.notifyWakeEnabled = notifyWakeEnabled;
+    }
+
+    public Duration getNotifyListenTimeout() {
+        return notifyListenTimeout;
+    }
+
+    public void setNotifyListenTimeout(Duration notifyListenTimeout) {
+        this.notifyListenTimeout = positive(notifyListenTimeout, "notifyListenTimeout");
+    }
+
+    public Duration getNotifyReconnectDelay() {
+        return notifyReconnectDelay;
+    }
+
+    public void setNotifyReconnectDelay(Duration notifyReconnectDelay) {
+        this.notifyReconnectDelay = positive(notifyReconnectDelay, "notifyReconnectDelay");
     }
 
     private static Duration positive(Duration value, String field) {

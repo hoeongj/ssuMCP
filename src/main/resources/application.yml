@@ -172,6 +172,9 @@ ssuai:
       max-backoff: 5m
       relay-interval: 2s
       relay-batch-size: 50
+      notify-wake-enabled: true
+      notify-listen-timeout: 1s
+      notify-reconnect-delay: 5s
     book:
       # Per-(query,page,size) cache TTL. Longer than seat (which is volatile);
       # checkout state shifts on the order of minutes, not seconds.

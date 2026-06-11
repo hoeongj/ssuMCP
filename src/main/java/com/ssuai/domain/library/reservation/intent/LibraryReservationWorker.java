@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,7 @@ public class LibraryReservationWorker {
     private final LibraryReservationSeatSelector seatSelector;
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
+    private final AtomicBoolean polling = new AtomicBoolean(false);
 
     public LibraryReservationWorker(
             LibraryReservationIntentTransactions transactions,
@@ -42,6 +44,25 @@ public class LibraryReservationWorker {
 
     @Scheduled(fixedDelayString = "#{@libraryReservationIntentProperties.pollInterval.toMillis()}")
     public void poll() {
+        runOnce();
+    }
+
+    public void wake() {
+        runOnce();
+    }
+
+    private void runOnce() {
+        if (!polling.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            pollInternal();
+        } finally {
+            polling.set(false);
+        }
+    }
+
+    private void pollInternal() {
         transactions.expireWaiting();
         recoverExpiredLeases();
 
