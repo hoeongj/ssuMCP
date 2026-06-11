@@ -47,7 +47,7 @@ public class AcademicEmbeddingProperties {
     }
 
     public void setBaseUrl(String baseUrl) {
-        this.baseUrl = baseUrl;
+        this.baseUrl = trimmed(baseUrl);
     }
 
     public String getApiKey() {
@@ -55,7 +55,7 @@ public class AcademicEmbeddingProperties {
     }
 
     public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
+        this.apiKey = trimmed(apiKey);
     }
 
     public String getModel() {
@@ -63,7 +63,7 @@ public class AcademicEmbeddingProperties {
     }
 
     public void setModel(String model) {
-        this.model = model;
+        this.model = trimmed(model);
     }
 
     public int getDimensions() {
@@ -84,5 +84,15 @@ public class AcademicEmbeddingProperties {
 
     public boolean isUsable() {
         return enabled && apiKey != null && !apiKey.isBlank();
+    }
+
+    /**
+     * Secrets created with {@code kubectl create secret --from-literal} or echo
+     * without {@code -n} carry a trailing newline; an LF inside an Authorization
+     * header is rejected by the JDK HttpClient before the request is even sent.
+     * Trim at binding time so no consumer can build an invalid header.
+     */
+    private static String trimmed(String value) {
+        return value == null ? "" : value.trim();
     }
 }
