@@ -24,6 +24,7 @@ class LibraryReservationIntentTransactionsTests {
     private LibraryReservationIntentRepository intentRepository;
     private LibraryReservationOutboxRepository outboxRepository;
     private LibraryReservationIntentMetrics metrics;
+    private LibraryReservationIntentWakeNotifier wakeNotifier;
     private LibraryReservationIntentTransactions transactions;
 
     @BeforeEach
@@ -32,11 +33,13 @@ class LibraryReservationIntentTransactionsTests {
         outboxRepository = mock(LibraryReservationOutboxRepository.class);
         LibraryReservationIntentProperties properties = new LibraryReservationIntentProperties();
         metrics = mock(LibraryReservationIntentMetrics.class);
+        wakeNotifier = mock(LibraryReservationIntentWakeNotifier.class);
         transactions = new LibraryReservationIntentTransactions(
                 intentRepository,
                 outboxRepository,
                 properties,
                 metrics,
+                wakeNotifier,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -52,6 +55,25 @@ class LibraryReservationIntentTransactionsTests {
 
         assertThat(result.newlyCreated()).isFalse();
         assertThat(result.intent().intentId()).isEqualTo(1L);
+    }
+
+    @Test
+    void registerNewWaitNotifiesWorkerWakeAfterSave() {
+        when(intentRepository.findTopByStudentIdAndStatusInOrderByCreatedAtDesc(
+                "session", LibraryReservationIntentMetrics.ACTIVE_STATUSES))
+                .thenReturn(Optional.empty());
+        when(intentRepository.save(any(LibraryReservationIntent.class))).thenAnswer(invocation -> {
+            LibraryReservationIntent intent = invocation.getArgument(0);
+            ReflectionTestUtils.setField(intent, "id", 10L);
+            return intent;
+        });
+
+        LibraryReservationRegistrationResult result =
+                transactions.registerWait("session", new LibraryReservationWaitRequest(null, null, null, null, null));
+
+        assertThat(result.newlyCreated()).isTrue();
+        assertThat(result.intent().intentId()).isEqualTo(10L);
+        verify(wakeNotifier).notifyIntentReady(10L);
     }
 
     @Test
@@ -84,6 +106,7 @@ class LibraryReservationIntentTransactionsTests {
         assertThat(view.actionAuditId()).isEqualTo(77L);
         verify(outboxRepository).save(any(LibraryReservationOutbox.class));
         verify(metrics).countTransition(LibraryReservationIntentStatus.REQUESTED, null);
+        verify(wakeNotifier).notifyIntentReady(9L);
     }
 
     @Test

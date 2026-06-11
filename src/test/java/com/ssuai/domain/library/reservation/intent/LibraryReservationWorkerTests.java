@@ -65,6 +65,17 @@ class LibraryReservationWorkerTests {
     }
 
     @Test
+    void wakeUsesTheSameWorkerPathAsScheduledPoll() {
+        when(transactions.claimWaitingBatch()).thenReturn(List.of());
+
+        worker.wake();
+
+        verify(transactions).expireWaiting();
+        verify(transactions).claimExpiredLeases();
+        verify(transactions).claimWaitingBatch();
+    }
+
+    @Test
     void missingSessionTokenFailsAuthBeforeSeatScan() {
         LibraryReservationIntent intent = claimedIntent(1L, "session-1");
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));

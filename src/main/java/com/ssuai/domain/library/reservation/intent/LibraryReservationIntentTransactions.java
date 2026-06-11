@@ -13,6 +13,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class LibraryReservationIntentTransactions {
@@ -25,6 +27,7 @@ public class LibraryReservationIntentTransactions {
     private final LibraryReservationOutboxRepository outboxRepository;
     private final LibraryReservationIntentProperties properties;
     private final LibraryReservationIntentMetrics metrics;
+    private final LibraryReservationIntentWakeNotifier wakeNotifier;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -33,11 +36,13 @@ public class LibraryReservationIntentTransactions {
             LibraryReservationOutboxRepository outboxRepository,
             LibraryReservationIntentProperties properties,
             LibraryReservationIntentMetrics metrics,
+            LibraryReservationIntentWakeNotifier wakeNotifier,
             Clock clock) {
         this.intentRepository = intentRepository;
         this.outboxRepository = outboxRepository;
         this.properties = properties;
         this.metrics = metrics;
+        this.wakeNotifier = wakeNotifier;
         this.objectMapper = new ObjectMapper();
         this.clock = clock;
     }
@@ -67,6 +72,7 @@ public class LibraryReservationIntentTransactions {
         LibraryReservationIntent saved = intentRepository.save(intent);
         append(saved, LibraryReservationIntentEventType.WAIT_REGISTERED, "Wait registered");
         metrics.countTransition(saved.getStatus(), saved.getOutcomeCode());
+        notifyReadyAfterCommit(saved.getId());
         return new LibraryReservationRegistrationResult(LibraryReservationIntentView.from(saved), true);
     }
 
@@ -88,6 +94,7 @@ public class LibraryReservationIntentTransactions {
         LibraryReservationIntent saved = intentRepository.save(intent);
         append(saved, LibraryReservationIntentEventType.WAIT_REGISTERED, "Immediate reservation intent created");
         metrics.countTransition(saved.getStatus(), saved.getOutcomeCode());
+        notifyReadyAfterCommit(saved.getId());
         return LibraryReservationIntentView.from(saved);
     }
 
@@ -211,6 +218,19 @@ public class LibraryReservationIntentTransactions {
     private LibraryReservationIntent lock(Long intentId) {
         return intentRepository.findByIdForUpdate(intentId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown reservation intent: " + intentId));
+    }
+
+    private void notifyReadyAfterCommit(Long intentId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    wakeNotifier.notifyIntentReady(intentId);
+                }
+            });
+            return;
+        }
+        wakeNotifier.notifyIntentReady(intentId);
     }
 
     private void append(
