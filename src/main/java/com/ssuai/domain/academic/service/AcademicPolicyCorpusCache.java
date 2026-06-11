@@ -109,29 +109,39 @@ public class AcademicPolicyCorpusCache {
         if (!embeddingClient.isUsable()) {
             return EmbeddedCorpus.lexicalOnly(snapshot);
         }
-        List<String> chunkTexts = new ArrayList<>();
-        List<EmbeddedChunk> pending = new ArrayList<>();
-        for (AcademicPolicyDocument document : snapshot.documents()) {
-            List<String> chunks = AcademicTextChunker.chunk(document.text());
-            for (int index = 0; index < chunks.size(); index++) {
-                chunkTexts.add(chunks.get(index));
-                pending.add(new EmbeddedChunk(document.source(), index, chunks.get(index), null));
+        // Enrichment runs inside @PostConstruct on the startup path: any escaping
+        // exception fails the whole context and crash-loops the pod (observed in
+        // prod 2026-06-11, TROUBLESHOOTING). Embeddings are an optional layer —
+        // every failure here must degrade to the lexical-only corpus.
+        try {
+            List<String> chunkTexts = new ArrayList<>();
+            List<EmbeddedChunk> pending = new ArrayList<>();
+            for (AcademicPolicyDocument document : snapshot.documents()) {
+                List<String> chunks = AcademicTextChunker.chunk(document.text());
+                for (int index = 0; index < chunks.size(); index++) {
+                    chunkTexts.add(chunks.get(index));
+                    pending.add(new EmbeddedChunk(document.source(), index, chunks.get(index), null));
+                }
             }
-        }
-        if (chunkTexts.isEmpty()) {
+            if (chunkTexts.isEmpty()) {
+                return EmbeddedCorpus.lexicalOnly(snapshot);
+            }
+            List<float[]> vectors = embeddingClient.embed(chunkTexts);
+            if (vectors.size() != chunkTexts.size()) {
+                log.warn("academic-policy embedding incomplete ({}/{}); using lexical-only",
+                        vectors.size(), chunkTexts.size());
+                return EmbeddedCorpus.lexicalOnly(snapshot);
+            }
+            List<EmbeddedChunk> embedded = new ArrayList<>(pending.size());
+            for (int i = 0; i < pending.size(); i++) {
+                EmbeddedChunk base = pending.get(i);
+                embedded.add(new EmbeddedChunk(base.source(), base.chunkIndex(), base.text(), vectors.get(i)));
+            }
+            return new EmbeddedCorpus(snapshot, embedded, true);
+        } catch (RuntimeException exception) {
+            log.warn("academic-policy embedding enrichment failed ({}); using lexical-only",
+                    exception.getClass().getSimpleName());
             return EmbeddedCorpus.lexicalOnly(snapshot);
         }
-        List<float[]> vectors = embeddingClient.embed(chunkTexts);
-        if (vectors.size() != chunkTexts.size()) {
-            log.warn("academic-policy embedding incomplete ({}/{}); using lexical-only",
-                    vectors.size(), chunkTexts.size());
-            return EmbeddedCorpus.lexicalOnly(snapshot);
-        }
-        List<EmbeddedChunk> embedded = new ArrayList<>(pending.size());
-        for (int i = 0; i < pending.size(); i++) {
-            EmbeddedChunk base = pending.get(i);
-            embedded.add(new EmbeddedChunk(base.source(), base.chunkIndex(), base.text(), vectors.get(i)));
-        }
-        return new EmbeddedCorpus(snapshot, embedded, true);
     }
 }
