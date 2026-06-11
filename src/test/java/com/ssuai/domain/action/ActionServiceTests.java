@@ -14,6 +14,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
@@ -27,15 +28,18 @@ class ActionServiceTests {
     private static final String ACTION_TYPE = "LIBRARY_SEAT_RESERVATION";
 
     private ActionAuditRepository repository;
+    private SimpleMeterRegistry meterRegistry;
     private ActionService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ActionAuditRepository.class);
+        meterRegistry = new SimpleMeterRegistry();
         service = new ActionService(
                 repository,
                 new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                meterRegistry);
         when(repository.save(any(ActionAudit.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -43,18 +47,22 @@ class ActionServiceTests {
     void claimMovesPendingToExecutingThenCompletesSuccess() {
         ActionAudit created = service.createPendingAction(
                 STUDENT_ID, ACTION_TYPE, new LibraryReservationRequest(101L));
+        assertCounter("prepared");
+
         when(repository.lockByStudentIdAndStatus(eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
                 .thenReturn(List.of(created));
 
         ActionAudit claimed = service.claimPendingAction(STUDENT_ID);
         assertThat(claimed.getStatus()).isEqualTo(ActionStatus.EXECUTING);
         assertThat(claimed.getConfirmedAt()).isEqualTo(NOW);
+        assertCounter("executing");
 
         ActionAudit done = service.completeAction(claimed, ActionService.OUTCOME_SUCCESS, "ok");
         assertThat(done.getStatus()).isEqualTo(ActionStatus.SUCCESS);
         assertThat(done.getOutcomeCode()).isEqualTo("SUCCESS");
         assertThat(done.getCompletedAt()).isEqualTo(NOW);
         assertThat(done.getPayload()).contains("\"seatId\":101");
+        assertTerminalCounter("success", ActionService.OUTCOME_SUCCESS);
     }
 
     @Test
@@ -68,6 +76,7 @@ class ActionServiceTests {
         assertThat(done.getStatus()).isEqualTo(ActionStatus.FAILED);
         assertThat(done.getOutcomeCode()).isEqualTo("FAILURE_RACE");
         assertThat(done.getCompletedAt()).isEqualTo(NOW);
+        assertTerminalCounter("failed", ActionService.OUTCOME_FAILURE_RACE);
     }
 
     @Test
@@ -112,5 +121,22 @@ class ActionServiceTests {
         assertThat(stale.getStatus()).isEqualTo(ActionStatus.EXPIRED);
         assertThat(stale.getExpiredAt()).isEqualTo(NOW);
         verify(repository).saveAll(List.of(stale));
+    }
+
+    private void assertCounter(String status) {
+        assertThat(meterRegistry.get("library.action")
+                .tag("action_type", ACTION_TYPE)
+                .tag("status", status)
+                .counter()
+                .count()).isEqualTo(1.0);
+    }
+
+    private void assertTerminalCounter(String status, String outcome) {
+        assertThat(meterRegistry.get("library.action")
+                .tag("action_type", ACTION_TYPE)
+                .tag("status", status)
+                .tag("outcome", outcome)
+                .counter()
+                .count()).isEqualTo(1.0);
     }
 }
