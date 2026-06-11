@@ -34,6 +34,19 @@ public class AcademicEmbeddingProperties {
     /** Texts per embeddings request when embedding the corpus. */
     private int batchSize = 96;
 
+    /**
+     * Pause between consecutive batch requests. The Gemini free tier allows only a
+     * handful of embedding requests per minute; firing the corpus batches
+     * back-to-back returned 429s for everything after the first (prod 2026-06-11).
+     */
+    private long batchIntervalMs = 15_000;
+
+    /** Extra attempts per batch when the API answers 429 (0 = give up immediately). */
+    private int retryMaxAttempts = 3;
+
+    /** First retry backoff; doubles per attempt (30s → 60s → 120s by default). */
+    private long retryBackoffMs = 30_000;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -80,6 +93,30 @@ public class AcademicEmbeddingProperties {
 
     public void setBatchSize(int batchSize) {
         this.batchSize = batchSize;
+    }
+
+    public long getBatchIntervalMs() {
+        return batchIntervalMs;
+    }
+
+    public void setBatchIntervalMs(long batchIntervalMs) {
+        this.batchIntervalMs = batchIntervalMs;
+    }
+
+    public int getRetryMaxAttempts() {
+        return retryMaxAttempts;
+    }
+
+    public void setRetryMaxAttempts(int retryMaxAttempts) {
+        this.retryMaxAttempts = retryMaxAttempts;
+    }
+
+    public long getRetryBackoffMs() {
+        return retryBackoffMs;
+    }
+
+    public void setRetryBackoffMs(long retryBackoffMs) {
+        this.retryBackoffMs = retryBackoffMs;
     }
 
     public boolean isUsable() {

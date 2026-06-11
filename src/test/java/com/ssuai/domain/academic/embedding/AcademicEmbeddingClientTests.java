@@ -4,10 +4,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientResponseException;
 
 class AcademicEmbeddingClientTests {
+
+    /** Tiny timings so retry/pacing tests run instantly. */
+    private static AcademicEmbeddingProperties retryProps() {
+        AcademicEmbeddingProperties props = new AcademicEmbeddingProperties();
+        props.setEnabled(true);
+        props.setApiKey("key");
+        props.setDimensions(2);
+        props.setBatchIntervalMs(0);
+        props.setRetryBackoffMs(1);
+        return props;
+    }
+
+    private static RestClientResponseException tooManyRequests() {
+        return HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders.EMPTY, new byte[0], null);
+    }
 
     @Test
     void truncatesToRequestedDimensionsAndNormalizesToUnitLength() {
@@ -38,6 +59,58 @@ class AcademicEmbeddingClientTests {
         assertThat(client.isUsable()).isFalse();
         assertThat(client.embed(List.of("anything"))).isEmpty();
         assertThat(client.embedQuery("anything")).isEmpty();
+    }
+
+    @Test
+    void retriesRateLimitedBatchWithBackoffThenSucceeds() {
+        AtomicInteger calls = new AtomicInteger();
+        AcademicEmbeddingClient client = new AcademicEmbeddingClient(retryProps()) {
+            @Override
+            EmbeddingResponse callEmbeddings(List<String> batch) {
+                if (calls.incrementAndGet() <= 2) {
+                    throw tooManyRequests();
+                }
+                return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0), 0)));
+            }
+        };
+
+        List<float[]> vectors = client.embed(List.of("text"));
+
+        assertThat(calls.get()).isEqualTo(3);
+        assertThat(vectors).hasSize(1);
+        assertThat(vectors.getFirst()).hasSize(2);
+    }
+
+    @Test
+    void givesUpWhenRateLimitOutlastsRetryBudget() {
+        AcademicEmbeddingProperties props = retryProps();
+        props.setRetryMaxAttempts(1);
+        AtomicInteger calls = new AtomicInteger();
+        AcademicEmbeddingClient client = new AcademicEmbeddingClient(props) {
+            @Override
+            EmbeddingResponse callEmbeddings(List<String> batch) {
+                calls.incrementAndGet();
+                throw tooManyRequests();
+            }
+        };
+
+        assertThat(client.embed(List.of("text"))).isEmpty();
+        assertThat(calls.get()).isEqualTo(2); // initial call + 1 retry
+    }
+
+    @Test
+    void nonRateLimitFailureIsNotRetried() {
+        AtomicInteger calls = new AtomicInteger();
+        AcademicEmbeddingClient client = new AcademicEmbeddingClient(retryProps()) {
+            @Override
+            EmbeddingResponse callEmbeddings(List<String> batch) {
+                calls.incrementAndGet();
+                throw new IllegalStateException("boom");
+            }
+        };
+
+        assertThat(client.embed(List.of("text"))).isEmpty();
+        assertThat(calls.get()).isEqualTo(1);
     }
 
     @Test
