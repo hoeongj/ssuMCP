@@ -1,0 +1,13 @@
+{
+  "name": "Pyxis per-room seat list (static body, lognormal latency)",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/pyxis-api/1/api/rooms/[0-9]+/seats"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json;charset=UTF-8" },
+    "bodyFileName": "room-seats.json",
+    "delayDistribution": { "type": "lognormal", "median": 120, "sigma": 0.35 }
+  }
+}

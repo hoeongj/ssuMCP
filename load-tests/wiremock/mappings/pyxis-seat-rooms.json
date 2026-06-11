@@ -1,0 +1,13 @@
+{
+  "name": "Pyxis seat-rooms summary (fixture body, lognormal latency)",
+  "request": {
+    "method": "GET",
+    "urlPath": "/pyxis-api/1/seat-rooms"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json;charset=UTF-8" },
+    "bodyFileName": "seat-rooms.json",
+    "delayDistribution": { "type": "lognormal", "median": 120, "sigma": 0.35 }
+  }
+}
