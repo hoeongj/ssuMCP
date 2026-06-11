@@ -2,6 +2,7 @@ package com.ssuai.domain.academic.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.annotation.PostConstruct;
@@ -28,6 +29,7 @@ public class AcademicPolicyCorpusCache {
     private final AcademicPolicyConnector connector;
     private final AcademicEmbeddingClient embeddingClient;
     private final AtomicReference<EmbeddedCorpus> current = new AtomicReference<>();
+    private final AtomicBoolean backgroundRefreshRunning = new AtomicBoolean(false);
     private final boolean refreshEnabled;
 
     public AcademicPolicyCorpusCache(
@@ -50,17 +52,36 @@ public class AcademicPolicyCorpusCache {
 
     @EventListener(ApplicationReadyEvent.class)
     void refreshAfterStartup() {
-        // Background thread: this listener runs before the readiness probe flips
-        // to ACCEPTING_TRAFFIC, and a paced embedding refresh (batch interval +
-        // 429 backoff) can legitimately take minutes.
-        Thread.ofVirtual().name("academic-corpus-refresh").start(this::refreshFromOfficialSources);
+        refreshInBackground();
     }
 
     @Scheduled(
             initialDelayString = "${ssuai.academic-policy.initial-delay-ms:30000}",
             fixedDelayString = "${ssuai.academic-policy.refresh-interval-ms:21600000}")
     void scheduledRefresh() {
-        refreshFromOfficialSources();
+        refreshInBackground();
+    }
+
+    /**
+     * Runs the corpus refresh on a background virtual thread, at most one at a
+     * time. Two reasons: (1) a paced embedding refresh can take minutes and must
+     * not block the shared scheduling-1 thread (library session cleanup runs
+     * there every minute), and (2) the startup refresh and the first scheduled
+     * refresh (initial delay 30s) used to overlap, doubling request rate against
+     * the free-tier embedding quota and 429-ing each other (prod 2026-06-11).
+     */
+    private void refreshInBackground() {
+        if (!backgroundRefreshRunning.compareAndSet(false, true)) {
+            log.debug("academic-policy refresh already running; skipping");
+            return;
+        }
+        Thread.ofVirtual().name("academic-corpus-refresh").start(() -> {
+            try {
+                refreshFromOfficialSources();
+            } finally {
+                backgroundRefreshRunning.set(false);
+            }
+        });
     }
 
     /** Backward-compatible accessor: the lexical search path only needs the snapshot. */
