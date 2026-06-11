@@ -54,6 +54,25 @@ class LibraryReservationIntentTests {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void immediateReservationCanSkipWaitingAndClaimDirectly() {
+        LibraryReservationIntent intent = LibraryReservationIntent.immediateReservation(
+                "student",
+                "session",
+                3179L,
+                99L,
+                NOW,
+                NOW.plus(Duration.ofMinutes(5)));
+
+        assertThat(intent.getStatus()).isEqualTo(LibraryReservationIntentStatus.REQUESTED);
+        assertThat(intent.isImmediateReservation()).isTrue();
+
+        intent.claimForReservation(NOW.plusSeconds(1), Duration.ofSeconds(30));
+
+        assertThat(intent.getStatus()).isEqualTo(LibraryReservationIntentStatus.RESERVING);
+        assertThat(intent.getLockedUntil()).isEqualTo(NOW.plusSeconds(31));
+    }
+
     private static LibraryReservationIntent newIntent() {
         return LibraryReservationIntent.requested(
                 "student",

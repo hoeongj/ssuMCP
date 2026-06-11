@@ -71,7 +71,8 @@ class LibraryWaitMcpToolTests {
                                 null,
                                 null,
                                 null,
-                                3179L),
+                                3179L,
+                                null),
                         true));
 
         McpPrivateToolResponse<String> response =

@@ -4,9 +4,9 @@
 // Two modes (MODE env):
 //   same-seat      (default) SESSIONS users all confirm seat 9999 at once.
 //                  WireMock's contested-seat scenario lets the first reserve
-//                  through and answers warning.seat.alreadyCharged afterwards,
-//                  so exactly one confirm should end SUCCESS and the rest
-//                  FAILURE_RACE.
+//                  through. After EPIC 3 PR2, the backend intent queue should
+//                  collapse SESSIONS local confirms into one upstream reserve
+//                  call and SESSIONS-1 local FAILURE_RACE outcomes.
 //   distinct-seats every user confirms their own seat (20000+VU); all should
 //                  succeed.
 //
@@ -15,8 +15,10 @@
 // and WireMock's Pyxis login stub accepts any credentials. This only works
 // because the whole stack is synthetic — never run this against prod.
 //
-// The authoritative result lives in Postgres action_audit (see README for the
-// verification SQL); the k6 counters classify the user-facing messages.
+// The authoritative result lives in Postgres action_audit plus
+// library_reservation_intents (see README for verification SQL); the k6
+// counters classify the user-facing messages and teardown verifies WireMock's
+// upstream reserve request count.
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
@@ -52,11 +54,10 @@ export const options = {
         }
       : {
           checks: ['rate>0.99'],
-          // Upstream allows exactly one charge; at least one must win and
-          // race losers must be the overwhelming majority.
-          reserve_success: ['count>=1'],
-          reserve_race: [`count>=${SESSIONS - 5}`],
-          'http_req_duration{endpoint:confirm}': ['p(95)<2000'],
+          reserve_success: ['count==1'],
+          reserve_race: [`count==${SESSIONS - 1}`],
+          reserve_other: ['count==0'],
+          'http_req_duration{endpoint:confirm}': ['p(95)<9000'],
         },
 };
 
@@ -65,6 +66,10 @@ export function setup() {
   const reset = http.post(`${WIREMOCK}/__admin/scenarios/reset`);
   if (reset.status !== 200) {
     throw new Error(`WireMock scenario reset failed: ${reset.status}`);
+  }
+  const clearRequests = http.del(`${WIREMOCK}/__admin/requests`);
+  if (clearRequests.status !== 200) {
+    throw new Error(`WireMock request journal reset failed: ${clearRequests.status}`);
   }
 
   const sessions = [];
@@ -121,13 +126,35 @@ export default function (data) {
     reserveOther.add(1);
     return;
   }
-  if (conf.text.indexOf('예약 완료') >= 0) {
+  if (conf.text.indexOf('예약 완료') >= 0 || conf.text.indexOf('예약 intent 큐 처리 완료') >= 0) {
     reserveSuccess.add(1);
   } else if (conf.text.indexOf('이미 선점') >= 0) {
     reserveRace.add(1);
-  } else if (conf.text.indexOf('응답이 없') >= 0) {
+  } else if (conf.text.indexOf('응답이 없') >= 0 || conf.text.indexOf('처리 중') >= 0) {
     reserveTimeout.add(1);
   } else {
     reserveOther.add(1);
+  }
+}
+
+export function teardown() {
+  if (MODE !== 'same-seat') {
+    return;
+  }
+  const count = http.post(
+    `${WIREMOCK}/__admin/requests/count`,
+    JSON.stringify({
+      method: 'POST',
+      urlPath: '/pyxis-api/1/api/seat-charges',
+      bodyPatterns: [{ matchesJsonPath: '$[?(@.seatId == 9999)]' }],
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  if (count.status !== 200) {
+    throw new Error(`WireMock reserve count failed: ${count.status} ${count.body}`);
+  }
+  const json = JSON.parse(count.body);
+  if (json.count !== 1) {
+    throw new Error(`Expected one upstream reserve call for seat 9999, got ${json.count}`);
   }
 }

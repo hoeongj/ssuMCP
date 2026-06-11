@@ -1,5 +1,8 @@
 package com.ssuai.domain.mcp.tool;
 
+import java.time.Duration;
+import java.util.Optional;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -16,6 +19,9 @@ import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
+import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
+import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
+import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
@@ -23,37 +29,41 @@ import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 /**
  * Shared confirm step for library write actions (ADR 0015).
  *
- * <p>Flow: {@code claimPendingAction} moves the latest PENDING action to EXECUTING under a
- * row lock (single-use, concurrency-safe), the upstream call runs, then
- * {@code completeAction} records the terminal outcome. Because the audit row only becomes
- * SUCCESS after the upstream call actually succeeds, it never reports success for a failed
- * reservation.
+ * <p>Reserve confirms now create an immediate reservation intent and wait briefly
+ * for the queue worker. Cancel/swap still execute directly because PR2 only routes
+ * reserve through the intent queue.
  */
 @Component
 public class ConfirmActionMcpTool {
 
     private static final Logger log = LoggerFactory.getLogger(ConfirmActionMcpTool.class);
+    private static final Duration RESERVATION_INTENT_WAIT = Duration.ofSeconds(8);
+    private static final Duration RESERVATION_INTENT_POLL = Duration.ofMillis(200);
 
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
+    private final LibraryReservationIntentTransactions intentTransactions;
     private final McpAuthHelper authHelper;
 
     public ConfirmActionMcpTool(
             ActionService actionService,
             LibrarySessionStore sessionStore,
             LibraryReservationConnector reservationConnector,
+            LibraryReservationIntentTransactions intentTransactions,
             McpAuthHelper authHelper) {
         this.actionService = actionService;
         this.sessionStore = sessionStore;
         this.reservationConnector = reservationConnector;
+        this.intentTransactions = intentTransactions;
         this.authHelper = authHelper;
     }
 
     @Tool(
             name = "confirm_action",
             description = "가장 최근에 준비된 사용자 승인 대기 액션을 최종 확인하고 실행합니다. "
-                    + "prepare_reserve_library_seat(좌석 예약) 또는 prepare_cancel_library_seat(좌석 반납)으로 준비한 액션을 실행합니다. "
+                    + "prepare_reserve_library_seat(좌석 예약)는 예약 intent 큐를 통해 실행하고, "
+                    + "prepare_cancel_library_seat(좌석 반납)와 prepare_swap_library_seat(자리 변경)는 직접 실행합니다. "
                     + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
     )
     public McpPrivateToolResponse<String> confirmAction(
@@ -79,16 +89,12 @@ public class ConfirmActionMcpTool {
                     mcpSessionId, "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
         }
 
-        // Token check before claiming: if the library session is gone the action stays
-        // PENDING so the user can re-auth and confirm the same prepared action again.
         String token = sessionStore.token(sessionKey).orElse(null);
         if (token == null) {
             log.debug("confirm_action: library token missing, returning AUTH_REQUIRED");
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         }
 
-        // Claim atomically (PENDING -> EXECUTING under a row lock). A concurrent confirm
-        // that already claimed this action leaves nothing PENDING for us.
         ActionAudit claimed;
         try {
             claimed = actionService.claimPendingAction(sessionKey);
@@ -101,44 +107,87 @@ public class ConfirmActionMcpTool {
 
         String actionType = claimed.getActionType();
         if (LibraryReservationMcpTool.ACTION_TYPE.equals(actionType)) {
-            return executeReservation(mcpSessionId, claimed, token);
-        } else if (LibraryCancelMcpTool.ACTION_TYPE.equals(actionType)) {
+            return executeReservationViaIntent(mcpSessionId, sessionKey, claimed);
+        }
+        if (LibraryCancelMcpTool.ACTION_TYPE.equals(actionType)) {
             return executeCancellation(mcpSessionId, claimed, token);
-        } else if (LibrarySwapMcpTool.ACTION_TYPE.equals(actionType)) {
+        }
+        if (LibrarySwapMcpTool.ACTION_TYPE.equals(actionType)) {
             return executeSwap(mcpSessionId, claimed, token);
         }
         actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "지원하지 않는 액션 타입");
         return McpPrivateToolResponse.ok(mcpSessionId, "지원하지 않는 대기 액션입니다.");
     }
 
-    private McpPrivateToolResponse<String> executeReservation(
-            String mcpSessionId, ActionAudit claimed, String token) {
+    private McpPrivateToolResponse<String> executeReservationViaIntent(
+            String mcpSessionId,
+            String sessionKey,
+            ActionAudit claimed) {
         LibraryReservationRequest request = actionService.payload(claimed, LibraryReservationRequest.class);
-        try {
-            LibraryReservationResult result = reservationConnector.reserve(token, request);
-            actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS,
-                    result.roomName() + " " + result.seatCode() + "번 예약 완료");
-            return McpPrivateToolResponse.ok(mcpSessionId, String.format(
-                    "%s %s번 좌석 예약 완료! 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
-                    result.roomName(), result.seatCode(),
-                    result.beginTime(), result.endTime(), result.chargeId()));
-        } catch (LibrarySeatNotAvailableException exception) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE, "좌석이 이미 선점됨");
-            return McpPrivateToolResponse.ok(mcpSessionId,
-                    "좌석이 이미 선점됐습니다. recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
-        } catch (LibraryAuthRequiredException exception) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, "도서관 세션 만료");
-            return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
-        } catch (ConnectorTimeoutException exception) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, "학교 서버 응답 없음");
-            return McpPrivateToolResponse.ok(mcpSessionId,
-                    "학교 서버가 응답이 없어요. 잠시 후 다시 시도해주세요.");
-        } catch (RuntimeException exception) {
-            log.warn("confirm_action reserve failed", exception);
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "예약 실행 오류");
-            return McpPrivateToolResponse.ok(mcpSessionId,
-                    "실행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        LibraryReservationIntentView intent = intentTransactions.createImmediateReservation(
+                sessionKey,
+                claimed.getId(),
+                request.seatId(),
+                ActionService.ACTION_TTL);
+        return awaitReservationIntent(mcpSessionId, claimed, intent.intentId());
+    }
+
+    private McpPrivateToolResponse<String> awaitReservationIntent(
+            String mcpSessionId,
+            ActionAudit claimed,
+            Long intentId) {
+        long deadline = System.nanoTime() + RESERVATION_INTENT_WAIT.toNanos();
+        while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
+            Optional<LibraryReservationIntentView> current = intentTransactions.findById(intentId);
+            if (current.isPresent() && isTerminal(current.get().status())) {
+                return completeReservationFromIntent(mcpSessionId, claimed, current.get());
+            }
+            sleepQuietly();
         }
+        actionService.completeAction(
+                claimed,
+                ActionService.OUTCOME_TIMEOUT,
+                "Reservation intent still processing: intentId=" + intentId);
+        return McpPrivateToolResponse.ok(
+                mcpSessionId,
+                "예약 intent가 처리 중입니다. intentId=" + intentId
+                        + ". 같은 mcp_session_id로 get_library_wait_status를 호출해 최종 결과를 확인하세요.");
+    }
+
+    private McpPrivateToolResponse<String> completeReservationFromIntent(
+            String mcpSessionId,
+            ActionAudit claimed,
+            LibraryReservationIntentView intent) {
+        String detail = intent.outcomeMessage() == null ? "intentId=" + intent.intentId() : intent.outcomeMessage();
+        if (intent.status() == LibraryReservationIntentStatus.SUCCEEDED) {
+            actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS, detail);
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId,
+                    "예약 intent 큐 처리 완료. intentId=" + intent.intentId()
+                            + ". " + detail);
+        }
+        if (intent.status() == LibraryReservationIntentStatus.FAILED_RACE) {
+            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE, detail);
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId,
+                    "좌석이 이미 선점됐습니다. intentId=" + intent.intentId()
+                            + ". recommend_library_seats와 prepare_reserve_library_seat로 다른 좌석을 다시 시도해주세요.");
+        }
+        if (intent.status() == LibraryReservationIntentStatus.FAILED_AUTH) {
+            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, detail);
+            return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
+        }
+        if (intent.status() == LibraryReservationIntentStatus.EXPIRED) {
+            actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, detail);
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId,
+                    "예약 intent가 실행 전에 만료됐습니다. intentId=" + intent.intentId() + ".");
+        }
+        actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, detail);
+        return McpPrivateToolResponse.ok(
+                mcpSessionId,
+                "예약 intent 실행에 실패했습니다. intentId=" + intent.intentId()
+                        + ". get_library_wait_status로 상세 상태를 확인하세요.");
     }
 
     private McpPrivateToolResponse<String> executeCancellation(
@@ -168,7 +217,6 @@ public class ConfirmActionMcpTool {
     private McpPrivateToolResponse<String> executeSwap(
             String mcpSessionId, ActionAudit claimed, String token) {
         LibrarySwapRequest request = actionService.payload(claimed, LibrarySwapRequest.class);
-        // Step 1 — release the current seat.
         try {
             reservationConnector.discharge(token, request.oldChargeId());
         } catch (LibraryAuthRequiredException exception) {
@@ -184,7 +232,7 @@ public class ConfirmActionMcpTool {
             return McpPrivateToolResponse.ok(mcpSessionId,
                     "기존 좌석 반납에 실패해 자리 변경을 못 했어요. 잠시 후 다시 시도해주세요.");
         }
-        // Step 2 — reserve the new seat. The old seat is already released.
+
         try {
             LibraryReservationResult result = reservationConnector.reserve(
                     token, new LibraryReservationRequest(request.newSeatId()));
@@ -208,6 +256,21 @@ public class ConfirmActionMcpTool {
             return McpPrivateToolResponse.ok(mcpSessionId,
                     "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번) 예약에 실패했습니다. "
                             + "prepare_reserve_library_seat로 다시 시도해주세요.");
+        }
+    }
+
+    private static boolean isTerminal(LibraryReservationIntentStatus status) {
+        return switch (status) {
+            case SUCCEEDED, FAILED_RACE, FAILED_AUTH, FAILED_UPSTREAM, CANCELLED, EXPIRED -> true;
+            case REQUESTED, WAITING_FOR_SEAT, RESERVING -> false;
+        };
+    }
+
+    private static void sleepQuietly() {
+        try {
+            Thread.sleep(RESERVATION_INTENT_POLL.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 }

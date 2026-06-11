@@ -11,7 +11,8 @@ public record LibraryReservationIntentView(
         Instant completedAt,
         String outcomeCode,
         String outcomeMessage,
-        Long targetSeatId
+        Long targetSeatId,
+        Long actionAuditId
 ) {
 
     public static LibraryReservationIntentView from(LibraryReservationIntent intent) {
@@ -24,6 +25,7 @@ public record LibraryReservationIntentView(
                 intent.getCompletedAt(),
                 intent.getOutcomeCode(),
                 intent.getOutcomeMessage(),
-                intent.getTargetSeatId());
+                intent.getTargetSeatId(),
+                intent.getActionAuditId());
     }
 }

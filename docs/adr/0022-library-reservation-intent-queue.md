@@ -1,11 +1,13 @@
 # ADR 0022 - Library reservation intent queue with polling outbox
 
-- **Status**: Accepted - PR1 implemented 2026-06-11.
+- **Status**: Accepted - PR1 and PR2 implemented 2026-06-11.
 - **Date**: 2026-06-11
 - **Scope**:
   - `V8__create_library_reservation_intents.sql`
+  - `V9__add_action_audit_id_to_library_reservation_intents.sql`
   - `com.ssuai.domain.library.reservation.intent`
   - `LibraryWaitMcpTool`
+  - `ConfirmActionMcpTool` reserve path
   - `docs/architecture.md` and `docs/mcp-tools.md`
 
 ## Background
@@ -29,6 +31,11 @@ PR1 therefore adds a DB-backed **reservation intent queue**. The queue is the
 execution unit; `action_audit` remains the user-consent evidence and is integrated
 in PR2.
 
+PR2 routes `confirm_action` reserve confirms through the same queue. The audit
+row records the user's consent and the synchronous facade outcome. The
+`library_reservation_intents` row is the execution unit and stores the durable
+reservation state.
+
 ## Decision
 
 ### D1. Store explicit intent state in Postgres/H2-compatible tables
@@ -46,6 +53,10 @@ REQUESTED -> WAITING_FOR_SEAT -> RESERVING -> SUCCEEDED
                                         |-> FAILED_RACE
                                         |-> FAILED_AUTH
                                         |-> FAILED_UPSTREAM
+REQUESTED(immediate confirm) -> RESERVING -> SUCCEEDED
+                                        |-> FAILED_RACE
+                                        |-> FAILED_AUTH
+                                        |-> FAILED_UPSTREAM
 WAITING_FOR_SEAT -> CANCELLED
 WAITING_FOR_SEAT -> EXPIRED
 ```
@@ -59,12 +70,19 @@ the intent table follows the existing `action_audit` convention and stores that
 opaque key. The raw `mcp_session_id`, Pyxis token, login ID, and password never
 enter the intent or outbox tables.
 
+PR2 adds nullable `action_audit_id`. It is set only for immediate confirm
+intents. Wait intents still have no audit row because their registration call is
+the consent event.
+
 ### D2. Claim rows with `FOR UPDATE SKIP LOCKED`, then release the transaction
 
 The worker's first transaction is intentionally short:
 
 ```sql
-WHERE status = 'WAITING_FOR_SEAT'
+WHERE (
+        status = 'WAITING_FOR_SEAT'
+        OR (status = 'REQUESTED' AND action_audit_id IS NOT NULL)
+      )
   AND next_attempt_at <= now
   AND expires_at > now
 ORDER BY next_attempt_at, id
@@ -96,6 +114,17 @@ If several claimed intents target the same seat in one worker tick, only the
 first one calls Pyxis. The rest fail locally as `FAILED_RACE`. That is the key
 portfolio behavior PR2 will measure with k6: "100 same-seat confirms produce one
 upstream reserve call."
+
+The first PR2 k6 run found a subtle gap: k6 user results were already
+`SUCCESS` 1 / `FAILED_RACE` 99, but WireMock still saw two upstream reserve
+calls because the worker tick split the burst. Same-tick grouping alone removes
+duplicates only inside one claim batch. PR2 therefore adds a narrow immediate
+confirm suppress rule: if a same-seat immediate intent has already reached
+`SUCCEEDED` or `FAILED_RACE` and its intent expiry has not passed, later claimed
+same-seat groups fail locally as `FAILED_RACE` without another Pyxis write. The
+rule is intentionally scoped to `action_audit_id is not null` immediate confirms
+and expires with the action TTL. Redisson seat locks remain the longer-term
+cross-instance coordination story in EPIC 4.
 
 ### D4. Recover expired leases by reading current charge, not by retrying writes
 
@@ -189,6 +218,10 @@ Sources:
 - The active-intent limit is one per library principal key. Duplicate
   `wait_for_library_seat` calls return the existing active intent instead of
   creating another queue row.
+- `confirm_action` reserve creates an immediate intent with fixed
+  `target_seat_id`, `action_audit_id`, and a five-minute expiry matching
+  `ActionService.ACTION_TTL`. It then polls the intent for up to about 8 seconds
+  and returns either the terminal outcome or "processing" with `intentId`.
 - `wait_for_library_seat` is a deliberate exception to the usual
   `prepare_* -> confirm_action` write pattern. The tool description and response
   state that registration itself is consent and that the worker may reserve
@@ -217,6 +250,20 @@ PR1 test coverage:
 - MCP tool registration in `McpServerConfig` and over Streamable HTTP self-dogfood.
 
 `gradlew.bat test` passed on 2026-06-11.
+
+PR2 verification:
+
+- immediate reservation state-machine path can skip `WAITING_FOR_SEAT` and move
+  from `REQUESTED` to `RESERVING`;
+- native claim query includes immediate `REQUESTED` rows with `action_audit_id`;
+- `ConfirmActionMcpTool` reserve path creates an immediate intent and does not
+  call `LibraryReservationConnector.reserve()` directly;
+- worker skips seat scanning for immediate intents and uses the fixed target
+  seat;
+- recent same-seat immediate terminal attempts suppress later tick-boundary
+  duplicate upstream writes;
+- same-seat k6 100 confirm run passed thresholds and WireMock count verified one
+  upstream reserve call.
 
 ## Interview Questions
 

@@ -48,6 +48,9 @@ public class LibraryReservationIntent {
     @Column(name = "target_seat_id")
     private Long targetSeatId;
 
+    @Column(name = "action_audit_id")
+    private Long actionAuditId;
+
     @Column(name = "status", length = 32, nullable = false)
     @Enumerated(EnumType.STRING)
     private LibraryReservationIntentStatus status;
@@ -90,6 +93,7 @@ public class LibraryReservationIntent {
             String preferredRoomIds,
             String seatAttributes,
             Long targetSeatId,
+            Long actionAuditId,
             Instant now,
             Instant expiresAt) {
         this.studentId = requireNonBlank(studentId, "studentId");
@@ -98,6 +102,7 @@ public class LibraryReservationIntent {
         this.preferredRoomIds = blankToNull(preferredRoomIds);
         this.seatAttributes = blankToNull(seatAttributes);
         this.targetSeatId = targetSeatId;
+        this.actionAuditId = actionAuditId;
         this.status = LibraryReservationIntentStatus.REQUESTED;
         this.attemptCount = 0;
         this.nextAttemptAt = Objects.requireNonNull(now, "now");
@@ -116,7 +121,40 @@ public class LibraryReservationIntent {
             Instant now,
             Instant expiresAt) {
         return new LibraryReservationIntent(
-                studentId, sessionKey, preferredFloor, preferredRoomIds, seatAttributes, targetSeatId, now, expiresAt);
+                studentId,
+                sessionKey,
+                preferredFloor,
+                preferredRoomIds,
+                seatAttributes,
+                targetSeatId,
+                null,
+                now,
+                expiresAt);
+    }
+
+    public static LibraryReservationIntent immediateReservation(
+            String studentId,
+            String sessionKey,
+            Long targetSeatId,
+            Long actionAuditId,
+            Instant now,
+            Instant expiresAt) {
+        if (targetSeatId == null) {
+            throw new IllegalArgumentException("targetSeatId is required for an immediate reservation intent.");
+        }
+        if (actionAuditId == null) {
+            throw new IllegalArgumentException("actionAuditId is required for an immediate reservation intent.");
+        }
+        return new LibraryReservationIntent(
+                studentId,
+                sessionKey,
+                null,
+                null,
+                null,
+                targetSeatId,
+                actionAuditId,
+                now,
+                expiresAt);
     }
 
     public void markWaitingForSeat(Instant now) {
@@ -127,7 +165,10 @@ public class LibraryReservationIntent {
     }
 
     public void claimForReservation(Instant now, Duration leaseDuration) {
-        requireStatus(LibraryReservationIntentStatus.WAITING_FOR_SEAT);
+        boolean immediateClaim = status == LibraryReservationIntentStatus.REQUESTED && isImmediateReservation();
+        if (status != LibraryReservationIntentStatus.WAITING_FOR_SEAT && !immediateClaim) {
+            throw new IllegalStateException("Expected claimable intent but was " + status);
+        }
         this.status = LibraryReservationIntentStatus.RESERVING;
         this.lockedUntil = Objects.requireNonNull(now, "now").plus(Objects.requireNonNull(leaseDuration, "leaseDuration"));
         this.updatedAt = now;
@@ -189,6 +230,10 @@ public class LibraryReservationIntent {
         return !isTerminal();
     }
 
+    public boolean isImmediateReservation() {
+        return actionAuditId != null;
+    }
+
     private void complete(
             LibraryReservationIntentStatus terminalStatus,
             String outcomeCode,
@@ -248,6 +293,10 @@ public class LibraryReservationIntent {
 
     public Long getTargetSeatId() {
         return targetSeatId;
+    }
+
+    public Long getActionAuditId() {
+        return actionAuditId;
     }
 
     public LibraryReservationIntentStatus getStatus() {
