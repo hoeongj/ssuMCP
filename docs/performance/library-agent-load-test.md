@@ -123,7 +123,8 @@ same-seat terminal attempt가 있으면 후속 group을 로컬 `FAILED_RACE`로 
 
 - Grafana(`localhost:3001`)에서 k6 공식 대시보드 `19665` import — k6 메트릭 438개 시계열이
   remote write로 적재됨을 확인.
-- `library_action_total`에 터미널 outcome(success/failed) 카운터가 없어 Grafana에서
-  결과 분포를 보려면 DB를 봐야 한다 → 카운터 태그 확장 백로그.
+- `library_action_total`은 Micrometer 내부 이름 `library.action`으로 등록된다. 준비/실행/만료는
+  `status` 태그만 사용하고, 터미널 상태는 `status=success|failed`와 `outcome=SUCCESS|FAILURE_RACE|...`
+  태그를 함께 기록한다. Grafana는 DB 조회 없이 action 결과 분포를 이 태그로 그리면 된다.
 - 발견된 숨은 커플링: real 커넥터들이 쓰는 `ObjectMapper` 빈이 chat=llm일 때만 등록됨 —
   `TROUBLESHOOTING.md` 2026-06-11 항목 참조.
