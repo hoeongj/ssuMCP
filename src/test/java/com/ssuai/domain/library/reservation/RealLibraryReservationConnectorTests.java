@@ -25,6 +25,7 @@ import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 import com.ssuai.global.resilience.PyxisResilience;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -146,6 +147,18 @@ class RealLibraryReservationConnectorTests {
 
         assertThatThrownBy(() -> connector.discharge(TOKEN, 1966693L))
                 .isInstanceOf(LibraryAuthRequiredException.class);
+    }
+
+    @Test
+    void dischargeThrowsSeatNotAvailableOnNotAvailableState() {
+        server.expect(requestTo(DISCHARGE_URL))
+                .andRespond(withSuccess("""
+                        {"success":false,"code":"warning.smuf.notAvailableState","message":"현재 상태에서는 처리할 수 없습니다.","data":null}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> connector.discharge(TOKEN, 1966693L))
+                .isInstanceOfSatisfying(LibrarySeatNotAvailableException.class, exception ->
+                        assertThat(exception.getPyxisCode()).isEqualTo("warning.smuf.notAvailableState"));
     }
 
     @Test

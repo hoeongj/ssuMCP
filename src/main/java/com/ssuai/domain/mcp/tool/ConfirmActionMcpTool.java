@@ -39,6 +39,7 @@ public class ConfirmActionMcpTool {
     private static final Logger log = LoggerFactory.getLogger(ConfirmActionMcpTool.class);
     private static final Duration RESERVATION_INTENT_WAIT = Duration.ofSeconds(8);
     private static final Duration RESERVATION_INTENT_POLL = Duration.ofMillis(200);
+    private static final String NOT_AVAILABLE_STATE_CODE = "warning.smuf.notAvailableState";
 
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
@@ -206,6 +207,12 @@ public class ConfirmActionMcpTool {
             actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, "학교 서버 응답 없음");
             return McpPrivateToolResponse.ok(mcpSessionId,
                     "학교 서버가 응답이 없어요. 잠시 후 다시 시도해주세요.");
+        } catch (LibrarySeatNotAvailableException exception) {
+            if (isNotAvailableState(exception)) {
+                actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 반납 불가");
+                return McpPrivateToolResponse.ok(mcpSessionId, notAvailableStateCancelMessage());
+            }
+            throw exception;
         } catch (RuntimeException exception) {
             log.warn("confirm_action cancel failed", exception);
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "반납 실행 오류");
@@ -226,6 +233,12 @@ public class ConfirmActionMcpTool {
             actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, "학교 서버 응답 없음 (반납 단계)");
             return McpPrivateToolResponse.ok(mcpSessionId,
                     "학교 서버가 응답이 없어 자리 변경을 못 했어요. 잠시 후 다시 시도해주세요.");
+        } catch (LibrarySeatNotAvailableException exception) {
+            if (isNotAvailableState(exception)) {
+                actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 이석 불가");
+                return McpPrivateToolResponse.ok(mcpSessionId, notAvailableStateSwapMessage());
+            }
+            throw exception;
         } catch (RuntimeException exception) {
             log.warn("confirm_action swap: discharge failed seat={}", request.newSeatId(), exception);
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "기존 좌석 반납 실패");
@@ -264,6 +277,22 @@ public class ConfirmActionMcpTool {
             case SUCCEEDED, FAILED_RACE, FAILED_AUTH, FAILED_UPSTREAM, CANCELLED, EXPIRED -> true;
             case REQUESTED, WAITING_FOR_SEAT, RESERVING -> false;
         };
+    }
+
+    private static boolean isNotAvailableState(LibrarySeatNotAvailableException exception) {
+        return NOT_AVAILABLE_STATE_CODE.equals(exception.getPyxisCode());
+    }
+
+    private static String notAvailableStateCancelMessage() {
+        return "아직 입실 전이라 좌석을 반납할 수 없어요. "
+                + "도서관 게이트/NFC로 입실한 뒤 다시 시도해주세요. "
+                + "미입실 배정 좌석은 도서관 정책에 따라 일정 시간 후 자동 취소될 수 있습니다.";
+    }
+
+    private static String notAvailableStateSwapMessage() {
+        return "아직 입실 전이라 자리 변경을 할 수 없어요. 기존 예약은 그대로 유지됐습니다. "
+                + "도서관 게이트/NFC로 입실한 뒤 다시 시도해주세요. "
+                + "미입실 배정 좌석은 도서관 정책에 따라 일정 시간 후 자동 취소될 수 있습니다.";
     }
 
     private static void sleepQuietly() {

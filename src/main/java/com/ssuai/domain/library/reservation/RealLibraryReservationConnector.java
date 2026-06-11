@@ -35,6 +35,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
     private static final String DISCHARGE_PATH = "/pyxis-api/1/api/seat-discharges";
     private static final String NO_RECORD_CODE = "success.noRecord";
     private static final String NEED_LOGIN_CODE = "error.authentication.needLogin";
+    private static final String NOT_AVAILABLE_STATE_CODE = "warning.smuf.notAvailableState";
 
     private final LibraryReservationProperties properties;
     private final ObjectMapper objectMapper;
@@ -191,7 +192,11 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         JsonNode root = parseJson(body);
         if (!root.path("success").asBoolean(false)) {
             checkNeedLogin(root);
-            log.warn("library discharge upstream returned success=false: code={}", root.path("code").asText(""));
+            String code = root.path("code").asText("");
+            log.warn("library discharge upstream returned success=false: code={}", code);
+            if (NOT_AVAILABLE_STATE_CODE.equals(code)) {
+                throw new LibrarySeatNotAvailableException(code);
+            }
             throw new ConnectorParseException();
         }
     }

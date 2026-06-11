@@ -3,6 +3,7 @@ package com.ssuai.domain.mcp.tool;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,11 +21,14 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
+import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
+import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 
 class ConfirmActionMcpToolTests {
 
@@ -99,15 +103,56 @@ class ConfirmActionMcpToolTests {
         verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
     }
 
+    @Test
+    void cancelNotAvailableStateReturnsUserFriendlyMessage() {
+        ActionAudit action = claimableAction(LibraryCancelMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibraryCancelRequest.class))
+                .thenReturn(new LibraryCancelRequest(1966693L));
+        doThrow(new LibrarySeatNotAvailableException("warning.smuf.notAvailableState"))
+                .when(reservationConnector).discharge(TOKEN, 1966693L);
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("아직 입실 전")
+                .contains("반납할 수 없어요")
+                .contains("자동 취소");
+        verify(actionService).completeAction(action, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 반납 불가");
+    }
+
+    @Test
+    void swapNotAvailableStateKeepsCurrentReservationAndDoesNotReserveNewSeat() {
+        ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibrarySwapRequest.class))
+                .thenReturn(new LibrarySwapRequest(1966693L, 3179L));
+        doThrow(new LibrarySeatNotAvailableException("warning.smuf.notAvailableState"))
+                .when(reservationConnector).discharge(TOKEN, 1966693L);
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("아직 입실 전")
+                .contains("자리 변경을 할 수 없어요")
+                .contains("기존 예약은 그대로 유지");
+        verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
+        verify(actionService).completeAction(action, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 이석 불가");
+    }
+
     private ActionAudit reservationAction() {
-        ActionAudit action = ActionAudit.pending(
-                SESSION_KEY, LibraryReservationMcpTool.ACTION_TYPE, "{\"seatId\":3179}", Instant.now());
+        ActionAudit action = claimableAction(LibraryReservationMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibraryReservationRequest.class))
+                .thenReturn(new LibraryReservationRequest(3179L));
+        return action;
+    }
+
+    private ActionAudit claimableAction(String actionType) {
+        ActionAudit action = ActionAudit.pending(SESSION_KEY, actionType, "{}", Instant.now());
         ReflectionTestUtils.setField(action, "id", ACTION_ID);
         when(actionService.findPendingAction(SESSION_KEY)).thenReturn(Optional.of(action));
         when(actionService.isExpired(action)).thenReturn(false);
         when(actionService.claimPendingAction(SESSION_KEY)).thenReturn(action);
-        when(actionService.payload(action, LibraryReservationRequest.class))
-                .thenReturn(new LibraryReservationRequest(3179L));
         return action;
     }
 
