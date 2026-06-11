@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.library.auth.LibrarySessionStore;
-import com.ssuai.domain.library.connector.LibrarySeatConnector;
 import com.ssuai.domain.library.dto.LibraryAllAvailableSeatsResponse;
 import com.ssuai.domain.library.dto.LibraryAllAvailableSeatsRoomSummary;
 import com.ssuai.domain.library.dto.LibraryRoomAvailableSeatsResponse;
@@ -41,16 +40,16 @@ public class LibraryAvailableSeatsService {
         ROOM_NAMES = Collections.unmodifiableMap(m);
     }
 
-    private final LibrarySeatConnector connector;
+    private final LibraryRoomSeatCache roomSeatCache;
     private final LibrarySessionStore sessionStore;
     private final boolean authRequired;
 
     public LibraryAvailableSeatsService(
-            LibrarySeatConnector connector,
+            LibraryRoomSeatCache roomSeatCache,
             LibrarySessionStore sessionStore,
             @Value("${ssuai.connector.library-seat:mock}") String connectorMode
     ) {
-        this.connector = connector;
+        this.roomSeatCache = roomSeatCache;
         this.sessionStore = sessionStore;
         this.authRequired = "real".equalsIgnoreCase(connectorMode);
     }
@@ -63,7 +62,7 @@ public class LibraryAvailableSeatsService {
 
         for (int roomId : ALL_ROOM_IDS) {
             log.debug("fetching per-seat data: roomId={}", roomId);
-            List<PyxisSeatInfo> seats = connector.fetchRoomSeats(roomId, token);
+            List<PyxisSeatInfo> seats = roomSeatCache.get(roomId, token);
             LibraryAllAvailableSeatsRoomSummary summary = toRoomSummary(roomId, seats);
             rooms.add(summary);
             totalAvailable += summary.availableSeats();
@@ -81,7 +80,7 @@ public class LibraryAvailableSeatsService {
         }
         String token = resolveToken(sessionKey);
         log.debug("fetching per-seat data: roomId={}", roomId);
-        List<PyxisSeatInfo> seats = connector.fetchRoomSeats(roomId, token);
+        List<PyxisSeatInfo> seats = roomSeatCache.get(roomId, token);
         return toRoomDetailResponse(roomId, seats);
     }
 

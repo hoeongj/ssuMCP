@@ -296,7 +296,8 @@ class MockMealConnector implements MealConnector { ... }
 |--------|-----|-----|------|
 | 오늘 학식 | 날짜 및 식당 | 주간 선적재/갱신 | `WeeklyMealCache`; 채팅 턴 중 대량 스크래핑 방지. |
 | 도서관 도서 검색 | 정규화된 검색어 + 페이지네이션 | 60초 | 공개 카탈로그 검색 결과 캐시. |
-| 도서관 좌석 현황 | 층 + 인증 경계 | 30초 | 인증된 데이터는 익명 접근을 워밍하지 않음. |
+| 도서관 좌석 현황 | 층 + 인증 경계 | 30초 | room-level 집계. 인증된 데이터는 익명 접근을 워밍하지 않음. |
+| 도서관 열람실별 live 좌석 | roomId + 인증 경계 | 5초 | per-seat 상태. `get_room_available_seats`, `get_library_available_seats`, 추천/worker가 공유. |
 | SAINT 시간표 | 학생/세션 범위 | 1시간 | 연결된 개인 데이터만. |
 
 키는 네임스페이스(`<domain>:<entity>:<id>`)로 구분되어 향후 일괄 무효화가 간단하다.
@@ -312,6 +313,7 @@ class MockMealConnector implements MealConnector { ... }
 - `MealService.getMealForRestaurant(date, restaurant)`가 캐시 미스 시 Connector 폴백을 포함한 캐시-어사이드 조회를 수행한다.
 
 도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 특히 도서관 좌석 캐시는 요청이 인증되어 있는지 여부를 키에 포함시켜, MCP나 REST 익명 호출자가 인증된 호출자의 캐시 결과를 받지 못하도록 한다.
+좌석 read 캐시는 모두 single-flight(request coalescing)를 포함한다. 캐시 만료 직후 같은 층/열람실을 동시에 요청해도 첫 요청만 Pyxis로 나가고 나머지는 같은 `CompletableFuture` 결과를 기다린다.
 
 ---
 

@@ -112,7 +112,8 @@ same-seat terminal attempt가 있으면 후속 group을 로컬 `FAILED_RACE`로 
 
 ## 4. 다음 비교 측정 (개선 후 같은 시나리오 재실행)
 
-1. **single-flight 캐시**: 캐시 만료 직후 동시 read 미스 → 업스트림 콜 1건 합쳐지는지
+1. **single-flight 재측정**: `LibraryRoomSeatCache` 도입 후 캐시 만료 직후 동시 per-seat read 미스가
+   room별 업스트림 1콜로 합쳐지는지 k6/WireMock request journal로 재측정
 2. **장애 주입 확장**: WireMock 500 연속·timeout 스텁으로 서킷 OPEN 전이 + 복구를 부하
    중에 관측 (EPIC 2 남은 항목과 연동)
 3. read RPS 상향(50→200+)으로 무릎(knee point) 탐색
