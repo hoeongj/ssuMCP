@@ -44,7 +44,7 @@ public class LibraryReservationSeatSelector {
                 if (targetSeatId != null && seatId != targetSeatId) {
                     continue;
                 }
-                if (matchesCatalogFilters(seatId, floor, attributes)) {
+                if (matchesCatalogFilters(seatId, room.roomId(), floor, attributes)) {
                     return Optional.of(seatId);
                 }
             }
@@ -52,12 +52,12 @@ public class LibraryReservationSeatSelector {
         return Optional.empty();
     }
 
-    private boolean matchesCatalogFilters(long externalSeatId, Integer floor, Set<String> attributes) {
+    private boolean matchesCatalogFilters(long externalSeatId, int roomId, Integer floor, Set<String> attributes) {
         if (floor == null && attributes.isEmpty()) {
             return true;
         }
         Optional<LibrarySeatCatalogEntry> entry =
-                catalogService.findByExternalSeatId(Long.toString(externalSeatId));
+                catalogService.findByExternalSeatId(Long.toString(externalSeatId), roomId);
         if (entry.isEmpty()) {
             return false;
         }
