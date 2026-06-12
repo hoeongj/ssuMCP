@@ -76,7 +76,7 @@ public class McpAuthSessionStore {
      * Returns the session for the given id if it exists and has not expired.
      * Expired sessions are dropped on access.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public Optional<McpAuthSession> find(McpAuthSessionId id) {
         if (id == null) {
             return Optional.empty();
@@ -85,7 +85,7 @@ public class McpAuthSessionStore {
     }
 
     /** Convenience overload accepting the raw string value from a tool argument. */
-    @Transactional
+    @Transactional(readOnly = true)
     public Optional<McpAuthSession> find(String idValue) {
         if (idValue == null || idValue.isBlank()) {
             return Optional.empty();
