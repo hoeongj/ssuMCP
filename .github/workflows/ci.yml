@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'deploy/charts/ssuai-backend/values.yaml'
   pull_request:
   workflow_dispatch:
 
@@ -34,7 +36,7 @@ jobs:
     name: MCP Server image (ghcr.io, ARM64)
     runs-on: ubuntu-latest
     needs: backend
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'build: automatic update of ssuai-backend') == false)) }}
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
       packages: write

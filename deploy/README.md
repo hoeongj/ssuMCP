@@ -150,11 +150,10 @@ copy or render it with `deploy/scripts/prepare-live-deploy.ps1`.
 
 The CI image-build job pushes
 `ghcr.io/hoeongj/ssumcp:sha-<full-sha>` for normal pushes to `main` and for
-manual `workflow_dispatch` runs. It intentionally skips ArgoCD Image Updater
-write-back commits whose message starts with
-`build: automatic update of ssuai-backend`; otherwise the auto-generated image
-pin commit would build a new image for itself and cause another image pin
-commit.
+manual `workflow_dispatch` runs. The workflow ignores pushes that only update
+`deploy/charts/ssuai-backend/values.yaml`, because those are ArgoCD Image
+Updater write-back commits. Otherwise the auto-generated image pin commit
+would build a new image for itself and cause another image pin commit.
 
 If the package is public, no pull secret is needed. If it is private, create a
 `dockerconfigjson` Secret and wire `imagePullSecrets` into the chart in a
