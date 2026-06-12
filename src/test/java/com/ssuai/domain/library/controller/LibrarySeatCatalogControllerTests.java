@@ -43,6 +43,7 @@ class LibrarySeatCatalogControllerTests {
                 List.of(new LibrarySeatRoomCatalogEntry(
                         "B1",
                         -1,
+                        null,
                         "basement-reading-b1",
                         "지하열람실(B1)",
                         "all",

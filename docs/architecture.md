@@ -155,6 +155,7 @@ com.ssuai
     │   │   └── intent  // LibraryReservationIntent queue, SKIP LOCKED worker, polling outbox
     │   │               // reserve, discharge, getCurrentCharge (GET /pyxis-api/1/api/seat-charges)
     │   │               // ActionService — prepare_* → PREPARED pending action → confirm_action 실행
+    │   ├── timeseries  // 좌석별 5분 sample 적재, 월 partition 유지보수, 시간별 room rollup
     │   └── service     // LibraryBookService (LRU 200, 60s TTL), LibrarySeatService (30s TTL)
     │                   // LibraryAvailableSeatsService, LibraryLoansService
     ├── lms
@@ -331,6 +332,59 @@ class MockMealConnector implements MealConnector { ... }
 
 ---
 
+## 7-1. 도서관 좌석 시계열 적재
+
+좌석 시계열 적재는 `domain.library.timeseries`의 JDBC 전용 경계다. JPA entity를 만들지 않았기 때문에 `ddl-auto: validate`는 기존 mapped entity만 검증하고, raw/rollup table은 Flyway와 repository 테스트가 책임진다.
+
+### 데이터 모델
+
+`library_seat_samples`는 좌석별 raw snapshot table이다.
+
+- PostgreSQL: `sampled_at` 기준 월 단위 `PARTITION BY RANGE`.
+- H2: 같은 column set의 plain table.
+- PK: `(sampled_at, room_id, external_seat_id)`.
+- 튜닝 기준 인덱스: `(room_id, sampled_at)`.
+- status code: `A=available`, `O=occupied`, `W=away`, `I=inactive`, `U=unknown`.
+
+`library_room_occupancy_hourly`는 영구 rollup table이다.
+
+- PK: `(room_id, bucket_start)`.
+- `sample_count`: 해당 시간의 room별 sample 개수.
+- `avg_available_seats`: sample별 available count 평균.
+- `avg_occupied_seats`: sample별 occupied count 평균. `occupied`와 `away`를 모두 사용 중으로 본다.
+- `max_occupied_seats`: 해당 시간의 최대 사용 중 좌석 수.
+
+### 수집 경로
+
+`LibrarySeatSampleSampler`는 `@Scheduled(fixedDelayString = "#{@librarySeatSampleProperties.cadence.toMillis()}")`로 동작한다. 기본값은 5분이다. room 목록은 `get_library_seat_catalog`의 소스인 `LibrarySeatRoomCatalogService.rooms()`에서 가져온다. 현재 `roomId`가 있는 2F/5F/6F reservable room만 수집하므로 정적 좌석 카탈로그 753석 목표와 맞는다. B1은 room catalog에는 남아 있지만 `roomId=null`이고 현재 적재 대상이 아니다.
+
+샘플러는 `LibraryRoomSeatCache.get(roomId, null)`을 호출한다. Pyxis connector를 직접 호출하지 않으므로 MCP live read, 추천, 예약 worker와 같은 5초 single-flight cache를 공유한다. 따라서 일반 상태에서 upstream 비용은 room당 5분 1회 수준이다.
+
+### 파티션 유지보수
+
+`LibrarySeatSamplePartitionMaintenance`는 부팅 시 한 번, 이후 매일 UTC 03:23에 실행된다. datasource URL이 `jdbc:postgresql:`로 시작하지 않으면 no-op이다. PostgreSQL에서는 현재 월과 다음 월 partition을 보장하고, 월 partition의 upper bound가 `retention-days`보다 오래되면 partition table을 drop한다. 기본 retention은 90일이다.
+
+Flyway layout은 `classpath:db/migration/V*__*.sql,classpath:db/migration/{vendor}`다. 기존 V1-V9는 공통 위치에 그대로 있고, V10만 PostgreSQL/H2 vendor 위치에 있다. 공통 위치를 root 파일 wildcard로 둔 이유는 Flyway classpath location이 재귀 scan이라 `classpath:db/migration`이 vendor 하위 V10까지 읽기 때문이다. PostgreSQL V10은 partitioned table과 초기 현재/다음 월 partition을 만들고, H2 V10은 plain table을 만든다.
+
+### 시간 rollup
+
+`LibraryRoomOccupancyHourlyRollupJob`은 매시 UTC 7분에 직전 완료 시간을 집계한다. PostgreSQL은 `ON CONFLICT DO UPDATE`로 idempotent upsert를 수행하고, H2는 같은 bucket을 delete 후 insert한다. raw sample은 90일 후 partition drop으로 사라지지만 hourly rollup은 영구 보관한다.
+
+### 데이터 볼륨
+
+정적 좌석 카탈로그 기준 753석을 5분마다 적재하면 하루 288회 sample이 생긴다.
+
+| 범위 | 예상 row 수 |
+| --- | ---: |
+| 1회 run | 753 |
+| 1일 | 216,864 |
+| 30일 | 약 650만 |
+| 90일 raw retention | 약 1,950만 |
+
+이 규모는 단일 PostgreSQL에서 월 partition과 `(room_id, sampled_at)` 인덱스로 운영 가능한 수준이다. 장기 추세와 예측 feature는 hourly rollup을 우선 사용하고, 최근 90일 세부 분석만 raw table을 읽는다.
+
+---
+
 ## 8. 설정 및 프로파일
 
 세 가지 프로파일:
@@ -353,6 +407,9 @@ class MockMealConnector implements MealConnector { ... }
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
 | `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/도서관 세션 자료 | 프로덕션에서 안정적인 연동 세션을 위해 라이브 |
+| `SSUAI_LIBRARY_SEAT_SAMPLE_ENABLED` | 좌석 시계열 적재 master switch | 기본 `true`; 장애 대응이나 migration 직후 점검 시 `false` 가능 |
+| `SSUAI_LIBRARY_SEAT_SAMPLE_CADENCE` | 좌석 raw sample 주기 | 기본 `5m`; Spring `Duration` 형식 |
+| `SSUAI_LIBRARY_SEAT_SAMPLE_RETENTION_DAYS` | raw sample partition retention | 기본 `90`; 월 partition upper bound 기준 drop |
 
 ---
 
@@ -540,6 +597,7 @@ Claude Desktop / IDE
 | 기능 | 상태 | 위치 / 계약 |
 | --- | --- | --- |
 | 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 좌석과 대출은 `LIBRARY` 연동 필요 |
+| 도서관 좌석 시계열 적재 | 출시 준비 | `domain.library.timeseries`; 5분 raw sample, 월 partition, 시간별 room rollup. [ADR 0023](adr/0023-library-seat-timeseries.md) |
 | SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
 | LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |
 | MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
