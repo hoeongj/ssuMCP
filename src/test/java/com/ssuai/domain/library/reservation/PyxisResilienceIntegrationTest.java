@@ -1,21 +1,20 @@
 package com.ssuai.domain.library.reservation;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.times;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.client.WireMock;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import com.ssuai.global.exception.ConnectorTimeoutException;
@@ -25,39 +24,33 @@ import com.ssuai.global.resilience.PyxisResilience;
 class PyxisResilienceIntegrationTest {
 
     private static final String TOKEN = "stub-pyxis-auth-token";
-    private static final String RESERVE_PATH = "/pyxis-api/1/api/seat-charges";
+    private static final String BASE_URL = "https://oasis.test.local";
+    private static final String RESERVE_URL = BASE_URL + "/pyxis-api/1/api/seat-charges";
 
-    private WireMockServer wireMockServer;
+    private MockRestServiceServer server;
     private SimpleMeterRegistry meterRegistry;
     private RealLibraryReservationConnector connector;
 
     @BeforeEach
     void setUp() {
-        wireMockServer = new WireMockServer(WireMockConfiguration.options().dynamicPort());
-        wireMockServer.start();
-        WireMock.configureFor("localhost", wireMockServer.port());
-
         LibraryReservationProperties properties = new LibraryReservationProperties();
-        properties.setBaseUrl(wireMockServer.baseUrl());
+        properties.setBaseUrl(BASE_URL);
         meterRegistry = new SimpleMeterRegistry();
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        server = MockRestServiceServer.bindTo(builder).build();
         connector = new RealLibraryReservationConnector(
                 properties,
                 new ObjectMapper(),
-                RestClient.builder().baseUrl(wireMockServer.baseUrl()).build(),
+                builder.build(),
                 new PyxisResilience(meterRegistry));
-    }
-
-    @AfterEach
-    void tearDown() {
-        if (wireMockServer != null) {
-            wireMockServer.stop();
-        }
     }
 
     @Test
     void opensCircuitAfterConsecutiveServerErrorsAndShortCircuitsNextCall() {
-        stubFor(WireMock.post(urlEqualTo(RESERVE_PATH))
-                .willReturn(WireMock.serverError()));
+        server.expect(times(10), requestTo(RESERVE_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Pyxis-Auth-Token", TOKEN))
+                .andRespond(withServerError());
 
         for (int i = 0; i < 10; i++) {
             assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
@@ -72,7 +65,6 @@ class PyxisResilienceIntegrationTest {
 
         assertThatThrownBy(() -> connector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
                 .isInstanceOf(CallNotPermittedException.class);
-        wireMockServer.verify(10, postRequestedFor(urlEqualTo(RESERVE_PATH))
-                .withHeader("Pyxis-Auth-Token", equalTo(TOKEN)));
+        server.verify();
     }
 }
