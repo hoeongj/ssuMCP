@@ -36,6 +36,7 @@ import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
+import com.ssuai.domain.library.reservation.intent.LibraryReservationRegistrationResult;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationWaitRequest;
 import com.ssuai.global.exception.ApiException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
@@ -168,13 +169,17 @@ public class LibraryReservationWebController {
             @RequestBody LibraryReservationWaitWebRequest request,
             HttpServletRequest httpRequest) {
         String sessionKey = requireLibrarySession(httpRequest);
-        return ApiResponse.success(intentTransactions.registerWait(sessionKey,
+        LibraryReservationRegistrationResult result = intentTransactions.registerWait(sessionKey,
                 new LibraryReservationWaitRequest(
                         request.preferredFloor(),
                         request.preferredRoomIds(),
                         request.seatAttributes(),
                         request.targetSeatId(),
-                        null)).intent());
+                        null));
+        if (!result.newlyCreated()) {
+            throw new ApiException(ErrorCode.ACTIVE_WAIT_EXISTS);
+        }
+        return ApiResponse.success(result.intent());
     }
 
     @GetMapping("/wait/current")
