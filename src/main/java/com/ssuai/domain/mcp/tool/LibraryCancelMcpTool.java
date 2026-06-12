@@ -17,7 +17,7 @@ import com.ssuai.domain.library.reservation.LibraryReservationResult;
 @Component
 public class LibraryCancelMcpTool {
 
-    static final String ACTION_TYPE = "LIBRARY_SEAT_CANCEL";
+    public static final String ACTION_TYPE = "LIBRARY_SEAT_CANCEL";
 
     private static final Logger log = LoggerFactory.getLogger(LibraryCancelMcpTool.class);
 

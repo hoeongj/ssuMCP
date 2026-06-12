@@ -18,7 +18,7 @@ import com.ssuai.domain.library.reservation.LibraryReservationResult;
 @Component
 public class LibraryReservationMcpTool {
 
-    static final String ACTION_TYPE = "LIBRARY_SEAT_RESERVATION";
+    public static final String ACTION_TYPE = "LIBRARY_SEAT_RESERVATION";
 
     private static final Logger log = LoggerFactory.getLogger(LibraryReservationMcpTool.class);
 

@@ -18,7 +18,7 @@ import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 @Component
 public class LibrarySwapMcpTool {
 
-    static final String ACTION_TYPE = "LIBRARY_SEAT_SWAP";
+    public static final String ACTION_TYPE = "LIBRARY_SEAT_SWAP";
 
     private static final Logger log = LoggerFactory.getLogger(LibrarySwapMcpTool.class);
 

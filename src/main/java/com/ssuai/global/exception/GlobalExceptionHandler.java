@@ -174,6 +174,16 @@ public class GlobalExceptionHandler {
         return error(ErrorCode.CHAT_UNAVAILABLE);
     }
 
+    @ExceptionHandler(LibrarySeatNotAvailableException.class)
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleLibrarySeatNotAvailableException(
+            LibrarySeatNotAvailableException exception
+    ) {
+        log.warn("Library seat exception: code={} pyxisCode={}",
+                ErrorCode.SEAT_NOT_AVAILABLE.name(), exception.getPyxisCode());
+
+        return error(ErrorCode.SEAT_NOT_AVAILABLE);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<ErrorResponse>> handleIllegalArgumentException(
             IllegalArgumentException exception

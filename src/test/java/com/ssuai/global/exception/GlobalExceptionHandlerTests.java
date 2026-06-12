@@ -53,6 +53,17 @@ class GlobalExceptionHandlerTests {
     }
 
     @Test
+    void seatNotAvailableReturns409() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleLibrarySeatNotAvailableException(
+                        new LibrarySeatNotAvailableException("warning.smuf.notAvailableState"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo(ErrorCode.SEAT_NOT_AVAILABLE.name());
+    }
+
+    @Test
     void illegalArgumentReturns400() {
         ResponseEntity<ApiResponse<ErrorResponse>> response =
                 handler.handleIllegalArgumentException(new IllegalArgumentException("bad input"));
