@@ -41,7 +41,7 @@ Sources:
 
 ### D3. 수집은 기존 `LibraryRoomSeatCache`를 반드시 통과한다
 
-샘플러는 Pyxis connector를 직접 호출하지 않는다. `LibrarySeatRoomCatalogService.rooms()`에서 `roomId`가 있는 2F/5F/6F reservable room만 고른 뒤, 각 room을 `LibraryRoomSeatCache.get(roomId, null)`로 읽는다. 이 캐시는 5초 TTL과 single-flight를 제공하므로 수집 직전에 MCP read tool이나 예약 worker가 같은 room을 읽어도 upstream 호출은 합쳐진다.
+샘플러는 Pyxis connector를 직접 호출하지 않는다. `LibrarySeatRoomCatalogService.rooms()`에서 `roomId`가 있는 2F/5F/6F reservable room만 고른 뒤, 각 room을 `LibraryRoomSeatCache.get(roomId, samplerToken)`로 읽는다. mock/local에서 sampler 자격증명이 없으면 `samplerToken`은 null로 남아 기존 mock 경로와 같은 방식으로 동작한다. 이 캐시는 5초 TTL과 single-flight를 제공하므로 수집 직전에 MCP read tool이나 예약 worker가 같은 room을 읽어도 upstream 호출은 합쳐진다.
 
 저장 status code는 compact code로 매핑한다.
 
@@ -54,6 +54,22 @@ Sources:
 | 그 외 | `U` | 미분류 |
 
 `sampled_at`은 한 run에서 하나의 UTC `Instant`를 공유한다. run 중 특정 room read가 실패하면 scheduled method가 예외를 로그로 남기고 삼키므로 다른 scheduler를 깨뜨리지 않는다. 운영 검증 단계에서 room별 부분 성공이 필요하다고 판단되면 room 단위 catch로 확장할 수 있지만, 현재는 "한 run의 스냅샷 일관성"을 우선한다.
+
+### D3-1. 샘플러는 전용 Pyxis service session을 사용한다
+
+Pyxis per-seat endpoint(`GET /pyxis-api/1/api/rooms/{roomId}/seats`)는 익명 호출을 `error.authentication.needLogin`으로 거부한다. 기존 테스트가 green이었던 이유는 mock 경로가 null token을 허용했기 때문이다. 따라서 운영 수집에는 sampler 전용 Pyxis session이 필요하다.
+
+채택안은 `LibrarySamplerSessionManager`가 `internal:seat-sampler`라는 내부 key로 `LibrarySessionStore`에 Pyxis token을 저장하는 방식이다. 자격증명은 k8s Secret `ssuai-library-sampler`의 `SSUAI_LIBRARY_SAMPLER_LOGIN_ID`, `SSUAI_LIBRARY_SAMPLER_PASSWORD`에서만 읽는다. backend는 Secret의 일반 비밀번호를 oasis 웹 클라이언트와 같은 PBKDF2(SHA-1, 5000회) + AES-CBC 형식으로 암호화한 뒤 기존 `LibraryCredentialLoginService`의 `/pyxis-api/api/login` 호출을 재사용한다.
+
+사용자 세션 piggyback은 기각했다. 사용자가 도서관 로그인을 하지 않은 시간대에는 수집이 멈추고, session owner가 특정 사용자로 보이는 운영/보안 혼선이 생긴다. 좌석 시계열은 개인 데이터가 아니라 운영 관측 데이터이므로, 명시적으로 분리된 service session이 더 예측 가능하다.
+
+로그인 폭주를 막기 위해 한 sample run에서는 login attempt를 최대 1회로 제한한다. 저장된 token이 거부되면 token을 무효화하고 한 번만 재로그인해 run 전체를 다시 시도한다. 로그인 실패, 재로그인 불가, 재로그인 token 재거부는 WARN 후 해당 run을 skip한다. scheduler 자체는 깨지지 않는다.
+
+Kubernetes Secret은 container env var로 주입할 수 있지만, Secret 변경이 이미 실행 중인 container env에 자동 반영되지는 않는다. 따라서 prod에서 sampler Secret 값을 바꾸면 pod replacement/rollout으로 새 env를 읽혀야 한다.
+
+Source:
+
+- https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/
 
 ### D4. 시간 단위 room rollup은 영구 보관한다
 
@@ -123,9 +139,11 @@ Source:
 
 ```text
 @Scheduled fixedDelay 5m
+  -> LibrarySamplerSessionManager.currentToken()
+  -> token 없음 또는 token 거부 시 service login(run당 최대 1회)
   -> LibrarySeatRoomCatalogService.rooms()
   -> roomId가 있는 2F/5F/6F reservable room만 선택
-  -> LibraryRoomSeatCache.get(roomId, null)
+  -> LibraryRoomSeatCache.get(roomId, samplerToken)
   -> PyxisSeatInfo status 문자열을 A/O/W/I/U로 매핑
   -> JdbcTemplate batchUpdate(library_seat_samples)
 ```

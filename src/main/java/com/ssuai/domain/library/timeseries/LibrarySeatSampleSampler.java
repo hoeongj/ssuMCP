@@ -15,6 +15,7 @@ import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.domain.library.recommendation.LibrarySeatRoomCatalogEntry;
 import com.ssuai.domain.library.recommendation.LibrarySeatRoomCatalogService;
 import com.ssuai.domain.library.service.LibraryRoomSeatCache;
+import com.ssuai.global.exception.LibraryAuthRequiredException;
 
 @Service
 public class LibrarySeatSampleSampler {
@@ -25,6 +26,7 @@ public class LibrarySeatSampleSampler {
     private final LibraryRoomSeatCache roomSeatCache;
     private final LibrarySeatSampleRepository sampleRepository;
     private final LibrarySeatSampleProperties properties;
+    private final LibrarySamplerSessionManager sessionManager;
     private final Clock clock;
 
     public LibrarySeatSampleSampler(
@@ -32,11 +34,13 @@ public class LibrarySeatSampleSampler {
             LibraryRoomSeatCache roomSeatCache,
             LibrarySeatSampleRepository sampleRepository,
             LibrarySeatSampleProperties properties,
+            LibrarySamplerSessionManager sessionManager,
             Clock clock) {
         this.roomCatalogService = roomCatalogService;
         this.roomSeatCache = roomSeatCache;
         this.sampleRepository = sampleRepository;
         this.properties = properties;
+        this.sessionManager = sessionManager;
         this.clock = clock;
     }
 
@@ -58,10 +62,54 @@ public class LibrarySeatSampleSampler {
     }
 
     int sampleAt(Instant sampledAt) {
+        if (!sessionManager.hasCredentials()) {
+            try {
+                return sampleAt(sampledAt, null);
+            } catch (LibraryAuthRequiredException exception) {
+                log.warn("library seat sampler skipped: service credentials are not configured");
+                return 0;
+            }
+        }
+
+        boolean loginAttempted = false;
+        String token = sessionManager.currentToken().orElse(null);
+        if (token == null) {
+            token = sessionManager.loginForRun().orElse(null);
+            loginAttempted = true;
+        }
+        if (token == null) {
+            log.warn("library seat sampler skipped: service login unavailable");
+            return 0;
+        }
+
+        try {
+            return sampleAt(sampledAt, token);
+        } catch (LibraryAuthRequiredException exception) {
+            sessionManager.invalidateToken();
+            if (loginAttempted) {
+                log.warn("library seat sampler skipped: token rejected after login attempt");
+                return 0;
+            }
+            String refreshed = sessionManager.loginForRun().orElse(null);
+            if (refreshed == null) {
+                log.warn("library seat sampler skipped: service re-login unavailable");
+                return 0;
+            }
+            try {
+                return sampleAt(sampledAt, refreshed);
+            } catch (LibraryAuthRequiredException retryException) {
+                sessionManager.invalidateToken();
+                log.warn("library seat sampler skipped: token rejected after service re-login");
+                return 0;
+            }
+        }
+    }
+
+    private int sampleAt(Instant sampledAt, String token) {
         Instant createdAt = clock.instant();
         List<LibrarySeatSample> samples = new ArrayList<>();
         for (int roomId : roomIdsToSample()) {
-            List<PyxisSeatInfo> seats = roomSeatCache.get(roomId, null);
+            List<PyxisSeatInfo> seats = roomSeatCache.get(roomId, token);
             for (PyxisSeatInfo seat : seats) {
                 samples.add(new LibrarySeatSample(
                         sampledAt,

@@ -151,6 +151,12 @@ ssuai:
       # Pyxis credential login origin. Production uses real oasis; the
       # load-test stack overrides this to point logins at WireMock.
       base-url: ${SSUAI_LIBRARY_LOGIN_BASE_URL:https://oasis.ssu.ac.kr}
+    sampler:
+      # Dedicated service account for scheduled seat samples. The password is
+      # the normal library password; the backend encrypts it in oasis format
+      # immediately before calling the Pyxis login API.
+      login-id: ${SSUAI_LIBRARY_SAMPLER_LOGIN_ID:}
+      password: ${SSUAI_LIBRARY_SAMPLER_PASSWORD:}
     seat:
       # Per-floor cache TTL. Short enough that students get fresh data
       # before walking over, long enough that the library page is not

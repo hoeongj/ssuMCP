@@ -52,6 +52,10 @@ secretRef:
   enabled: true
   name: ssuai-backend-secrets
   optional: true
+librarySamplerSecretRef:
+  enabled: true
+  name: ssuai-library-sampler
+  optional: true
 secretTemplate:
   enabled: false
   stringData:

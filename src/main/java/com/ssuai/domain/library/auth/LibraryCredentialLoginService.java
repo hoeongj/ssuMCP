@@ -56,7 +56,14 @@ public class LibraryCredentialLoginService {
      * Throws {@link LibraryAuthRequiredException} on invalid credentials.
      */
     public void login(String sessionKey, LibraryCredentialLoginRequest request) {
-        String body = callLogin(request);
+        login(sessionKey, request.loginId(), request.password());
+    }
+
+    /**
+     * Calls pyxis-api login with a password already encrypted in the oasis format.
+     */
+    public void login(String sessionKey, String loginId, String encryptedPassword) {
+        String body = callLogin(loginId, encryptedPassword);
         String accessToken = extractAccessToken(body);
         sessionStore.put(sessionKey, accessToken);
         log.info("library credential login ok: sessionKey={} tokenFp={}",
@@ -64,7 +71,7 @@ public class LibraryCredentialLoginService {
                 LibrarySessionStore.fingerprint(accessToken));
     }
 
-    private String callLogin(LibraryCredentialLoginRequest request) {
+    private String callLogin(String loginId, String encryptedPassword) {
         try {
             record OasisLoginBody(String loginId, String password,
                                   boolean isFamilyLogin, boolean isMobile) {}
@@ -74,7 +81,7 @@ public class LibraryCredentialLoginService {
                     .accept(MediaType.APPLICATION_JSON)
                     .header("Referer", OASIS_REFERER)
                     .header("Origin", OASIS_ORIGIN)
-                    .body(new OasisLoginBody(request.loginId(), request.password(), false, false))
+                    .body(new OasisLoginBody(loginId, encryptedPassword, false, false))
                     .retrieve()
                     .body(String.class);
         } catch (RestClientResponseException ex) {

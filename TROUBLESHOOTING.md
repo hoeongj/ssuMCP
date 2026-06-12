@@ -95,19 +95,36 @@
 - 처음 떠올린 가설(틀림):
   - "Flyway V10와 rollout이 통과하면 sampler 로그도 자연스럽게 정상화될 것이다."
 - 실제 원인:
-  - `LibrarySeatSampleSampler`가 real connector를 통해 좌석 데이터를 읽는데, 현재 prod 경로는 도서관 로그인 상태가 없으면 `LibraryAuthRequiredException`을 던진다.
-  - 즉, 배포/마이그레이션 성공과 sampler 성공은 별개이며, scheduler를 prod에서 어떻게 보호할지(조건부 비활성화, auth guard, fallback profile)까지 봐야 한다.
+  - `LibrarySeatSampleSampler`가 real connector를 통해 Pyxis per-seat endpoint(`GET /pyxis-api/1/api/rooms/{roomId}/seats`)를 읽는데, 이 endpoint는 익명 호출을 `error.authentication.needLogin`으로 거부한다.
+  - 테스트가 green이었던 이유는 mock connector/cache 경로가 null token을 허용했기 때문이다. 즉 "mock에서는 null token 성공, prod real Pyxis에서는 로그인 필수"라는 테스트-운영 차이가 실제 원인이었다.
+  - 배포/마이그레이션 성공과 sampler 성공은 별개이며, scheduler를 prod에서 어떻게 보호할지(전용 service session, re-login, 실패 시 skip)까지 봐야 한다.
+- 해결:
+  - 사용자 확인 후 sampler 전용 service session을 도입했다. 도서관 로그인 ID/비밀번호는 git이나 DB가 아니라 k8s Secret `ssuai-library-sampler`에만 둔다.
+  - backend가 Secret의 일반 비밀번호를 oasis 로그인 JS와 같은 PBKDF2(SHA-1, 5000회) + AES-CBC 방식으로 즉시 암호화한 뒤 기존 `LibraryCredentialLoginService`의 `/pyxis-api/api/login` 호출을 재사용한다.
+  - 받은 Pyxis token은 `LibrarySessionStore`에 `internal:seat-sampler` key로 저장한다. 이 key는 MCP tool 경로에서 만들어지거나 입력받지 않으므로 사용자 세션과 분리된다.
+  - sample run 중 `LibraryAuthRequiredException`이 나오면 기존 token을 무효화하고 run당 최대 1회만 재로그인한다. 로그인 실패나 재로그인 후 재거부는 WARN 후 해당 run을 skip해 scheduler를 깨뜨리지 않는다.
 - 연관 파일/커밋:
   - `src/main/java/com/ssuai/domain/library/timeseries/LibrarySeatSampleSampler.java`
+  - `src/main/java/com/ssuai/domain/library/timeseries/LibrarySamplerSessionManager.java`
+  - `src/main/java/com/ssuai/domain/library/auth/LibraryPasswordEncryptor.java`
+  - `src/main/java/com/ssuai/domain/library/auth/LibraryCredentialLoginService.java`
   - `src/main/java/com/ssuai/domain/library/connector/RealLibrarySeatConnector.java`
-  - `0ea76e66219756942348d975541759526e7321cc`, `87c46863c809e56ccd8f4759e16e3984ab7ae45c`
+  - 원인 기록 커밋: `9d9dc41a2477397197156b17e821e83f56ad286b`
+  - 배포 당시 연관 커밋: `0ea76e66219756942348d975541759526e7321cc`, `87c46863c809e56ccd8f4759e16e3984ab7ae45c`
+- 검증:
+  - 단위 테스트에서 mock/null-token 유지, 기존 token 거부 시 재로그인 재시도, 로그인 불가 시 skip, 초기 로그인 token 거부 시 추가 로그인 금지를 검증한다.
+  - 운영 배포 후에는 한 cadence 이상 로그에서 `LibraryAuthRequiredException`이 사라지는지와 `library_seat_samples` row count가 0보다 큰지 함께 확인한다.
 - 포트폴리오 포인트:
   - rollout green만으로는 충분하지 않고, background job과 scheduler 로그까지 포함해야 진짜 prod 검증이다.
   - GitOps/배포 검증은 health endpoint와 rollout 상태 외에 주기 작업의 실패 패턴도 함께 봐야 한다.
+  - 테스트 double이 인증을 느슨하게 허용하면 "테스트 green, prod broken"이 된다. 외부 시스템 auth boundary는 mock에서도 명시적으로 모델링해야 한다.
+  - 공유 사용자 세션을 piggyback하지 않고 전용 service session을 둔 이유는 로그인 사용자가 없어도 시계열 데이터가 계속 쌓여야 하기 때문이다.
 - 면접 예상 질문:
   1. rollout/health가 정상인데 background scheduler가 실패할 때 어떻게 분리해서 진단하나요?
   2. prod에서 주기 작업이 auth-dependent connector를 쓸 때 어떤 보호 장치가 필요하나요?
   3. runtime 검증에서 health endpoint만 보면 놓치는 실패 패턴은 무엇인가요?
+  4. mock connector가 null token을 허용해 prod auth 요구사항을 놓친 문제를 어떻게 테스트로 막을 수 있나요?
+  5. 사용자 세션 재사용 대신 전용 service session을 선택한 보안·운영 트레이드오프는 무엇인가요?
 ## 2026-06-12 — Spring bean 생성자 선택 실패: 테스트용 보조 생성자 추가 후 no default constructor
 
 - 맥락:

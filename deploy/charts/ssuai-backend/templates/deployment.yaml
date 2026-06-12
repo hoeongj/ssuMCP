@@ -45,6 +45,11 @@ spec:
                 name: {{ .Values.secretRef.name }}
                 optional: {{ .Values.secretRef.optional }}
             {{- end }}
+            {{- if .Values.librarySamplerSecretRef.enabled }}
+            - secretRef:
+                name: {{ .Values.librarySamplerSecretRef.name }}
+                optional: {{ .Values.librarySamplerSecretRef.optional }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
