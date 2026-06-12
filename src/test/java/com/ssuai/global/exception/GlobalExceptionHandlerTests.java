@@ -9,6 +9,9 @@ import org.springframework.http.ResponseEntity;
 import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+
 class GlobalExceptionHandlerTests {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -19,6 +22,18 @@ class GlobalExceptionHandlerTests {
                 handler.handleConnectorUnavailableException(new ConnectorUnavailableException());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void callNotPermittedReturnsCircuitOpen503() {
+        CircuitBreaker circuitBreaker = CircuitBreaker.ofDefaults("pyxis");
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleCallNotPermittedException(
+                        CallNotPermittedException.createCallNotPermittedException(circuitBreaker));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo(ErrorCode.CIRCUIT_OPEN.name());
     }
 
     @Test
