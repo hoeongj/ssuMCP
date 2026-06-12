@@ -21,9 +21,11 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
+import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
@@ -41,6 +43,7 @@ class ConfirmActionMcpToolTests {
     private LibrarySessionStore sessionStore;
     private LibraryReservationConnector reservationConnector;
     private LibraryReservationIntentTransactions intentTransactions;
+    private LibrarySeatEventPublisher seatEventPublisher;
     private McpAuthHelper authHelper;
     private ConfirmActionMcpTool tool;
 
@@ -50,9 +53,15 @@ class ConfirmActionMcpToolTests {
         sessionStore = mock(LibrarySessionStore.class);
         reservationConnector = mock(LibraryReservationConnector.class);
         intentTransactions = mock(LibraryReservationIntentTransactions.class);
+        seatEventPublisher = mock(LibrarySeatEventPublisher.class);
         authHelper = mock(McpAuthHelper.class);
         tool = new ConfirmActionMcpTool(
-                actionService, sessionStore, reservationConnector, intentTransactions, authHelper);
+                actionService,
+                sessionStore,
+                reservationConnector,
+                intentTransactions,
+                seatEventPublisher,
+                authHelper);
 
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
                 .thenReturn(Optional.of(SESSION_KEY));
@@ -122,6 +131,20 @@ class ConfirmActionMcpToolTests {
     }
 
     @Test
+    void cancelSuccessPublishesSeatEventAfterDischarge() {
+        ActionAudit action = claimableAction(LibraryCancelMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibraryCancelRequest.class))
+                .thenReturn(new LibraryCancelRequest(1966693L, 54, 926L));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        verify(reservationConnector).discharge(TOKEN, 1966693L);
+        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_SUCCESS), any());
+        verify(seatEventPublisher).cancel(54, 926L);
+    }
+
+    @Test
     void swapNotAvailableStateKeepsCurrentReservationAndDoesNotReserveNewSeat() {
         ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
         when(actionService.payload(action, LibrarySwapRequest.class))
@@ -138,6 +161,29 @@ class ConfirmActionMcpToolTests {
                 .contains("기존 예약은 그대로 유지");
         verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
         verify(actionService).completeAction(action, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 이석 불가");
+    }
+
+    @Test
+    void swapSuccessPublishesDischargeAndReserveEvents() {
+        ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibrarySwapRequest.class))
+                .thenReturn(new LibrarySwapRequest(1966693L, 3179L, 54, 926L));
+        when(reservationConnector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
+                .thenReturn(new LibraryReservationResult(
+                        200L,
+                        "room",
+                        "74",
+                        "09:00",
+                        "13:00",
+                        58,
+                        3179L));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        verify(seatEventPublisher).swapDischarge(54, 926L);
+        verify(seatEventPublisher).swapReserve(58, 3179L);
+        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_SUCCESS), any());
     }
 
     private ActionAudit reservationAction() {

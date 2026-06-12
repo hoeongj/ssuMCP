@@ -78,7 +78,10 @@ public class LibrarySwapMcpTool {
                     "현재 예약된 좌석이 없습니다. prepare_reserve_library_seat를 사용하세요.");
         }
 
-        actionService.createPendingAction(sessionKey, ACTION_TYPE, new LibrarySwapRequest(current.chargeId(), newSeatId));
+        actionService.createPendingAction(
+                sessionKey,
+                ACTION_TYPE,
+                new LibrarySwapRequest(current.chargeId(), newSeatId, current.roomId(), current.seatId()));
         return McpPrivateToolResponse.ok(mcpSessionId, String.format(
                 "현재 %s %s번(예약번호: %d) → 새 %s으로 변경을 준비했습니다. "
                         + "confirm_action을 호출해 최종 확인하세요.%s",

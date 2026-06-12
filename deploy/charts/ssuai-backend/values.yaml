@@ -48,6 +48,37 @@ env:
   # SSUAI_GEMINI_API_KEY from the secret; falls back to lexical-only if the
   # embedding API is unreachable.
   academicEmbeddingEnabled: "true"
+  redisHost: ""
+  redisPort: "6379"
+  redisTimeout: 500ms
+  redisConnectTimeout: 500ms
+  libraryRedisEnabled: "true"
+  librarySeatEventChannel: ssuai.library.seat-events.v1
+  librarySchedulerLockWait: 0ms
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 8.8.0-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+  maxmemory: 64mb
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
 secretRef:
   enabled: true
   name: ssuai-backend-secrets

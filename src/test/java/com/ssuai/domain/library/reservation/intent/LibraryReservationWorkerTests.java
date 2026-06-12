@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
@@ -31,6 +32,7 @@ class LibraryReservationWorkerTests {
     private LibraryReservationSeatSelector seatSelector;
     private LibrarySessionStore sessionStore;
     private LibraryReservationConnector connector;
+    private LibrarySeatEventPublisher seatEventPublisher;
     private LibraryReservationWorker worker;
 
     @BeforeEach
@@ -39,7 +41,8 @@ class LibraryReservationWorkerTests {
         seatSelector = mock(LibraryReservationSeatSelector.class);
         sessionStore = mock(LibrarySessionStore.class);
         connector = mock(LibraryReservationConnector.class);
-        worker = new LibraryReservationWorker(transactions, seatSelector, sessionStore, connector);
+        seatEventPublisher = mock(LibrarySeatEventPublisher.class);
+        worker = new LibraryReservationWorker(transactions, seatSelector, sessionStore, connector, seatEventPublisher);
 
         when(transactions.claimExpiredLeases()).thenReturn(List.of());
     }
@@ -62,6 +65,7 @@ class LibraryReservationWorkerTests {
         verify(transactions).failRace(2L, SEAT_ID,
                 "Another local wait intent already attempted this seat in the same worker tick.");
         verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+        verify(seatEventPublisher).reserve(null, SEAT_ID);
     }
 
     @Test
@@ -114,6 +118,19 @@ class LibraryReservationWorkerTests {
         verify(seatSelector, never()).findAvailableSeat(intent);
         verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
         verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+    }
+
+    @Test
+    void reserveSuccessPublishesSeatEventWithResultRoomAndSeat() {
+        LibraryReservationIntent intent = claimedImmediateIntent(1L, "session-1");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
+                .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00", 58, 3179L));
+
+        worker.poll();
+
+        verify(seatEventPublisher).reserve(58, 3179L);
     }
 
     @Test

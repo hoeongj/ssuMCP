@@ -14,6 +14,12 @@ spring:
     url: ${SSUAI_DB_URL:jdbc:h2:mem:ssuai;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
     username: ${SSUAI_DB_USERNAME:sa}
     password: ${SSUAI_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${SSUAI_REDIS_HOST:localhost}
+      port: ${SSUAI_REDIS_PORT:6379}
+      timeout: ${SSUAI_REDIS_TIMEOUT:500ms}
+      connect-timeout: ${SSUAI_REDIS_CONNECT_TIMEOUT:500ms}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -84,6 +90,9 @@ management:
       show-details: never
       probes:
         enabled: true
+  health:
+    redis:
+      enabled: ${SSUAI_REDIS_HEALTH_ENABLED:false}
 
 springdoc:
   api-docs:
@@ -141,6 +150,12 @@ ssuai:
       retry-max-attempts: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_MAX_ATTEMPTS:3}
       retry-backoff-ms: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_BACKOFF_MS:30000}
   library:
+    redis:
+      enabled: ${SSUAI_LIBRARY_REDIS_ENABLED:true}
+      room-seat-cache-key-prefix: ${SSUAI_LIBRARY_REDIS_ROOM_SEAT_CACHE_KEY_PREFIX:ssuai:library:room-seats:v1}
+      seat-event-channel: ${SSUAI_LIBRARY_SEAT_EVENT_CHANNEL:ssuai.library.seat-events.v1}
+      scheduler-lock-prefix: ${SSUAI_LIBRARY_SCHEDULER_LOCK_PREFIX:ssuai:library:scheduler:}
+      scheduler-lock-wait: ${SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT:0ms}
     session:
       # Pyxis-Auth-Token TTL. Spike (2026-05-31) confirmed the upstream
       # token survives >1 week without expiry — treating it as effectively

@@ -14,6 +14,7 @@ import com.ssuai.domain.action.ActionService;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
+import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.reservation.LibraryCancelRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
@@ -45,6 +46,7 @@ public class ConfirmActionMcpTool {
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
     private final LibraryReservationIntentTransactions intentTransactions;
+    private final LibrarySeatEventPublisher seatEventPublisher;
     private final McpAuthHelper authHelper;
 
     public ConfirmActionMcpTool(
@@ -52,11 +54,13 @@ public class ConfirmActionMcpTool {
             LibrarySessionStore sessionStore,
             LibraryReservationConnector reservationConnector,
             LibraryReservationIntentTransactions intentTransactions,
+            LibrarySeatEventPublisher seatEventPublisher,
             McpAuthHelper authHelper) {
         this.actionService = actionService;
         this.sessionStore = sessionStore;
         this.reservationConnector = reservationConnector;
         this.intentTransactions = intentTransactions;
+        this.seatEventPublisher = seatEventPublisher;
         this.authHelper = authHelper;
     }
 
@@ -198,6 +202,7 @@ public class ConfirmActionMcpTool {
             reservationConnector.discharge(token, request.chargeId());
             actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS,
                     "예약 " + request.chargeId() + " 반납 완료");
+            seatEventPublisher.cancel(request.roomId(), request.seatId());
             return McpPrivateToolResponse.ok(
                     mcpSessionId, "예약 번호 " + request.chargeId() + " 좌석 반납 완료.");
         } catch (LibraryAuthRequiredException exception) {
@@ -226,6 +231,7 @@ public class ConfirmActionMcpTool {
         LibrarySwapRequest request = actionService.payload(claimed, LibrarySwapRequest.class);
         try {
             reservationConnector.discharge(token, request.oldChargeId());
+            seatEventPublisher.swapDischarge(request.oldRoomId(), request.oldSeatId());
         } catch (LibraryAuthRequiredException exception) {
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, "도서관 세션 만료");
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
@@ -251,6 +257,9 @@ public class ConfirmActionMcpTool {
                     token, new LibraryReservationRequest(request.newSeatId()));
             actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS,
                     result.roomName() + " " + result.seatCode() + "번으로 변경 완료");
+            seatEventPublisher.swapReserve(
+                    result.roomId(),
+                    result.seatId() == null ? request.newSeatId() : result.seatId());
             return McpPrivateToolResponse.ok(mcpSessionId, String.format(
                     "자리 변경 완료! %s %s번 예약 완료. 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
                     result.roomName(), result.seatCode(),

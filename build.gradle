@@ -43,6 +43,7 @@ dependencies {
     implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
     implementation 'org.springframework.ai:spring-ai-starter-mcp-client'
     implementation 'org.springframework.boot:spring-boot-flyway'
+    implementation 'org.redisson:redisson-spring-boot-starter:4.5.0'
     implementation 'org.jetbrains.kotlin:kotlin-reflect'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
     implementation 'net.java.dev.jna:jna:5.18.1'

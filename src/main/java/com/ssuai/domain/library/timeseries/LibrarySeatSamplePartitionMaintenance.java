@@ -25,6 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.ssuai.domain.library.redis.LibrarySchedulerLeadership;
+
 @Component
 public class LibrarySeatSamplePartitionMaintenance {
 
@@ -36,14 +38,34 @@ public class LibrarySeatSamplePartitionMaintenance {
     private final LibrarySeatSampleProperties properties;
     private final boolean postgres;
     private final Clock clock;
+    private final LibrarySchedulerLeadership schedulerLeadership;
 
     @Autowired
     public LibrarySeatSamplePartitionMaintenance(
             DataSource dataSource,
             LibrarySeatSampleProperties properties,
             Environment environment,
+            LibrarySchedulerLeadership schedulerLeadership,
             Clock clock) {
-        this(new JdbcTemplate(dataSource), properties, environment.getProperty("spring.datasource.url", ""), clock);
+        this(
+                new JdbcTemplate(dataSource),
+                properties,
+                environment.getProperty("spring.datasource.url", ""),
+                schedulerLeadership,
+                clock);
+    }
+
+    LibrarySeatSamplePartitionMaintenance(
+            JdbcTemplate jdbcTemplate,
+            LibrarySeatSampleProperties properties,
+            String datasourceUrl,
+            LibrarySchedulerLeadership schedulerLeadership,
+            Clock clock) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.properties = properties;
+        this.postgres = isPostgresUrl(datasourceUrl);
+        this.schedulerLeadership = schedulerLeadership;
+        this.clock = clock;
     }
 
     LibrarySeatSamplePartitionMaintenance(
@@ -51,10 +73,7 @@ public class LibrarySeatSamplePartitionMaintenance {
             LibrarySeatSampleProperties properties,
             String datasourceUrl,
             Clock clock) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
-        this.postgres = isPostgresUrl(datasourceUrl);
-        this.clock = clock;
+        this(jdbcTemplate, properties, datasourceUrl, LibrarySchedulerLeadership.noop(), clock);
     }
 
     @PostConstruct
@@ -79,6 +98,10 @@ public class LibrarySeatSamplePartitionMaintenance {
     }
 
     private void maintainSafely(String source) {
+        schedulerLeadership.runIfLeader("seat-partition-maintenance", () -> maintainSafelyWithLock(source));
+    }
+
+    private void maintainSafelyWithLock(String source) {
         try {
             maintain();
         } catch (RuntimeException exception) {

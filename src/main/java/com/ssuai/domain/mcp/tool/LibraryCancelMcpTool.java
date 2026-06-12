@@ -68,7 +68,10 @@ public class LibraryCancelMcpTool {
             return McpPrivateToolResponse.ok(mcpSessionId, "현재 예약된 좌석이 없습니다.");
         }
 
-        actionService.createPendingAction(sessionKey, ACTION_TYPE, new LibraryCancelRequest(current.chargeId()));
+        actionService.createPendingAction(
+                sessionKey,
+                ACTION_TYPE,
+                new LibraryCancelRequest(current.chargeId(), current.roomId(), current.seatId()));
         return McpPrivateToolResponse.ok(mcpSessionId, String.format(
                 "%s %s번 좌석 반납을 준비했습니다 (예약번호: %d, 이용시간: %s~%s). "
                         + "confirm_action을 호출해 최종 확인하세요.",

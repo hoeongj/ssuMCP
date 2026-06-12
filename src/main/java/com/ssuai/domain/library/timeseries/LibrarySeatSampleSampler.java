@@ -8,12 +8,14 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.domain.library.recommendation.LibrarySeatRoomCatalogEntry;
 import com.ssuai.domain.library.recommendation.LibrarySeatRoomCatalogService;
+import com.ssuai.domain.library.redis.LibrarySchedulerLeadership;
 import com.ssuai.domain.library.service.LibraryRoomSeatCache;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 
@@ -28,24 +30,49 @@ public class LibrarySeatSampleSampler {
     private final LibrarySeatSampleProperties properties;
     private final LibrarySamplerSessionManager sessionManager;
     private final Clock clock;
+    private final LibrarySchedulerLeadership schedulerLeadership;
 
+    @Autowired
     public LibrarySeatSampleSampler(
             LibrarySeatRoomCatalogService roomCatalogService,
             LibraryRoomSeatCache roomSeatCache,
             LibrarySeatSampleRepository sampleRepository,
             LibrarySeatSampleProperties properties,
             LibrarySamplerSessionManager sessionManager,
+            LibrarySchedulerLeadership schedulerLeadership,
             Clock clock) {
         this.roomCatalogService = roomCatalogService;
         this.roomSeatCache = roomSeatCache;
         this.sampleRepository = sampleRepository;
         this.properties = properties;
         this.sessionManager = sessionManager;
+        this.schedulerLeadership = schedulerLeadership;
         this.clock = clock;
+    }
+
+    LibrarySeatSampleSampler(
+            LibrarySeatRoomCatalogService roomCatalogService,
+            LibraryRoomSeatCache roomSeatCache,
+            LibrarySeatSampleRepository sampleRepository,
+            LibrarySeatSampleProperties properties,
+            LibrarySamplerSessionManager sessionManager,
+            Clock clock) {
+        this(
+                roomCatalogService,
+                roomSeatCache,
+                sampleRepository,
+                properties,
+                sessionManager,
+                LibrarySchedulerLeadership.noop(),
+                clock);
     }
 
     @Scheduled(fixedDelayString = "#{@librarySeatSampleProperties.cadence.toMillis()}")
     public void sampleScheduled() {
+        schedulerLeadership.runIfLeader("seat-sampler", this::sampleScheduledWithLock);
+    }
+
+    private void sampleScheduledWithLock() {
         if (!properties.isEnabled()) {
             return;
         }

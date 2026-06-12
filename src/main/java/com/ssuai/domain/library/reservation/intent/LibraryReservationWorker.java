@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
@@ -29,17 +30,20 @@ public class LibraryReservationWorker {
     private final LibraryReservationSeatSelector seatSelector;
     private final LibrarySessionStore sessionStore;
     private final LibraryReservationConnector reservationConnector;
+    private final LibrarySeatEventPublisher seatEventPublisher;
     private final AtomicBoolean polling = new AtomicBoolean(false);
 
     public LibraryReservationWorker(
             LibraryReservationIntentTransactions transactions,
             LibraryReservationSeatSelector seatSelector,
             LibrarySessionStore sessionStore,
-            LibraryReservationConnector reservationConnector) {
+            LibraryReservationConnector reservationConnector,
+            LibrarySeatEventPublisher seatEventPublisher) {
         this.transactions = transactions;
         this.seatSelector = seatSelector;
         this.sessionStore = sessionStore;
         this.reservationConnector = reservationConnector;
+        this.seatEventPublisher = seatEventPublisher;
     }
 
     @Scheduled(fixedDelayString = "#{@libraryReservationIntentProperties.pollInterval.toMillis()}")
@@ -128,6 +132,7 @@ public class LibraryReservationWorker {
             LibraryReservationResult result = reservationConnector.reserve(
                     intent.token(), new LibraryReservationRequest(seatId));
             transactions.succeed(intent.intentId(), seatId, successMessage(result));
+            seatEventPublisher.reserve(result.roomId(), result.seatId() == null ? seatId : result.seatId());
         } catch (LibrarySeatNotAvailableException exception) {
             transactions.failRace(intent.intentId(), seatId, "Seat was already taken upstream.");
         } catch (LibraryAuthRequiredException exception) {
@@ -156,6 +161,10 @@ public class LibraryReservationWorker {
                             intent.getId(),
                             intent.getTargetSeatId(),
                             "Recovered reservation after worker lease expiry: " + successMessage(current.get()));
+                    LibraryReservationResult result = current.get();
+                    seatEventPublisher.reserve(
+                            result.roomId(),
+                            result.seatId() == null ? intent.getTargetSeatId() : result.seatId());
                 } else {
                     transactions.failUpstream(
                             intent.getId(),

@@ -181,11 +181,21 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     private static LibraryReservationResult parseChargeData(JsonNode data) {
         long chargeId = data.path("id").asLong(0);
+        Integer roomId = intOrNull(data.path("room").path("id"));
         String roomName = data.path("room").path("name").asText("");
+        Long seatId = longOrNull(data.path("seat").path("id"));
         String seatCode = data.path("seat").path("code").asText("");
         String beginTime = data.path("beginTime").asText("");
         String endTime = data.path("endTime").asText("");
-        return new LibraryReservationResult(chargeId, roomName, seatCode, beginTime, endTime);
+        return new LibraryReservationResult(chargeId, roomName, seatCode, beginTime, endTime, roomId, seatId);
+    }
+
+    private static Integer intOrNull(JsonNode node) {
+        return node == null || node.isMissingNode() || node.isNull() || !node.isNumber() ? null : node.asInt();
+    }
+
+    private static Long longOrNull(JsonNode node) {
+        return node == null || node.isMissingNode() || node.isNull() || !node.isNumber() ? null : node.asLong();
     }
 
     private void parseDischargeResponse(String body) {

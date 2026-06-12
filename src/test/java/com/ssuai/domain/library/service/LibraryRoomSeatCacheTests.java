@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -19,10 +20,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.ssuai.domain.library.connector.LibrarySeatConnector;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
 import com.ssuai.domain.library.dto.PyxisSeatInfo;
+import com.ssuai.domain.library.redis.LibraryRedisMetrics;
+import com.ssuai.domain.library.redis.LibraryRoomSeatL2Cache;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 
 class LibraryRoomSeatCacheTests {
@@ -52,6 +56,121 @@ class LibraryRoomSeatCacheTests {
         cache.get(57, "token-a");
 
         assertThat(connector.callsFor(57)).isEqualTo(2);
+    }
+
+    @Test
+    void l2HitPopulatesL1AndSkipsConnector() {
+        CountingConnector connector = new CountingConnector();
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-12T00:00:00Z"));
+        RecordingL2Cache l2Cache = new RecordingL2Cache();
+        l2Cache.value = stubSeats(57);
+        LibraryRoomSeatCache cache = new LibraryRoomSeatCache(
+                connector,
+                l2Cache,
+                new LibraryRedisMetrics(new SimpleMeterRegistry()),
+                Duration.ofSeconds(5),
+                clock);
+
+        List<PyxisSeatInfo> first = cache.get(57, "token-a");
+        List<PyxisSeatInfo> second = cache.get(57, "token-b");
+
+        assertThat(first).isEqualTo(stubSeats(57));
+        assertThat(second).isSameAs(first);
+        assertThat(connector.callsFor(57)).isZero();
+        assertThat(l2Cache.reads).isEqualTo(1);
+    }
+
+    @Test
+    void l2HitSetsHalfTtlOnL1EntryToPreventStalenesDoubling() {
+        CountingConnector connector = new CountingConnector();
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-12T00:00:00Z"));
+        RecordingL2Cache l2Cache = new RecordingL2Cache();
+        l2Cache.value = stubSeats(57);
+        Duration ttl = Duration.ofSeconds(6);
+        LibraryRoomSeatCache cache = new LibraryRoomSeatCache(
+                connector,
+                l2Cache,
+                new LibraryRedisMetrics(new SimpleMeterRegistry()),
+                ttl,
+                clock);
+
+        List<PyxisSeatInfo> first = cache.get(57, "token-a");
+        clock.advance(ttl.dividedBy(2).plusMillis(1));
+        List<PyxisSeatInfo> second = cache.get(57, "token-b");
+
+        assertThat(first).isEqualTo(stubSeats(57));
+        assertThat(second).isEqualTo(stubSeats(57));
+        assertThat(connector.callsFor(57)).isZero();
+        assertThat(l2Cache.reads).isEqualTo(2);
+    }
+
+    @Test
+    void l2MissPopulatesRedisWithAlignedTtlAfterUpstreamFetch() {
+        CountingConnector connector = new CountingConnector();
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-12T00:00:00Z"));
+        RecordingL2Cache l2Cache = new RecordingL2Cache();
+        LibraryRoomSeatCache cache = new LibraryRoomSeatCache(
+                connector,
+                l2Cache,
+                new LibraryRedisMetrics(new SimpleMeterRegistry()),
+                Duration.ofSeconds(5),
+                clock);
+
+        List<PyxisSeatInfo> seats = cache.get(57, "token-a");
+
+        assertThat(seats).isEqualTo(stubSeats(57));
+        assertThat(connector.callsFor(57)).isEqualTo(1);
+        assertThat(l2Cache.writes).isEqualTo(1);
+        assertThat(l2Cache.lastRoomId).isEqualTo(57);
+        assertThat(l2Cache.lastAuthenticated).isTrue();
+        assertThat(l2Cache.lastTtl).isEqualTo(Duration.ofSeconds(5));
+        assertThat(l2Cache.lastWritten).isEqualTo(stubSeats(57));
+    }
+
+    @Test
+    void l2ReadFailureFallsBackToUpstreamAndRecordsMetric() {
+        CountingConnector connector = new CountingConnector();
+        RecordingL2Cache l2Cache = new RecordingL2Cache();
+        l2Cache.readFailure = new IllegalStateException("redis down");
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        LibraryRoomSeatCache cache = new LibraryRoomSeatCache(
+                connector,
+                l2Cache,
+                new LibraryRedisMetrics(meterRegistry),
+                Duration.ofSeconds(5),
+                Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneOffset.UTC));
+
+        List<PyxisSeatInfo> seats = cache.get(57, "token-a");
+
+        assertThat(seats).isEqualTo(stubSeats(57));
+        assertThat(connector.callsFor(57)).isEqualTo(1);
+        assertThat(meterRegistry.find("library.redis.failure")
+                .tag("operation", "room_seat_l2_read")
+                .counter()
+                .count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void l2WriteFailureDoesNotFailReadAndRecordsMetric() {
+        CountingConnector connector = new CountingConnector();
+        RecordingL2Cache l2Cache = new RecordingL2Cache();
+        l2Cache.writeFailure = new IllegalStateException("redis down");
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        LibraryRoomSeatCache cache = new LibraryRoomSeatCache(
+                connector,
+                l2Cache,
+                new LibraryRedisMetrics(meterRegistry),
+                Duration.ofSeconds(5),
+                Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneOffset.UTC));
+
+        List<PyxisSeatInfo> seats = cache.get(57, "token-a");
+
+        assertThat(seats).isEqualTo(stubSeats(57));
+        assertThat(connector.callsFor(57)).isEqualTo(1);
+        assertThat(meterRegistry.find("library.redis.failure")
+                .tag("operation", "room_seat_l2_write")
+                .counter()
+                .count()).isEqualTo(1.0);
     }
 
     @Test
@@ -165,6 +284,39 @@ class LibraryRoomSeatCacheTests {
 
         private AtomicInteger counterFor(int roomId) {
             return roomId == 57 ? room57Calls : room58Calls;
+        }
+    }
+
+    private static final class RecordingL2Cache implements LibraryRoomSeatL2Cache {
+        private List<PyxisSeatInfo> value;
+        private RuntimeException readFailure;
+        private RuntimeException writeFailure;
+        private int reads;
+        private int writes;
+        private int lastRoomId;
+        private boolean lastAuthenticated;
+        private List<PyxisSeatInfo> lastWritten;
+        private Duration lastTtl;
+
+        @Override
+        public Optional<List<PyxisSeatInfo>> get(int roomId, boolean authenticated) {
+            reads++;
+            if (readFailure != null) {
+                throw readFailure;
+            }
+            return Optional.ofNullable(value);
+        }
+
+        @Override
+        public void put(int roomId, boolean authenticated, List<PyxisSeatInfo> seats, Duration ttl) {
+            writes++;
+            if (writeFailure != null) {
+                throw writeFailure;
+            }
+            lastRoomId = roomId;
+            lastAuthenticated = authenticated;
+            lastWritten = seats;
+            lastTtl = ttl;
         }
     }
 

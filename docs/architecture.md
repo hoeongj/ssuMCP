@@ -330,9 +330,83 @@ class MockMealConnector implements MealConnector { ... }
 
 **동작 방식**: key는 `roomId + 인증 경계`다. fresh value가 있으면 즉시 반환하고, miss 상태에서 첫 요청은 `CompletableFuture`를 `inFlight` 맵에 등록한 뒤 Pyxis를 호출한다. 같은 key의 후속 요청은 새 Pyxis 호출을 만들지 않고 같은 future를 기다린다. 성공하면 5초 TTL 캐시에 저장하고, 실패하면 future만 완료하며 실패 결과를 캐시에 남기지 않는다. 완료 후에는 `inFlight` 항목을 제거해 다음 TTL 만료 시 다시 하나의 대표 요청만 upstream으로 나간다.
 
+**후속 변경**: 2026-06-12 Redis/Redisson 도입 유닛에서 scale-out 전제가 확정되어 이 L1 위에 Redis L2를 추가했다. 기존 single-flight 정책은 유지되고, cross-pod hit만 Redis가 보조한다. 세부 결정은 [ADR 0024](adr/0024-redis-redisson-adoption.md)에 기록한다.
+
 ---
 
-## 7-1. 도서관 좌석 시계열 적재
+## 7-1. 도서관 좌석 Redis/Redisson scale-out 보조 계층
+
+Redis/Redisson 도입은 [ADR 0024](adr/0024-redis-redisson-adoption.md)에 근거를 둔다. Redis는 source of truth가 아니다. 좌석 상태의 원천은 Pyxis live read이고, 예약/반납 action의 감사와 직렬화 원천은 PostgreSQL이다. Redis는 scale-out 시 생기는 세 가지 문제만 완화한다: pod 간 read cache 공유, 좌석 변경 이벤트 fan-out, scheduler 중복 실행 방지.
+
+### 2계층 좌석 cache 흐름
+
+`LibraryRoomSeatCache`는 기존 L1 in-process cache와 single-flight를 유지한다. 같은 JVM 안에서는 `roomId + 인증 경계` key별로 하나의 `CompletableFuture`만 upstream fetch를 수행한다. Redis L2는 single-flight winner만 조회한다.
+
+```text
+get(roomId, token)
+  -> L1 fresh hit: 즉시 반환
+  -> L1 miss: 같은 key concurrent miss는 한 future로 합류
+  -> winner가 Redis L2 key 조회
+  -> L2 hit: L1에 5초 TTL로 populate 후 반환
+  -> L2 miss: Pyxis room seats 호출
+  -> L1 populate
+  -> Redis L2 best-effort write
+```
+
+L2 key는 `ssuai:library:room-seats:v1:room:{roomId}:auth:{0|1}`이다. token 원문은 key에 넣지 않는다. 인증 여부만 boundary로 쓰는 이유는 기존 L1 정책과 맞추고, Redis key space에 사용자 세션 material을 남기지 않기 위해서다.
+
+TTL은 L1과 같은 `ssuai.library.room-seat.cache-ttl`, 기본 5초다. L2 payload는 Jackson JSON array of `PyxisSeatInfo`를 Redisson `StringCodec` bucket에 저장한다. Redis read/write가 실패하면 `library.redis.failure{operation=room_seat_l2_read|room_seat_l2_write}`를 증가시키고 WARN log만 남긴 뒤 L1/upstream path로 계속 진행한다. Redis 장애 때문에 좌석 read는 실패하지 않는다.
+
+### 좌석 이벤트 pub/sub
+
+좌석 변경 이벤트 채널은 기본 `ssuai.library.seat-events.v1`이다. env `SSUAI_LIBRARY_SEAT_EVENT_CHANNEL`로 변경할 수 있다. payload는 JSON string `LibrarySeatEvent`이다.
+
+```json
+{
+  "schemaVersion": 1,
+  "roomId": 58,
+  "seatId": 3179,
+  "action": "RESERVE",
+  "occurredAt": "2026-06-12T12:00:00Z"
+}
+```
+
+발행 지점은 학교 시스템 상태 변경이 성공한 뒤다.
+
+- `RESERVE`: `LibraryReservationWorker`가 Pyxis reserve와 intent success 기록을 끝낸 뒤.
+- `CANCEL`: `ConfirmActionMcpTool`이 discharge와 action success 기록을 끝낸 뒤.
+- `SWAP_DISCHARGE`: swap의 기존 좌석 discharge 성공 직후.
+- `SWAP_RESERVE`: swap의 새 좌석 reserve와 action success 기록을 끝낸 뒤.
+
+이번 유닛에는 production consumer가 없다. `LibrarySeatEventBus.subscribe(...)`는 다음 SSE 유닛과 테스트를 위한 얇은 abstraction이다. publish 실패는 action 결과를 바꾸지 않는다. 실패 시 `library.redis.failure{operation=seat_event_publish}`와 `library.seat_event.publish{outcome=failure}`만 기록한다.
+
+### scheduler 리더십 락
+
+다음 scheduler는 Redisson `RLock`으로 감싼다.
+
+| job | lock key |
+| --- | --- |
+| seat sampler | `ssuai:library:scheduler:seat-sampler` |
+| hourly rollup | `ssuai:library:scheduler:seat-hourly-rollup` |
+| partition maintenance | `ssuai:library:scheduler:seat-partition-maintenance` |
+
+기본 wait는 `SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT=0ms`다. lock 획득 성공 시 실행하고, 다른 pod가 이미 lock을 잡았으면 skip한다. Redis acquire가 실패하면 단일 pod fallback 원칙에 따라 lock 없이 실행한다. lease는 explicit fixed lease가 아니라 Redisson watchdog을 사용한다. sampler 실행 시간은 Pyxis 응답 시간에 따라 변할 수 있으므로 고정 lease보다 holder JVM 생존 동안 자동 연장되는 watchdog이 더 맞다.
+
+안전 envelope는 제한적이다. Redis lock loss나 Redis down 중 replica 2개가 동시에 scheduler를 실행할 수 있지만, hourly rollup은 idempotent upsert이고 partition maintenance는 `CREATE/DROP ... IF EXISTS`라 중복 실행에 안전하다. worst case는 duplicate rollup 1회 수준이며 예약 write correctness에는 관여하지 않는다.
+
+### degrade/observability
+
+Redis는 readiness dependency가 아니다. `management.health.redis.enabled` 기본값은 false다. Redisson client도 lazy initialization으로 만든다. Redis가 부팅보다 늦거나 내려가 있으면 application startup이 아니라 첫 Redis operation에서 실패하고, 해당 adapter가 WARN/metric 후 L1 cache, Pyxis read, PostgreSQL action path로 계속 진행한다. 대신 아래 metric으로 degraded state를 본다.
+
+| metric | 의미 |
+| --- | --- |
+| `library.redis.failure` | Redis L2/pub-sub/lock 실패 |
+| `library.seat_event.publish` | 좌석 이벤트 발행 success/failure |
+| `library.scheduler.lock` | scheduler lock acquired/skipped/fallback/release_failed |
+
+---
+
+## 7-2. 도서관 좌석 시계열 적재
 
 좌석 시계열 적재는 `domain.library.timeseries`의 JDBC 전용 경계다. JPA entity를 만들지 않았기 때문에 `ddl-auto: validate`는 기존 mapped entity만 검증하고, raw/rollup table은 Flyway와 repository 테스트가 책임진다.
 
@@ -401,12 +475,18 @@ Flyway layout은 `classpath:db/migration/V*__*.sql,classpath:db/migration/{vendo
 |-----------|--------|-----------|
 | `SSUAI_DB_URL` | Spring Data JPA + Flyway | prod Postgres 연결. dev/test 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
 | `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA + Flyway | prod Postgres 연결 |
-| `SSUAI_REDIS_URL` | 캐시 | 향후 분산 캐시용으로 예약; 현재 스토어는 인프로세스 |
 | `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9개 프로바이더 LLM fallback (`LlmProviderConfig`) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
 | `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | 빈 기본값 = 재시작마다 임시 랜덤. prod는 토큰 유지를 위해 반드시 설정 (32바이트 이상). |
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
 | `SSUAI_CREDENTIAL_ENCRYPTION_KEY` | AES-GCM SAINT/LMS/도서관 세션 자료 | 프로덕션에서 안정적인 연동 세션을 위해 라이브 |
+| `SSUAI_REDIS_HOST` / `SSUAI_REDIS_PORT` | Redisson single Redis 연결 | local 기본 `localhost:6379`; prod Helm chart는 같은 namespace Redis Service DNS |
+| `SSUAI_REDIS_TIMEOUT` / `SSUAI_REDIS_CONNECT_TIMEOUT` | Redis command/connect timeout | 기본 `500ms`; Redis 장애 시 빠르게 L1-only fallback |
+| `SSUAI_LIBRARY_REDIS_ENABLED` | Redis adapter master switch | 기본 `true`; false면 no-op adapter |
+| `SSUAI_LIBRARY_REDIS_ROOM_SEAT_CACHE_KEY_PREFIX` | 좌석 L2 cache key prefix | 기본 `ssuai:library:room-seats:v1` |
+| `SSUAI_LIBRARY_SEAT_EVENT_CHANNEL` | 좌석 변경 pub/sub channel | 기본 `ssuai.library.seat-events.v1` |
+| `SSUAI_LIBRARY_SCHEDULER_LOCK_PREFIX` / `SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT` | scheduler Redisson lock key/wait | 기본 prefix `ssuai:library:scheduler:`, wait `0ms` |
+| `SSUAI_REDIS_HEALTH_ENABLED` | actuator Redis health opt-in | 기본 `false`; Redis는 readiness dependency가 아니라 degraded dependency |
 | `SSUAI_LIBRARY_SEAT_SAMPLE_ENABLED` | 좌석 시계열 적재 master switch | 기본 `true`; 장애 대응이나 migration 직후 점검 시 `false` 가능 |
 | `SSUAI_LIBRARY_SEAT_SAMPLE_CADENCE` | 좌석 raw sample 주기 | 기본 `5m`; Spring `Duration` 형식 |
 | `SSUAI_LIBRARY_SEAT_SAMPLE_RETENTION_DAYS` | raw sample partition retention | 기본 `90`; 월 partition upper bound 기준 drop |
@@ -597,6 +677,7 @@ Claude Desktop / IDE
 | 기능 | 상태 | 위치 / 계약 |
 | --- | --- | --- |
 | 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 좌석과 대출은 `LIBRARY` 연동 필요 |
+| 도서관 Redis/Redisson 보조 계층 | 출시 준비 | L2 좌석 cache, `ssuai.library.seat-events.v1`, scheduler lock. [ADR 0024](adr/0024-redis-redisson-adoption.md) |
 | 도서관 좌석 시계열 적재 | 출시 준비 | `domain.library.timeseries`; 5분 raw sample, 월 partition, 시간별 room rollup. [ADR 0023](adr/0023-library-seat-timeseries.md) |
 | SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
 | LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |

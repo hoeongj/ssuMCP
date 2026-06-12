@@ -10,6 +10,9 @@ logging:
     org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
   mvc:
     async:
       request-timeout: 2s
@@ -22,6 +25,9 @@ spring:
         enabled: false
 
 ssuai:
+  library:
+    redis:
+      enabled: false
   connector:
     chat: mock
     department-notice: mock
