@@ -32,3 +32,12 @@ spec:
             severity: warning
           annotations:
             summary: "ssuAI p99 latency > 3s"
+
+        - alert: CircuitBreakerOpen
+          expr: resilience4j_circuitbreaker_state{state="open"} == 1
+          for: 30s
+          labels:
+            severity: warning
+          annotations:
+            summary: "Circuit Breaker OPEN 상태 감지"
+            description: "인스턴스 {{ $labels.instance }}의 서킷 브레이커 {{ $labels.name }}가 OPEN 되었습니다. 외부 API 연동이 일시 차단되고 폴백 로직으로 동작합니다."
