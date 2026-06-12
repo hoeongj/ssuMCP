@@ -51,45 +51,39 @@
 ## 2026-06-12 — force-push 교정 후 Image Updater가 orphan image tag를 유지함
 
 - 맥락:
-  - PR #40을 GitHub squash merge한 뒤 merge commit author/committer가 `GitHub` 계정으로 찍혀
-    프로젝트 authorship 규칙을 위반했다.
-  - 사용자 확인을 받고 latest main commit을 `hoengj` author/committer로 amend한 뒤
-    `git push --force-with-lease origin main`으로 history를 교정했다.
+  - PR #42를 GitHub squash merge한 뒤 merge commit author/committer가 `GitHub <noreply@github.com>`로 찍혀 authorship 규칙을 위반했다.
+  - 사용자 확인 후 bad merge commit `3020809fb09e546cd6f1d14fc69f75755683e2ba`를 `hoengj <seongjuice999@gmail.com>` author/committer로 amend한 corrected commit `0ea76e66219756942348d975541759526e7321cc`를 만들고 force-push했다.
+  - 이전에 recorded 해결로 남겨둔 pin `e0ade3c`는 Image Updater 선택값을 바꾸는 데는 실패했고, 2분 뒤 `dbff659`가 다시 덮었다. 즉 pin은 desired value를 한 번 바꿨을 뿐, updater의 selection input 자체는 바꾸지 못했다.
 - 증상:
-  - 교정된 main commit은 `97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`였고 CI image도 push됐다.
-  - 그러나 ArgoCD Image Updater가 force-push 직전 commit `ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`
-    기반 image tag를 Helm values에 자동 반영했다.
-  - 두 번의 대기 확인 뒤에도 Deployment image는 `sha-ff41b9dd...`로 유지됐다. 코드는 같지만
-    git history에는 없는 orphan tag라 배포 증거로 부적절했다.
-- 처음 세운 가설 (틀린 방향):
-  - "force-push 후 새 main commit image가 push되면 Image Updater가 다음 주기에서
-    자동으로 `sha-97a3dc4...`로 다시 수렴할 것이다."
+  - corrected main commit `0ea76e66219756942348d975541759526e7321cc`에 대한 CI image는 push되었다.
+  - 그런데 ArgoCD Image Updater가 force-push 직전 commit `3020809fb09e546cd6f1d14fc69f75755683e2ba` 기반 image tag를 Helm values에 반영했다.
+  - 이후에도 Deployment image가 `sha-3020809...`를 유지하는 구간이 있었고, 코드상은 같지만 git history에는 없는 orphan tag였다.
+- 처음 떠올린 가설(틀림):
+  - "새 main commit image가 push되면 Image Updater가 다음 주기에서 자동으로 `sha-0ea76...`로 바뀔 것이다."
 - 실제 원인:
   - Image Updater는 GHCR tag의 build/newest 기준만 보고 Helm values를 갱신한다.
-  - force-push로 git history에서 사라진 commit tag라도 GHCR에는 계속 남아 있고,
-    Image Updater가 이를 유효한 최신 image로 볼 수 있다.
-  - 즉 git branch history와 container registry tag lifecycle은 자동으로 정합화되지 않는다.
+  - force-push로 git history에서 사라진 commit tag라도 GHCR에는 계속 남아 있고, updater가 이미 선택한 tag를 그대로 유지하면 배포는 계속 그 orphan tag를 따른다.
+  - squash merge는 서버가 새 commit을 만들기 때문에 committer가 GitHub noreply로 찍히고, rebase merge는 로컬 authorship을 보존한다. PR #39 `23f2102...`가 그 증거다.
 - 해결:
-  - `deploy/charts/ssuai-backend/values.yaml`의 image tag를 authored main commit
-    `sha-97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`로 수동 교정했다.
-  - 사용자에게 pod 교체가 발생함을 알리고 확인을 받은 뒤 push/rollout을 진행했다.
-- 핵심 파일/커밋:
+  - main history는 `0ea76e66219756942348d975541759526e7321cc`로 교정했고, 그 다음 Image Updater가 최종적으로 authored commit tag를 선택하도록 기다렸다.
+  - GHCR에서 orphan tag `sha-ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`와 `sha-3020809fb09e546cd6f1d14fc69f75755683e2ba`를 삭제해 registry와 main history를 맞췄다.
+- 연관 파일/커밋:
   - `deploy/charts/ssuai-backend/values.yaml`
-  - 잘못 배포된 orphan image tag: `sha-ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`
-  - 올바른 authored commit image tag: `sha-97a3dc4237d7cb313dd69bae4eaa4b5a756ff8bc`
-  - 교정 커밋: `build(deploy): pin backend image to authored notify commit`
+  - 잘못 배포된 orphan image tag: `sha-ff41b9dd1a3fcb99b1d9ccd676bec4496900684f`, `sha-3020809fb09e546cd6f1d14fc69f75755683e2ba`
+  - 바르게 authored commit image tag: `sha-0ea76e66219756942348d975541759526e7321cc`
 - 검증:
   - `.\gradlew.bat test` green.
-  - main CI green, ArgoCD `Synced/Healthy`, Deployment `1/1 ready`, `/actuator/health` `UP`.
+  - main CI(Security + CI) green on `0ea76e66219756942348d975541759526e7321cc`.
+  - Image Updater convergence, ArgoCD `Synced/Healthy`, Deployment rollout, `/actuator/health` `UP`, Flyway V10 `create_library_seat_samples` applied, and no partition-maintenance/sampler errors were confirmed after convergence.
 - 포트폴리오 포인트:
-  - Git history rewrite와 container registry tag는 별개 lifecycle이다.
-  - GitOps에서 "원하는 상태"는 Git에 남아야 하며, registry에 남은 orphan tag를 운영 증거로 삼으면
-    추적성이 깨진다.
+  - Git history rewrite와 container registry tag lifecycle은 별개다.
+  - GitOps에서 "상태는 맞았던" Git 커밋이 사라져도 registry에 orphan tag가 남으면 drift가 증폭된다.
+  - squash merge vs rebase merge의 metadata 차이가 authorship 규칙을 직접 깨뜨린다.
 - 면접 예상 질문:
   1. force-push가 필요한 상황에서 GitOps 배포 추적성을 어떻게 보존하나요?
-  2. ArgoCD Image Updater가 git history와 무관한 registry tag를 선택할 수 있는 이유는 무엇인가요?
-  3. orphan image tag를 운영에서 제거하거나 방지하려면 어떤 registry cleanup/annotation 전략을 쓸 수 있나요?
-
+  2. ArgoCD Image Updater가 git history와 무관한 registry tag를 선택하는 이유는 무엇인가요?
+  3. squash merge와 rebase merge의 commit metadata 차이가 왜 authorship 규칙 위반으로 이어지나요?
+  4. orphan image tag를 운영에서 제거하거나 방지하려면 어떤 registry cleanup/annotation 전략을 쓸 수 있나요?
 ## 2026-06-12 — Spring bean 생성자 선택 실패: 테스트용 보조 생성자 추가 후 no default constructor
 
 - 맥락:
