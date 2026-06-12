@@ -10,13 +10,15 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Component
 public class LibrarySeatSseRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(LibrarySeatSseRegistry.class);
-    private static final long TIMEOUT_MS = 30 * 60 * 1000L; // 30 minutes
+    private static final long TIMEOUT_MS = 55_000L; // 55s — stays under Vercel rewrite 120s hard cut
+    private static final String HEARTBEAT_COMMENT = "heartbeat";
 
     private final LibrarySeatEventBus eventBus;
     private final Map<Integer, List<SseEmitter>> floorEmitters = new ConcurrentHashMap<>();
@@ -64,6 +66,23 @@ public class LibrarySeatSseRegistry {
         }
 
         return emitter;
+    }
+
+    @Scheduled(fixedDelay = 20_000)
+    public void sendHeartbeats() {
+        floorEmitters.forEach((floor, emitters) -> {
+            List<SseEmitter> deadEmitters = new CopyOnWriteArrayList<>();
+            for (SseEmitter emitter : emitters) {
+                try {
+                    emitter.send(SseEmitter.event().comment(HEARTBEAT_COMMENT));
+                } catch (IOException | IllegalStateException ex) {
+                    deadEmitters.add(emitter);
+                }
+            }
+            if (!deadEmitters.isEmpty()) {
+                emitters.removeAll(deadEmitters);
+            }
+        });
     }
 
     private void removeEmitter(int floorCode, SseEmitter emitter) {

@@ -48,6 +48,35 @@
   3.
 ```
 
+## 2026-06-12 — SSE 타임아웃 30분 설정과 Vercel 120초 하드 컷 충돌로 dead emitter 누적
+
+- 발생:
+  - `SseEmitter` 타임아웃을 30분으로 두었지만, Vercel rewrite 프록시가 외부 연결을 120초에 끊으면서 EventSource 재연결이 반복됐다.
+  - 죽은 emitter가 30분 동안 레지스트리에 남아 floor별 emitter 수가 계속 불어날 수 있는 구조였다.
+- 틀린 가설:
+  - "SseEmitter 타임아웃을 길게 잡으면 재연결 빈도가 줄고 운영도 안정적일 것이다."
+- 실제 원인:
+  - Vercel rewrite proxy가 외부 URL 연결을 120초에 하드 컷한다.
+  - 타임아웃이 길수록 끊어진 emitter가 레지스트리에 오래 적체되어 메모리와 정리 비용이 커진다.
+  - 프록시가 SSE 응답을 버퍼링하면 실시간 이벤트가 바로 내려가지 않으므로, 버퍼링 방지 헤더와 heartbeat가 같이 필요하다.
+- 해결:
+  - `LibrarySeatSseRegistry.TIMEOUT_MS`를 `55_000L`로 낮춰 Vercel 120초보다 먼저 emitter를 정리한다.
+  - `LibrarySeatController`에서 `X-Accel-Buffering: no`를 설정해 nginx 계열 프록시의 버퍼링을 끈다.
+  - `sendHeartbeats()`를 20초 간격으로 보내 중간 프록시의 idle timeout을 회피한다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/library/events/LibrarySeatSseRegistry.java`
+  - `src/main/java/com/ssuai/domain/library/controller/LibrarySeatController.java`
+  - `src/test/java/com/ssuai/domain/library/events/LibrarySeatSseRegistryTests.java`
+  - `docs/adr/0026-sse-seat-updates.md`
+  - `892adf999bd6a19f7d3958dd03ba8445610926eb`
+- 포트폴리오 포인트:
+  - SSE 문제는 애플리케이션 코드보다 CDN/프록시 계층의 타임아웃 정책과 더 강하게 결합된다.
+  - "연결을 오래 유지"보다 "죽은 연결을 빨리 버리고 heartbeat로 idle을 유지"하는 쪽이 실제 운영 안정성에 맞다.
+- 면접 예상 질문:
+  1. Vercel + Spring Boot SSE 조합에서 생길 수 있는 타임아웃 문제는?
+  2. `X-Accel-Buffering: no` 헤더는 왜 필요한가?
+  3. SSE heartbeat 주기를 20초로 잡은 이유는?
+
 ## 2026-06-12 — force-push 교정 후 Image Updater가 orphan image tag를 유지함
 
 - 맥락:
