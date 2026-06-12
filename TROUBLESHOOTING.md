@@ -84,6 +84,30 @@
   2. ArgoCD Image Updater가 git history와 무관한 registry tag를 선택하는 이유는 무엇인가요?
   3. squash merge와 rebase merge의 commit metadata 차이가 왜 authorship 규칙 위반으로 이어지나요?
   4. orphan image tag를 운영에서 제거하거나 방지하려면 어떤 registry cleanup/annotation 전략을 쓸 수 있나요?
+## 2026-06-12 — rollout은 healthy지만 scheduler가 LibraryAuthRequiredException을 계속 남김
+
+- 맥락:
+  - `0ea76...` 교정 후 Image Updater와 배포 상태를 확인하는 과정에서, rollout/health는 정상인데 로그는 깨끗하지 않을 수 있다는 가능성을 다시 검증했다.
+  - 사용자 요구는 `no partition-maintenance/sampler errors`였고, 실제로는 `LibrarySeatSampleSampler`가 주기 실행 중 예외를 남겼다.
+- 증상:
+  - `kubectl -n ssuai-prod logs deployment/ssuai-backend --tail=200`에서 `library seat sample run failed`와 `LibraryAuthRequiredException: 도서관 로그인이 필요합니다.`가 반복 확인됐다.
+  - 배포 자체는 `Synced/Healthy`와 `rollout status successful`이었지만, scheduler 로그는 요구 조건을 만족하지 못했다.
+- 처음 떠올린 가설(틀림):
+  - "Flyway V10와 rollout이 통과하면 sampler 로그도 자연스럽게 정상화될 것이다."
+- 실제 원인:
+  - `LibrarySeatSampleSampler`가 real connector를 통해 좌석 데이터를 읽는데, 현재 prod 경로는 도서관 로그인 상태가 없으면 `LibraryAuthRequiredException`을 던진다.
+  - 즉, 배포/마이그레이션 성공과 sampler 성공은 별개이며, scheduler를 prod에서 어떻게 보호할지(조건부 비활성화, auth guard, fallback profile)까지 봐야 한다.
+- 연관 파일/커밋:
+  - `src/main/java/com/ssuai/domain/library/timeseries/LibrarySeatSampleSampler.java`
+  - `src/main/java/com/ssuai/domain/library/connector/RealLibrarySeatConnector.java`
+  - `0ea76e66219756942348d975541759526e7321cc`, `87c46863c809e56ccd8f4759e16e3984ab7ae45c`
+- 포트폴리오 포인트:
+  - rollout green만으로는 충분하지 않고, background job과 scheduler 로그까지 포함해야 진짜 prod 검증이다.
+  - GitOps/배포 검증은 health endpoint와 rollout 상태 외에 주기 작업의 실패 패턴도 함께 봐야 한다.
+- 면접 예상 질문:
+  1. rollout/health가 정상인데 background scheduler가 실패할 때 어떻게 분리해서 진단하나요?
+  2. prod에서 주기 작업이 auth-dependent connector를 쓸 때 어떤 보호 장치가 필요하나요?
+  3. runtime 검증에서 health endpoint만 보면 놓치는 실패 패턴은 무엇인가요?
 ## 2026-06-12 — Spring bean 생성자 선택 실패: 테스트용 보조 생성자 추가 후 no default constructor
 
 - 맥락:
