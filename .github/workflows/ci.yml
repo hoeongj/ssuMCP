@@ -34,7 +34,7 @@ jobs:
     name: MCP Server image (ghcr.io, ARM64)
     runs-on: ubuntu-latest
     needs: backend
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'build: automatic update of ssuai-backend')))
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'build: automatic update of ssuai-backend') == false)) }}
     permissions:
       contents: read
       packages: write
