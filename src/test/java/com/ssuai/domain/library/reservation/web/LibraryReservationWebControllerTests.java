@@ -135,7 +135,26 @@ class LibraryReservationWebControllerTests {
     }
 
     @Test
-    void registerWait_withActiveIntent_returnsExisting() throws Exception {
+    void registerWait_withNewIntent_returns200() throws Exception {
+        LibraryReservationIntentView created = intentView(
+                22L,
+                LibraryReservationIntentStatus.WAITING_FOR_SEAT,
+                null);
+        when(intentTransactions.registerWait(anyString(), any()))
+                .thenReturn(new LibraryReservationRegistrationResult(created, true));
+
+        mockMvc.perform(post("/api/library/reservations/wait")
+                        .contentType("application/json")
+                        .content("""
+                                {"preferredFloor":"6F","preferredRoomIds":"57,58","seatAttributes":"window","targetSeatId":3179}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.intentId").value(22L))
+                .andExpect(jsonPath("$.data.status").value("WAITING_FOR_SEAT"));
+    }
+
+    @Test
+    void registerWait_withActiveIntent_returnsConflict() throws Exception {
         LibraryReservationIntentView existing = intentView(
                 21L,
                 LibraryReservationIntentStatus.WAITING_FOR_SEAT,
@@ -148,9 +167,8 @@ class LibraryReservationWebControllerTests {
                         .content("""
                                 {"preferredFloor":"6F","preferredRoomIds":"57,58","seatAttributes":"window","targetSeatId":3179}
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.intentId").value(21L))
-                .andExpect(jsonPath("$.data.status").value("WAITING_FOR_SEAT"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ACTIVE_WAIT_EXISTS"));
     }
 
     @Test
