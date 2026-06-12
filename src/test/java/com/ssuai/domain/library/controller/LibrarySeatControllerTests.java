@@ -3,6 +3,7 @@ package com.ssuai.domain.library.controller;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -20,11 +21,13 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatItem;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
 import com.ssuai.domain.library.dto.LibrarySeatZone;
+import com.ssuai.domain.library.events.LibrarySeatSseRegistry;
 import com.ssuai.domain.library.service.LibrarySeatService;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
@@ -39,10 +42,14 @@ class LibrarySeatControllerTests {
     @MockitoBean
     private LibrarySeatService libraryService;
 
+    @MockitoBean
+    private LibrarySeatSseRegistry sseRegistry;
+
     @Autowired
     LibrarySeatControllerTests(MockMvc mockMvc) {
         this.mockMvc = mockMvc;
     }
+
 
     @Test
     void getSeatStatusReturnsSuccessEnvelope() throws Exception {
@@ -140,4 +147,22 @@ class LibrarySeatControllerTests {
                 .andExpect(jsonPath("$.error.code").value("LIBRARY_SESSION_REQUIRED"));
     }
 
+    @Test
+    void streamSeatEventsReturnsSseEmitter() throws Exception {
+        SseEmitter emitter = new SseEmitter();
+        when(sseRegistry.createEmitter(2)).thenReturn(emitter);
+
+        mockMvc.perform(get("/api/library/seats/events").param("floor", "2"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void streamSeatEventsRejectsInvalidFloor() throws Exception {
+        mockMvc.perform(get("/api/library/seats/events").param("floor", "99"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        verifyNoInteractions(sseRegistry);
+    }
 }
+

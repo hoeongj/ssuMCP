@@ -4,13 +4,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
+import com.ssuai.domain.library.events.LibrarySeatSseRegistry;
 import com.ssuai.domain.library.service.LibrarySeatService;
 import com.ssuai.global.response.ApiResponse;
 
@@ -20,9 +23,13 @@ import com.ssuai.global.response.ApiResponse;
 public class LibrarySeatController {
 
     private final LibrarySeatService libraryService;
+    private final LibrarySeatSseRegistry sseRegistry;
 
-    public LibrarySeatController(LibrarySeatService libraryService) {
+    public LibrarySeatController(
+            LibrarySeatService libraryService,
+            LibrarySeatSseRegistry sseRegistry) {
         this.libraryService = libraryService;
+        this.sseRegistry = sseRegistry;
     }
 
     @GetMapping("/seats")
@@ -41,4 +48,20 @@ public class LibrarySeatController {
         String sessionKey = request.getSession().getId();
         return ApiResponse.success(libraryService.getSeatStatusForSession(target, sessionKey));
     }
+
+    @GetMapping(value = "/seats/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Subscribe to live library seat update events for a floor")
+    public SseEmitter streamSeatEvents(
+            @RequestParam
+            @Parameter(
+                    description = "Library floor code. Allowed values: 2, 5, 6.",
+                    required = true,
+                    example = "2"
+            )
+            int floor
+    ) {
+        LibraryFloor.fromCode(floor); // Validate floor code
+        return sseRegistry.createEmitter(floor);
+    }
 }
+
