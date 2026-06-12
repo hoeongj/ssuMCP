@@ -23,7 +23,7 @@ spring:
         format_sql: false
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration/V*__*.sql,classpath:db/migration/{vendor}
   ai:
     mcp:
       server:
@@ -175,6 +175,10 @@ ssuai:
       notify-wake-enabled: true
       notify-listen-timeout: 1s
       notify-reconnect-delay: 5s
+    seat-sample:
+      enabled: ${SSUAI_LIBRARY_SEAT_SAMPLE_ENABLED:true}
+      cadence: ${SSUAI_LIBRARY_SEAT_SAMPLE_CADENCE:5m}
+      retention-days: ${SSUAI_LIBRARY_SEAT_SAMPLE_RETENTION_DAYS:90}
     book:
       # Per-(query,page,size) cache TTL. Longer than seat (which is volatile);
       # checkout state shifts on the order of minutes, not seconds.

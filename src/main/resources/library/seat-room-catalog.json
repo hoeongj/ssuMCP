@@ -2,6 +2,7 @@
   {
     "floorCode": "2F",
     "floor": 2,
+    "roomId": 53,
     "roomCode": "soongsil-square-on",
     "roomName": "숭실스퀘어ON",
     "audience": "all",
@@ -28,6 +29,7 @@
   {
     "floorCode": "2F",
     "floor": 2,
+    "roomId": 54,
     "roomCode": "open-reading-2f",
     "roomName": "오픈열람실(2F)",
     "audience": "all",
@@ -51,6 +53,7 @@
   {
     "floorCode": "5F",
     "floor": 5,
+    "roomId": 60,
     "roomCode": "pc-multi-zone-5f",
     "roomName": "PC존/멀티존",
     "audience": "all",
@@ -76,6 +79,7 @@
   {
     "floorCode": "5F",
     "floor": 5,
+    "roomId": 59,
     "roomCode": "recliner-5f",
     "roomName": "리클라이너",
     "audience": "all",
@@ -97,6 +101,7 @@
   {
     "floorCode": "6F",
     "floor": 6,
+    "roomId": 57,
     "roomCode": "maru-reading",
     "roomName": "마루열람실",
     "audience": "all",
@@ -120,6 +125,7 @@
   {
     "floorCode": "6F",
     "floor": 6,
+    "roomId": 58,
     "roomCode": "graduate-reading",
     "roomName": "대학원열람실",
     "audience": "graduate_only",
@@ -144,6 +150,7 @@
   {
     "floorCode": "B1",
     "floor": -1,
+    "roomId": null,
     "roomCode": "basement-reading-b1",
     "roomName": "지하열람실(B1)",
     "audience": "all",
