@@ -56,7 +56,7 @@ deploy/                 # k8s Helm chart + Docker
 
 - Tests: `.\gradlew.bat test` (Windows) / `./gradlew test` (Linux)
 - DO NOT read in routine work: `build/`, `.gradle/`, `.idea/`, `src/main/kotlin/dev/eatsteak/rusaint/` (generated binding)
-- Branch: `feat/` `fix/` `refactor/` `chore/` `docs/` + kebab-case. One feature = one PR.
+- Branch: `feat/` `fix/` `refactor/` `chore/` `docs/` + kebab-case. One feature = one PR. Branches must carry exactly one squashed commit authored locally; merge PRs with the rebase method only (`gh pr merge --rebase`); GitHub squash and merge-commit methods are forbidden because they stamp committer `GitHub <noreply@github.com>`; verify authorship on `origin/main` immediately after every merge.
 - Commit: Conventional Commits (`feat(mcp): ...`)
 
 ## Deploy
