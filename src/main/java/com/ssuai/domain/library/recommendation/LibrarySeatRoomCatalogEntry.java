@@ -5,6 +5,7 @@ import java.util.List;
 public record LibrarySeatRoomCatalogEntry(
         String floorCode,
         Integer floor,
+        Integer roomId,
         String roomCode,
         String roomName,
         String audience,
@@ -34,6 +35,7 @@ public record LibrarySeatRoomCatalogEntry(
         return new LibrarySeatRoomCatalogEntry(
                 floorCode,
                 floor,
+                roomId,
                 roomCode,
                 roomName,
                 audience,
@@ -52,6 +54,7 @@ public record LibrarySeatRoomCatalogEntry(
         return new LibrarySeatRoomCatalogEntry(
                 floorCode,
                 floor,
+                roomId,
                 roomCode,
                 roomName,
                 audience,

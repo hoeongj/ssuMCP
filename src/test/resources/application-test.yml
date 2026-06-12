@@ -13,6 +13,9 @@ spring:
   mvc:
     async:
       request-timeout: 2s
+  task:
+    scheduling:
+      enabled: false
   ai:
     mcp:
       client:
