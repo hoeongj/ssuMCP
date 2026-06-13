@@ -43,9 +43,10 @@ public class McpAuthSessionStore {
     @Autowired
     public McpAuthSessionStore(
             McpSessionRepository repository,
+            ObjectMapper objectMapper,
             McpAuthProperties properties
     ) {
-        this(repository, defaultObjectMapper(), properties, Clock.systemUTC());
+        this(repository, objectMapper, properties, Clock.systemUTC());
     }
 
     McpAuthSessionStore(

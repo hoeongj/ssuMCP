@@ -37,13 +37,14 @@ public class LibraryReservationIntentTransactions {
             LibraryReservationIntentProperties properties,
             LibraryReservationIntentMetrics metrics,
             LibraryReservationIntentWakeNotifier wakeNotifier,
+            ObjectMapper objectMapper,
             Clock clock) {
         this.intentRepository = intentRepository;
         this.outboxRepository = outboxRepository;
         this.properties = properties;
         this.metrics = metrics;
         this.wakeNotifier = wakeNotifier;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
         this.clock = clock;
     }
 

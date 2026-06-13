@@ -33,19 +33,18 @@ public class ActionService {
     private final MeterRegistry meterRegistry;
 
     @Autowired
-    public ActionService(ActionAuditRepository repository, Clock clock, MeterRegistry meterRegistry) {
-        this(repository, new ObjectMapper(), clock, meterRegistry);
-    }
-
-    ActionService(ActionAuditRepository repository, ObjectMapper objectMapper, Clock clock) {
-        this(repository, objectMapper, clock, new SimpleMeterRegistry());
-    }
-
-    ActionService(ActionAuditRepository repository, ObjectMapper objectMapper, Clock clock, MeterRegistry meterRegistry) {
+    public ActionService(ActionAuditRepository repository, ObjectMapper objectMapper, Clock clock, MeterRegistry meterRegistry) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.meterRegistry = meterRegistry;
+    }
+
+    ActionService(ActionAuditRepository repository, ObjectMapper objectMapper, Clock clock) {
+        this.repository = repository;
+        this.objectMapper = objectMapper;
+        this.clock = clock;
+        this.meterRegistry = new SimpleMeterRegistry();
     }
 
     @Transactional

@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -40,6 +41,7 @@ class LibraryReservationIntentTransactionsTests {
                 properties,
                 metrics,
                 wakeNotifier,
+                new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
