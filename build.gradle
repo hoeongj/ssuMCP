@@ -1,8 +1,8 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.kotlin.jvm' version '2.3.21'
-    id 'org.jetbrains.kotlin.plugin.spring' version '2.3.21'
-    id 'org.springframework.boot' version '4.0.6'
+    id 'org.jetbrains.kotlin.jvm' version '2.4.0'
+    id 'org.jetbrains.kotlin.plugin.spring' version '2.4.0'
+    id 'org.springframework.boot' version '4.1.0'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -46,17 +46,17 @@ dependencies {
     implementation 'org.redisson:redisson-spring-boot-starter:4.5.0'
     implementation 'org.jetbrains.kotlin:kotlin-reflect'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
-    implementation 'net.java.dev.jna:jna:5.18.1'
+    implementation 'net.java.dev.jna:jna:5.19.1'
     implementation 'org.flywaydb:flyway-core'
 
     // Resilience4j core (functional) — no Spring Boot starter, so framework-version
     // agnostic on Spring Boot 4. CircuitBreaker/Retry applied at connector + LLM seams;
     // micrometer module exposes state to the existing Prometheus/Grafana stack.
-    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.3.0'
-    implementation 'io.github.resilience4j:resilience4j-retry:2.3.0'
-    implementation 'io.github.resilience4j:resilience4j-micrometer:2.3.0'
-    implementation 'io.github.resilience4j:resilience4j-ratelimiter:2.3.0'
-    implementation 'io.github.resilience4j:resilience4j-bulkhead:2.3.0'
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.4.0'
+    implementation 'io.github.resilience4j:resilience4j-retry:2.4.0'
+    implementation 'io.github.resilience4j:resilience4j-micrometer:2.4.0'
+    implementation 'io.github.resilience4j:resilience4j-ratelimiter:2.4.0'
+    implementation 'io.github.resilience4j:resilience4j-bulkhead:2.4.0'
 
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.postgresql:postgresql'
@@ -64,8 +64,8 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-    testImplementation 'com.squareup.okhttp3:okhttp:5.3.2'
-    testImplementation 'com.squareup.okhttp3:mockwebserver:5.3.2'
+    testImplementation 'com.squareup.okhttp3:okhttp:5.4.0'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:5.4.0'
     testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
