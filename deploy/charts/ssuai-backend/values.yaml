@@ -48,10 +48,10 @@ env:
   # SSUAI_GEMINI_API_KEY from the secret; falls back to lexical-only if the
   # embedding API is unreachable.
   academicEmbeddingEnabled: "true"
-  # gemini-embedding-2: available for this key tier, 1536-dim native with Matryoshka
-  # truncation to 768 (same as embedding-001). Better quality. embedding-001 hit
-  # 429 quota 2026-06-13; text-embedding-004 returned 404 (not in this key's model list).
-  academicEmbeddingModel: "gemini-embedding-2"
+  # gemini-embedding-001: quota reset after 2026-06-13 exhaustion. text-embedding-004
+  # returned 404 (not available for this key tier); gemini-embedding-2 hit
+  # RestClientException (Spring deserialization issue, needs investigation).
+  academicEmbeddingModel: "gemini-embedding-001"
   redisHost: ""
   redisPort: "6379"
   redisTimeout: 500ms
