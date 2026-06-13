@@ -26,6 +26,7 @@ import com.ssuai.domain.chat.service.llm.LlmCompletionResult;
 import com.ssuai.domain.chat.service.llm.LlmPrivacyMode;
 import com.ssuai.domain.chat.service.llm.LlmProvider;
 import com.ssuai.domain.chat.service.llm.LlmProviderException;
+import com.ssuai.global.admin.AdminResilienceResponse;
 import com.ssuai.global.exception.ChatUnavailableException;
 
 @Component
@@ -148,6 +149,10 @@ public class LlmProviderChain {
         );
     }
 
+    public List<AdminResilienceResponse.CircuitBreakerInfo> circuitBreakerStates() {
+        return circuitBreakers.allCircuitBreakerStates();
+    }
+
     record ProviderAttempt(
             LlmProvider provider,
             LlmPrivacyMode privacyMode
@@ -177,5 +182,16 @@ class LlmProviderCbRegistry {
 
     CircuitBreaker circuitBreaker(String providerName) {
         return circuitBreakerRegistry.circuitBreaker(NAME_PREFIX + providerName);
+    }
+
+    List<AdminResilienceResponse.CircuitBreakerInfo> allCircuitBreakerStates() {
+        return circuitBreakerRegistry.getAllCircuitBreakers().stream()
+                .map(cb -> new AdminResilienceResponse.CircuitBreakerInfo(
+                        cb.getName(),
+                        cb.getState().name(),
+                        cb.getMetrics().getFailureRate(),
+                        cb.getMetrics().getSlowCallRate()))
+                .sorted(java.util.Comparator.comparing(AdminResilienceResponse.CircuitBreakerInfo::name))
+                .toList();
     }
 }
