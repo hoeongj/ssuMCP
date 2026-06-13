@@ -3,6 +3,40 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-13 - Groq STT multipart 테스트 EOF 실패
+
+### 상황
+- `GroqSttClientTests.transcribesAudioFile()`에서 WireMock `/audio/transcriptions` stub을 열어두었지만 `GroqSttClient.transcribe()`가 빈 문자열을 반환했다.
+- 로그는 처음에 예외 class만 남겨 원인을 보기 어려웠고, 메시지 포함 로그로 재실행하자 `I/O error on POST request ... EOF reached while reading`이 확인됐다.
+
+### 잘못된 가설
+- 처음에는 WireMock stub 경로, `Authorization` header, multipart field 이름(`model`, `language`, `response_format`, `file`) 불일치 때문에 404/500이 발생한다고 봤다.
+- 하지만 실패는 HTTP status 응답 이전의 `ResourceAccessException`이었고, WireMock stub matching 문제가 아니었다.
+
+### 실제 원인
+- Spring `RestClient` 기본 request factory가 WireMock과 multipart/form-data POST를 주고받는 테스트 경로에서 EOF를 냈다.
+- STT 클라이언트에 `SimpleClientHttpRequestFactory`를 명시하자 같은 multipart 요청이 WireMock에서 정상 처리됐다.
+
+### 수정
+- `src/main/java/com/ssuai/domain/lms/video/util/GroqSttClient.java`
+  - `RestClient.builder().requestFactory(new SimpleClientHttpRequestFactory())`를 적용했다.
+  - 실패 로그는 요청 원인 분석이 가능하도록 메시지를 남기되, API key는 출력하지 않는다.
+- `src/test/java/com/ssuai/domain/lms/video/util/GroqSttClientTests.java`
+  - 성공/500/blank key 테스트를 유지해 multipart 성공과 graceful degradation을 검증한다.
+
+### 핵심 파일 및 커밋
+- 파일: `GroqSttClient.java`, `GroqSttClientTests.java`
+- 커밋: 예정 `feat(lms): add get_my_lecture_list and get_lecture_transcript MCP tools`
+
+### 포트폴리오 포인트
+- 외부 STT API 연동은 단순 JSON POST가 아니라 multipart binary upload, 인증 header, graceful fallback, 테스트 서버 호환성까지 포함해야 운영 가능한 기능이 된다.
+- 실패 원인을 HTTP status가 아닌 client request factory 계층에서 분리해낸 점이 "테스트가 실제 통합 위험을 드러낸 사례"로 설명 가능하다.
+
+### 예상 면접 질문
+1. 왜 STT 요청은 `RestClient` 기본값 대신 `SimpleClientHttpRequestFactory`를 명시했나요?
+2. multipart STT 업로드 실패 시 사용자 경험을 어떻게 보호하나요?
+3. 실제 Groq API와 WireMock 테스트의 차이가 있을 때 어떤 순서로 원인을 좁히나요?
+
 > 역사 기록 주의: 2026-05-27 저장소 분리 전 항목의 `backend/`는 현재
 > `ssuMCP/` 루트, `frontend/`는 별도 `ssuAI/` 루트를 의미합니다. SSE
 > 관련 항목은 당시 원인 분석을 보존한 것이며, 현재 MCP endpoint는

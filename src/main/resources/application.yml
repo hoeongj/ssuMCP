@@ -240,6 +240,15 @@ ssuai:
       ttl: ${SSUAI_LMS_SESSION_TTL:7d}
       max-sessions: 1000
       encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+  lms-video:
+    connector: ${SSUAI_CONNECTOR_LMS_VIDEO:mock}
+    commons-content-php-url: ${SSUAI_LMS_COMMONS_CONTENT_PHP_URL:https://commons.ssu.ac.kr/viewer/ssplayer/uniplayer_support/content.php}
+    groq-api-key: ${SSUAI_GROQ_API_KEY:}
+    groq-base-url: ${SSUAI_GROQ_BASE_URL:https://api.groq.com/openai/v1}
+    stt-model: ${SSUAI_LMS_VIDEO_STT_MODEL:whisper-large-v3}
+    stt-language: ${SSUAI_LMS_VIDEO_STT_LANGUAGE:ko}
+    chunk-duration-seconds: ${SSUAI_LMS_VIDEO_CHUNK_SECONDS:600}
+    download-timeout-seconds: ${SSUAI_LMS_VIDEO_DOWNLOAD_TIMEOUT_SECONDS:120}
   auth:
     # Public origin of THIS backend, used to build the SmartID
     # apiReturnUrl in /api/auth/saint/sso-init. In prod this MUST be

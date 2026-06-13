@@ -79,7 +79,7 @@ WORKDIR /app
 RUN groupadd --system spring \
  && useradd --system --uid 1001 --gid spring --shell /usr/sbin/nologin spring \
  && apt-get update \
- && apt-get install -y --no-install-recommends curl libssl3 \
+ && apt-get install -y --no-install-recommends curl libssl3 ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /workspace/build/libs/*-SNAPSHOT.jar app.jar

@@ -94,6 +94,8 @@ class McpSelfDogfoodTests {
                             "get_my_scholarships",
                             "simulate_gpa",
                             "get_my_assignments",
+                            "get_my_lecture_list",
+                            "get_lecture_transcript",
                             "get_recent_notices",
                             "search_notices",
                             "list_notice_categories",

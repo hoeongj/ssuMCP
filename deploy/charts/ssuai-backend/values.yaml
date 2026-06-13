@@ -59,6 +59,7 @@ env:
   libraryRedisEnabled: "true"
   librarySeatEventChannel: ssuai.library.seat-events.v1
   librarySchedulerLockWait: 0ms
+  connectorLmsVideo: real
 redis:
   enabled: true
   image:
