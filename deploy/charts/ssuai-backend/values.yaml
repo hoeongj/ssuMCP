@@ -48,6 +48,9 @@ env:
   # SSUAI_GEMINI_API_KEY from the secret; falls back to lexical-only if the
   # embedding API is unreachable.
   academicEmbeddingEnabled: "true"
+  # text-embedding-004 has documented 1500 RPD on free tier; gemini-embedding-001
+  # (the original default) exhausted its undocumented free quota in prod (2026-06-13).
+  academicEmbeddingModel: "text-embedding-004"
   redisHost: ""
   redisPort: "6379"
   redisTimeout: 500ms
