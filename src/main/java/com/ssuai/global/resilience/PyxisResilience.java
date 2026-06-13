@@ -3,20 +3,29 @@ package com.ssuai.global.resilience;
 import java.time.Duration;
 import java.util.function.Supplier;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
-import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.core.IntervalFunction;
+import io.github.resilience4j.micrometer.tagged.TaggedBulkheadMetrics;
 import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
+import io.github.resilience4j.micrometer.tagged.TaggedRateLimiterMetrics;
 import io.github.resilience4j.micrometer.tagged.TaggedRetryMetrics;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
@@ -47,8 +56,33 @@ public class PyxisResilience {
 
     private final CircuitBreaker circuitBreaker;
     private final Retry readRetry;
+    private final RateLimiter readRateLimiter;
+    private final RateLimiter writeRateLimiter;
+    private final Bulkhead bulkhead;
 
+    @Autowired
     public PyxisResilience(MeterRegistry meterRegistry) {
+        this(meterRegistry,
+                RateLimiterConfig.custom()
+                        .limitForPeriod(5)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ofMillis(500))
+                        .build(),
+                RateLimiterConfig.custom()
+                        .limitForPeriod(2)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ofMillis(200))
+                        .build(),
+                BulkheadConfig.custom()
+                        .maxConcurrentCalls(10)
+                        .maxWaitDuration(Duration.ofMillis(500))
+                        .build());
+    }
+
+    PyxisResilience(MeterRegistry meterRegistry,
+                    RateLimiterConfig readRlConfig,
+                    RateLimiterConfig writeRlConfig,
+                    BulkheadConfig bulkheadConfig) {
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
                 .failureRateThreshold(50f)
                 .slowCallRateThreshold(100f)
@@ -77,17 +111,59 @@ public class PyxisResilience {
         RetryRegistry retryRegistry = RetryRegistry.of(retryConfig);
         this.readRetry = retryRegistry.retry("pyxis-read");
         TaggedRetryMetrics.ofRetryRegistry(retryRegistry).bindTo(meterRegistry);
+
+        RateLimiterRegistry rlRegistry = RateLimiterRegistry.ofDefaults();
+        this.readRateLimiter = rlRegistry.rateLimiter("pyxis-read-rl", readRlConfig);
+        this.writeRateLimiter = rlRegistry.rateLimiter("pyxis-write-rl", writeRlConfig);
+        TaggedRateLimiterMetrics.ofRateLimiterRegistry(rlRegistry).bindTo(meterRegistry);
+
+        BulkheadRegistry bulkheadRegistry = BulkheadRegistry.of(bulkheadConfig);
+        this.bulkhead = bulkheadRegistry.bulkhead("pyxis");
+        TaggedBulkheadMetrics.ofBulkheadRegistry(bulkheadRegistry).bindTo(meterRegistry);
     }
 
-    /** Idempotent reads: circuit breaker + retry with exponential backoff. */
+    public static PyxisResilience forTesting(MeterRegistry meterRegistry) {
+        return new PyxisResilience(meterRegistry,
+                RateLimiterConfig.custom()
+                        .limitForPeriod(100_000)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ZERO)
+                        .build(),
+                RateLimiterConfig.custom()
+                        .limitForPeriod(100_000)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ZERO)
+                        .build(),
+                BulkheadConfig.custom()
+                        .maxConcurrentCalls(100_000)
+                        .maxWaitDuration(Duration.ZERO)
+                        .build());
+    }
+
+    /** Idempotent reads: Bulkhead → RateLimiter → CircuitBreaker → Retry (innermost first in wrapping). */
     public <T> T read(Supplier<T> call) {
-        Supplier<T> guarded = Retry.decorateSupplier(
-                readRetry, CircuitBreaker.decorateSupplier(circuitBreaker, call));
+        Supplier<T> guarded = Retry.decorateSupplier(readRetry,
+                CircuitBreaker.decorateSupplier(circuitBreaker, call));
+        guarded = RateLimiter.decorateSupplier(readRateLimiter, guarded);
+        guarded = Bulkhead.decorateSupplier(bulkhead, guarded);
         return guarded.get();
     }
 
-    /** Non-idempotent writes (reserve/discharge): circuit breaker only, never retried. */
+    /** Non-idempotent writes (reserve/discharge): Bulkhead → RateLimiter → CircuitBreaker (no retry). */
     public <T> T write(Supplier<T> call) {
-        return circuitBreaker.executeSupplier(call);
+        Supplier<T> guarded = CircuitBreaker.decorateSupplier(circuitBreaker, call);
+        guarded = RateLimiter.decorateSupplier(writeRateLimiter, guarded);
+        guarded = Bulkhead.decorateSupplier(bulkhead, guarded);
+        return guarded.get();
+    }
+
+    /** Returns current circuit breaker state for admin monitoring. */
+    public CircuitBreaker.State circuitBreakerState() {
+        return circuitBreaker.getState();
+    }
+
+    /** Returns current failure rate (0–100, or -1.0 if insufficient data). */
+    public float circuitBreakerFailureRate() {
+        return circuitBreaker.getMetrics().getFailureRate();
     }
 }

@@ -42,7 +42,7 @@ class PyxisResilienceIntegrationTest {
                 properties,
                 new ObjectMapper(),
                 builder.build(),
-                new PyxisResilience(meterRegistry));
+                PyxisResilience.forTesting(meterRegistry));
     }
 
     @Test

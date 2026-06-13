@@ -17,7 +17,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 class PyxisResilienceTests {
 
     private PyxisResilience newResilience() {
-        return new PyxisResilience(new SimpleMeterRegistry());
+        return PyxisResilience.forTesting(new SimpleMeterRegistry());
     }
 
     @Test

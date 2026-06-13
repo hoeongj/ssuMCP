@@ -55,6 +55,8 @@ dependencies {
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.3.0'
     implementation 'io.github.resilience4j:resilience4j-retry:2.3.0'
     implementation 'io.github.resilience4j:resilience4j-micrometer:2.3.0'
+    implementation 'io.github.resilience4j:resilience4j-ratelimiter:2.3.0'
+    implementation 'io.github.resilience4j:resilience4j-bulkhead:2.3.0'
 
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.postgresql:postgresql'
