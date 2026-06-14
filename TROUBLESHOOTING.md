@@ -129,6 +129,46 @@
 
 ---
 
+## 2026-06-15 - Gemini 쿼타 소진 반복 — 멀티 LLM 프로바이더 Fallback으로 근본 해결
+
+### 상황
+- 위 2026-06-14 항목에서 `GEMINI_MODEL` env var로 모델을 교체하는 단기 패치를 적용했지만, `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.5-flash-lite` → `gemini-2.5-pro` 순서로 모든 Gemini 모델의 Free Tier 쿼타가 순차적으로 소진됐다.
+- 매번 `kubectl set env`로 수동 교체가 필요했고, 사용 중 다시 소진되면 동일 장애 반복.
+
+### 잘못된 가설
+- Gemini 모델 간에 쿼타가 분리돼 있으니 다른 Gemini 모델로 교체하면 오래 버틸 것이라 판단.
+- 실제로는 같은 Google Cloud 프로젝트 내 Free Tier는 모델 간 쿼타가 연동돼 있어, 한 모델 소진 후 교체해도 빠르게 같은 상황이 반복됐다.
+
+### 실제 원인 (구조적 문제)
+- ssuAgent가 Gemini 단일 프로바이더에만 의존해, Free Tier 쿼타 소진 시 서비스 전체가 중단되는 단일 실패 지점(SPOF)이었다.
+- ssuMCP에는 이미 Groq, OpenRouter, Cerebras, Fireworks, Mistral 등 다수 프로바이더 API 키가 등록되어 있었으나 ssuAgent는 이를 전혀 활용하지 않았다.
+
+### 해결: 멀티 프로바이더 Fallback 체인 구축
+- `ssuAgent/ssu_agent/llm_factory.py` 신설: `ChatGoogleGenerativeAI` → `ChatOpenAI(Groq)` → `ChatOpenAI(OpenRouter)` 체인
+- LangChain `.with_fallbacks()` 사용 — primary 실패 시 자동으로 다음 프로바이더 시도
+- 각 LLM `max_retries=1` 설정: tenacity 기본 6회 retry를 줄여 쿼타 소진 시 빠르게 다음 프로바이더로 이동
+- `ssuagent-secrets`에 `GROQ_API_KEY`, `OPENROUTER_API_KEY` 추가 (ssuMCP secrets에서 복사)
+- `pyproject.toml`에 `langchain-openai` 추가 (OpenAI-compatible 클라이언트)
+- 커밋: `2541aa8`, `5e36c10` (ssuAgent main)
+
+### 핵심 파일 및 커밋
+- `ssuAgent/ssu_agent/llm_factory.py` (신규)
+- `ssuAgent/ssu_agent/config.py` (GROQ_API_KEY, OPENROUTER_API_KEY 추가)
+- 커밋: `2541aa8`
+- ADR: `ssuAgent/docs/adr/004-multi-provider-llm-fallback.md`
+
+### 포트폴리오 포인트
+- Free Tier LLM API는 RPD/RPM/TPM 쿼타가 독립 관리되며, 같은 회사의 다른 모델도 같은 프로젝트 쿼타를 공유함. "모델 교체"는 임시방편이고 프로바이더 다양화가 근본 해결.
+- `.with_fallbacks()`는 LangChain의 `RunnableWithFallbacks`로 구현되며, 도구 호출(tool calling) 인터페이스가 동일한 프로바이더 간에 투명하게 동작한다.
+- `max_retries=1` 설정의 중요성: 기본값(6회 × 지수 백오프)이면 쿼타 소진 시 fallback 전까지 수십 초가 걸림.
+
+### 예상 면접 질문
+1. LangChain `.with_fallbacks()`는 어떤 예외 조건에서 다음 프로바이더로 넘어가나요? 기본 동작과 커스터마이징 방법은?
+2. 여러 LLM 프로바이더를 사용할 때 응답 포맷(tool calling, streaming chunk 구조) 차이를 어떻게 처리하나요?
+3. 프로덕션에서 LLM API 쿼타 소진을 사전에 감지하는 방법은? 알림·모니터링 전략은?
+
+---
+
 ## 2026-06-13 - Groq STT multipart 테스트 EOF 실패
 
 ### 상황
