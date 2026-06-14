@@ -48,10 +48,12 @@ env:
   # SSUAI_GEMINI_API_KEY from the secret; falls back to lexical-only if the
   # embedding API is unreachable.
   academicEmbeddingEnabled: "true"
-  # gemini-embedding-001: quota reset after 2026-06-13 exhaustion. text-embedding-004
-  # returned 404 (not available for this key tier); gemini-embedding-2 hit
-  # RestClientException (Spring deserialization issue, needs investigation).
-  academicEmbeddingModel: "gemini-embedding-001"
+  # gemini-embedding-001: free-tier quota permanently stuck at 0 after crash-loop
+  # overage on 2026-06-11 (Google-confirmed bug — no daily reset across projects).
+  # text-embedding-004 → 404 (deprecated Jan 2026 for this key tier).
+  # gemini-embedding-2 (no suffix) → RestClientException (wrong model ID for
+  # OpenAI-compat endpoint; -preview suffix required).
+  academicEmbeddingModel: "gemini-embedding-2-preview"
   redisHost: ""
   redisPort: "6379"
   redisTimeout: 500ms
