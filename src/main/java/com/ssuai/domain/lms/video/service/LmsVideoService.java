@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.auth.lms.LmsCookies;
 import com.ssuai.domain.auth.lms.LmsSessionStore;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.domain.lms.video.connector.LmsVideoConnector;
 import com.ssuai.domain.lms.video.dto.ContentInfo;
 import com.ssuai.domain.lms.video.dto.CourseWithLectures;
@@ -54,13 +55,22 @@ public class LmsVideoService {
         this.properties = properties;
     }
 
-    public List<CourseWithLectures> getLectureList(String studentId) {
+    public List<LmsTermItem> getTerms(String studentId) {
         if (studentId == null || studentId.isBlank()) {
             throw new UnauthorizedException();
         }
         LmsCookies cookies = sessionStore.cookies(studentId)
                 .orElseThrow(LmsSessionExpiredException::new);
-        return connector.fetchLectureList(studentId, cookies);
+        return connector.fetchTerms(studentId, cookies);
+    }
+
+    public List<CourseWithLectures> getLectureList(String studentId, Long termId) {
+        if (studentId == null || studentId.isBlank()) {
+            throw new UnauthorizedException();
+        }
+        LmsCookies cookies = sessionStore.cookies(studentId)
+                .orElseThrow(LmsSessionExpiredException::new);
+        return connector.fetchLectureList(studentId, cookies, termId);
     }
 
     public LectureTranscriptResponse getTranscript(String studentId, String contentId) {

@@ -1,11 +1,14 @@
 package com.ssuai.domain.lms.service;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.auth.lms.LmsCookies;
 import com.ssuai.domain.auth.lms.LmsSessionStore;
 import com.ssuai.domain.lms.connector.LmsAssignmentsConnector;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 import com.ssuai.global.exception.UnauthorizedException;
 
@@ -29,12 +32,21 @@ public class LmsAssignmentsService {
         this.sessionStore = sessionStore;
     }
 
-    public AssignmentsResponse fetchAssignments(String studentId) {
+    public List<LmsTermItem> fetchTerms(String studentId) {
         if (studentId == null || studentId.isBlank()) {
             throw new UnauthorizedException();
         }
         LmsCookies cookies = sessionStore.cookies(studentId)
                 .orElseThrow(LmsSessionExpiredException::new);
-        return connector.fetchAssignments(studentId, cookies);
+        return connector.fetchTerms(studentId, cookies);
+    }
+
+    public AssignmentsResponse fetchAssignments(String studentId, Long termId) {
+        if (studentId == null || studentId.isBlank()) {
+            throw new UnauthorizedException();
+        }
+        LmsCookies cookies = sessionStore.cookies(studentId)
+                .orElseThrow(LmsSessionExpiredException::new);
+        return connector.fetchAssignments(studentId, cookies, termId);
     }
 }

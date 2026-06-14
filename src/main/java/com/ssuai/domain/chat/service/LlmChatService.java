@@ -589,7 +589,7 @@ public class LlmChatService implements ChatService {
                                     studentId, plannedCredits, plannedAverage, targetGpa));
                 }
                 case "get_my_assignments" -> dispatchPrivateLmsTool(
-                        toolName, studentId, () -> lmsAssignmentsService.fetchAssignments(studentId));
+                        toolName, studentId, () -> lmsAssignmentsService.fetchAssignments(studentId, null));
                 case "get_my_library_loans" -> dispatchPrivateLibraryTool(
                         toolName, () -> libraryLoansService.getLoansForSession(
                                 LibraryToolContext.currentSessionKey()));

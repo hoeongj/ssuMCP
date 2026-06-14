@@ -26,6 +26,7 @@ import com.ssuai.domain.auth.lms.LmsCookies;
 import com.ssuai.domain.auth.lms.LmsSsoProperties;
 import com.ssuai.domain.lms.dto.AssignmentItem;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 /**
@@ -102,7 +103,23 @@ class RealLmsAssignmentsConnector implements LmsAssignmentsConnector {
     }
 
     @Override
-    public AssignmentsResponse fetchAssignments(String studentId, LmsCookies cookies) {
+    public List<LmsTermItem> fetchTerms(String studentId, LmsCookies cookies) {
+        randomDelay();
+        CookieManager cookieManager = createCookieManager(cookies.rawCookieHeader(), properties.getCanvasBaseUrl());
+        HttpClient client = HttpClient.newBuilder()
+                .cookieHandler(cookieManager)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+        String bearer = extractXnApiToken(cookies.rawCookieHeader());
+        if (bearer == null || bearer.isBlank()) {
+            throw new LmsSessionExpiredException("xn_api_token missing from stored cookies");
+        }
+        return fetchTermItems(client, bearer, studentId);
+    }
+
+    @Override
+    public AssignmentsResponse fetchAssignments(String studentId, LmsCookies cookies, Long termId) {
         randomDelay();
         CookieManager cookieManager = createCookieManager(cookies.rawCookieHeader(), properties.getCanvasBaseUrl());
         HttpClient client = HttpClient.newBuilder()
@@ -118,36 +135,50 @@ class RealLmsAssignmentsConnector implements LmsAssignmentsConnector {
         log.info("lms canvas bearer extracted: lengthBytes={} prefix='{}...'",
                 bearer.length(), bearer.length() > 8 ? bearer.substring(0, 8) : "(short)");
 
-        long termId = fetchCurrentTermId(client, bearer, studentId);
-        Map<Long, String> courseNames = fetchCourseNames(client, bearer, termId);
-        List<AssignmentItem> items = fetchTodoItems(client, bearer, termId, courseNames);
-        return new AssignmentsResponse(termId, items);
+        long resolvedTermId = (termId != null) ? termId : resolveDefaultTermId(client, bearer, studentId);
+        Map<Long, String> courseNames = fetchCourseNames(client, bearer, resolvedTermId);
+        List<AssignmentItem> items = fetchTodoItems(client, bearer, resolvedTermId, courseNames);
+        return new AssignmentsResponse(resolvedTermId, items);
     }
 
-    private long fetchCurrentTermId(HttpClient client, String bearer, String studentId) {
+    private List<LmsTermItem> fetchTermItems(HttpClient client, String bearer, String studentId) {
         String encoded = URLEncoder.encode(studentId, StandardCharsets.UTF_8);
         String url = properties.getCanvasBaseUrl()
                 + "/learningx/api/v1/users/" + encoded
                 + "/terms?include_invited_course_contained=true";
         JsonNode body = getJson(client, bearer, url);
         JsonNode terms = body.path("enrollment_terms");
-        if (terms.isArray() && !terms.isEmpty()) {
+        List<LmsTermItem> result = new ArrayList<>();
+        if (terms.isArray()) {
             for (JsonNode term : terms) {
-                if (term.path("default").asBoolean(false)) {
-                    log.info("lms canvas terms ok: count={} pickedId={} pickedName={}",
-                            terms.size(), term.path("id").asLong(), term.path("name").asText(""));
-                    return term.path("id").asLong();
+                long id = term.path("id").asLong();
+                String name = term.path("name").asText("");
+                String startAt = term.path("start_at").isNull() ? null : term.path("start_at").asText(null);
+                String endAt = term.path("end_at").isNull() ? null : term.path("end_at").asText(null);
+                boolean isDefault = term.path("default").asBoolean(false);
+                if (id > 0) {
+                    result.add(new LmsTermItem(id, term.path("name").asText(""), startAt, endAt, isDefault));
                 }
             }
-            JsonNode first = terms.get(0);
-            log.info("lms canvas terms ok (no default): count={} fallbackId={} fallbackName={}",
-                    terms.size(), first.path("id").asLong(), first.path("name").asText(""));
-            return first.path("id").asLong();
         }
-        String bodyStr = body.toString();
-        String snippet = bodyStr.length() > 1500 ? bodyStr.substring(0, 1500) + "...(truncated)" : bodyStr;
-        log.warn("lms canvas terms empty: url={} responseBody='{}'", url, snippet);
-        throw new LmsSessionExpiredException("no terms returned for student");
+        if (result.isEmpty()) {
+            String bodyStr = body.toString();
+            String snippet = bodyStr.length() > 1500 ? bodyStr.substring(0, 1500) + "...(truncated)" : bodyStr;
+            log.warn("lms canvas terms empty: url={} responseBody='{}'", url, snippet);
+            throw new LmsSessionExpiredException("no terms returned for student");
+        }
+        log.info("lms canvas terms: count={} names={}", result.size(),
+                result.stream().map(LmsTermItem::name).toList());
+        return result;
+    }
+
+    private long resolveDefaultTermId(HttpClient client, String bearer, String studentId) {
+        List<LmsTermItem> terms = fetchTermItems(client, bearer, studentId);
+        return terms.stream()
+                .filter(LmsTermItem::defaultTerm)
+                .mapToLong(LmsTermItem::id)
+                .findFirst()
+                .orElse(terms.get(0).id());
     }
 
     private Map<Long, String> fetchCourseNames(HttpClient client, String bearer, long termId) {

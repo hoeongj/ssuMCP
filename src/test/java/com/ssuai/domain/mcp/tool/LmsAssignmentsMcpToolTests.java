@@ -46,12 +46,12 @@ class LmsAssignmentsMcpToolTests {
         when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(null, null);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(null, null, null);
 
         assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
         assertThat(resp.provider()).isEqualTo("LMS");
         assertThat(resp.data()).isNull();
-        verify(assignmentsService, never()).fetchAssignments(any());
+        verify(assignmentsService, never()).fetchAssignments(any(), any());
     }
 
     @Test
@@ -61,10 +61,10 @@ class LmsAssignmentsMcpToolTests {
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(SESSION_ID, McpProviderType.LMS)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
 
         assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
-        verify(assignmentsService, never()).fetchAssignments(any());
+        verify(assignmentsService, never()).fetchAssignments(any(), any());
     }
 
     @Test
@@ -72,13 +72,13 @@ class LmsAssignmentsMcpToolTests {
         AssignmentsResponse stub = new AssignmentsResponse(0L, List.of());
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
                 .thenReturn(Optional.of("20221528"));
-        when(assignmentsService.fetchAssignments("20221528")).thenReturn(stub);
+        when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
 
         assertThat(resp.status()).isEqualTo("OK");
         assertThat(resp.data()).isSameAs(stub);
-        verify(assignmentsService).fetchAssignments("20221528");
+        verify(assignmentsService).fetchAssignments("20221528", null);
     }
 
     @Test
@@ -86,9 +86,9 @@ class LmsAssignmentsMcpToolTests {
         AssignmentsResponse stub = new AssignmentsResponse(0L, List.of());
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
                 .thenReturn(Optional.of("20221528"));
-        when(assignmentsService.fetchAssignments("20221528")).thenReturn(stub);
+        when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
 
         assertThat(resp.toString()).doesNotContain("20221528");
         assertThat(resp.provider()).isNull();
@@ -99,9 +99,9 @@ class LmsAssignmentsMcpToolTests {
         AssignmentsResponse stub = assignments();
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
                 .thenReturn(Optional.of("20221528"));
-        when(assignmentsService.fetchAssignments("20221528")).thenReturn(stub);
+        when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, false);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, false, null);
 
         assertThat(resp.status()).isEqualTo("OK");
         assertThat(resp.data()).isInstanceOf(AssignmentsResponse.class);
@@ -119,9 +119,9 @@ class LmsAssignmentsMcpToolTests {
         AssignmentsResponse stub = assignments();
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
                 .thenReturn(Optional.of("20221528"));
-        when(assignmentsService.fetchAssignments("20221528")).thenReturn(stub);
+        when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
-        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, true);
+        McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, true, null);
 
         assertThat(resp.status()).isEqualTo("OK");
         assertThat(resp.data()).isInstanceOf(AssignmentsCompactResponse.class);
