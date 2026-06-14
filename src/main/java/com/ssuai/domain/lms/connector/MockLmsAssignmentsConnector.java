@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import com.ssuai.domain.auth.lms.LmsCookies;
 import com.ssuai.domain.lms.dto.AssignmentItem;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 
 /**
  * Reads {@code fixtures/lms/todos.json} and {@code fixtures/lms/courses.json}
@@ -34,10 +35,20 @@ class MockLmsAssignmentsConnector implements LmsAssignmentsConnector {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public AssignmentsResponse fetchAssignments(String studentId, LmsCookies cookies) {
+    public List<LmsTermItem> fetchTerms(String studentId, LmsCookies cookies) {
+        return List.of(
+                new LmsTermItem(MOCK_TERM_ID, "2026 1학기",
+                        "2026-03-02T00:00:00Z", "2026-06-20T00:00:00Z", false),
+                new LmsTermItem(2L, "2026 여름학기",
+                        "2026-06-23T00:00:00Z", "2026-08-15T00:00:00Z", true));
+    }
+
+    @Override
+    public AssignmentsResponse fetchAssignments(String studentId, LmsCookies cookies, Long termId) {
         Map<Long, String> courseNames = loadCourseNames();
         List<AssignmentItem> items = loadTodoItems(courseNames);
-        return new AssignmentsResponse(MOCK_TERM_ID, items);
+        long usedTermId = (termId != null) ? termId : MOCK_TERM_ID;
+        return new AssignmentsResponse(usedTermId, items);
     }
 
     private Map<Long, String> loadCourseNames() {

@@ -33,6 +33,6 @@ public class LmsAssignmentsController {
     @GetMapping("/assignments")
     @Operation(summary = "Get the caller's pending LMS assignments and quizzes for the current term")
     public ApiResponse<AssignmentsResponse> getMyAssignments(@AuthUser String studentId) {
-        return ApiResponse.success(assignmentsService.fetchAssignments(studentId));
+        return ApiResponse.success(assignmentsService.fetchAssignments(studentId, null));
     }
 }

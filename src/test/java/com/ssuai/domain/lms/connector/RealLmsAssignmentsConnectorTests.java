@@ -71,7 +71,7 @@ class RealLmsAssignmentsConnectorTests {
                 """));
 
         AssignmentsResponse response = connector.fetchAssignments("20221528",
-                new LmsCookies("WAF=w; xn_api_token=jwt-xyz; _normandy_session=ns"));
+                new LmsCookies("WAF=w; xn_api_token=jwt-xyz; _normandy_session=ns"), null);
 
         assertThat(response.termId()).isEqualTo(42L);
         assertThat(response.items()).hasSize(1);
@@ -101,7 +101,7 @@ class RealLmsAssignmentsConnectorTests {
         canvasServer.enqueue(jsonOk("{\"to_dos\":[]}"));
 
         AssignmentsResponse response = connector.fetchAssignments("20221528",
-                new LmsCookies("WAF=w; xn_api_token=jwt-xyz; _normandy_session=ns"));
+                new LmsCookies("WAF=w; xn_api_token=jwt-xyz; _normandy_session=ns"), null);
 
         assertThat(response.termId()).isEqualTo(43L);
         assertThat(response.items()).isEmpty();
@@ -111,7 +111,7 @@ class RealLmsAssignmentsConnectorTests {
     void missingXnApiTokenThrowsSessionExpired() {
         LmsCookies cookies = new LmsCookies("WAF=w; xn_coursecatalog_api_token=cc");
 
-        assertThatThrownBy(() -> connector.fetchAssignments("20221528", cookies))
+        assertThatThrownBy(() -> connector.fetchAssignments("20221528", cookies, null))
                 .isInstanceOf(LmsSessionExpiredException.class)
                 .hasMessageContaining("xn_api_token");
         assertThat(canvasServer.getRequestCount()).isZero();
