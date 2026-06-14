@@ -3,6 +3,81 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-14 - ssuAI 프로덕션 채팅 "Failed to fetch" — .env.local Git 추적으로 인한 Mixed Content
+
+### 상황
+- `ssuai.vercel.app/chat`에서 ssuAgent로 메시지를 전송할 때 즉시 "Failed to fetch" 오류 발생.
+- Chrome Network 탭에 요청이 아예 표시되지 않음 (흔적 없음).
+- `https://ssuagent.duckdns.org/health` 및 OPTIONS/POST curl은 정상 응답 (200 + `Access-Control-Allow-Origin: *`).
+
+### 잘못된 가설
+- **처음 가설: CORS 설정 문제.** OPTIONS 프리플라이트 응답에 헤더가 없다고 판단했다.
+- curl로 OPTIONS/POST 모두 정상 CORS 헤더를 확인하여 기각.
+- 두 번째 가설: ssuAgent 파드 다운. `/health`가 200 반환 → 기각.
+
+### 실제 원인
+- `.env.local`이 ssuAI `.gitignore`에 `.env.*` 패턴이 있음에도 **이미 커밋된 상태**였음.
+- Vercel 빌드 시 Next.js는 git에 추적 중인 `.env.local`을 로드하여 `NEXT_PUBLIC_SSUAGENT_BASE_URL=http://localhost:8001`을 프로덕션 번들에 주입.
+- HTTPS 페이지(`ssuai.vercel.app`)에서 HTTP URL(`localhost:8001`)로 `fetch()` → 브라우저가 Mixed Content로 요청 자체를 차단.
+- Mixed Content 차단된 요청은 Network 탭에 표시되지 않아 진단을 어렵게 했음.
+
+### 수정
+- `git rm --cached .env.local` 으로 추적 해제 → Vercel 재빌드 시 `NEXT_PUBLIC_SSUAGENT_BASE_URL` 미설정 → 코드의 하드코딩 fallback `https://ssuagent.duckdns.org` 사용.
+- 커밋: `4c8bbfd` (ssuAI main)
+
+### 핵심 파일 및 커밋
+- `ssuAI/.env.local` (git에서 추적 해제), `ssuAI/lib/api/agent.ts` (SSUAGENT_BASE fallback)
+- 커밋: `4c8bbfd`
+
+### 포트폴리오 포인트
+- `.gitignore` 패턴이 있어도 이미 추적 중인 파일은 무시되지 않는다는 git 동작 특성.
+- Next.js의 `NEXT_PUBLIC_*` 환경 변수는 빌드 타임에 번들에 직접 주입(inlining)되므로, `.env.local`이 git에 있으면 로컬 개발용 URL이 프로덕션 빌드에 들어간다.
+- Mixed Content 오류는 Network 탭에 흔적이 없어 "CORS 문제"로 오진하기 쉬운 사례.
+
+### 예상 면접 질문
+1. `.gitignore`에 패턴이 있는데 파일이 계속 추적되는 이유는?
+2. Next.js에서 `NEXT_PUBLIC_` 환경 변수가 클라이언트 코드에 어떻게 전달되나요? 서버 전용 변수와 차이는?
+3. "Failed to fetch" 오류를 디버깅할 때 우선 확인하는 단계는? Mixed Content와 CORS를 어떻게 구분하나요?
+
+---
+
+## 2026-06-14 - 도서관 연결 상태가 새로고침 후 사라지는 UI 버그
+
+### 상황
+- 도서관 로그인 후 "도서관 연결됨" 배지가 표시되지만, 페이지 새로고침 시 배지가 사라짐.
+- ssumcp의 HTTP 세션(JSESSIONID) 및 도서관 토큰은 실제로 유지됨 — UI 상태만 소멸.
+
+### 잘못된 가설
+- JSESSIONID 쿠키가 Vercel 프록시에서 유실된다고 판단.
+- Next.js 리라이트는 Cookie 헤더를 포함한 요청 헤더를 그대로 전달하므로 기각.
+
+### 실제 원인
+- `LibraryAuthContext`의 `isConnected`가 순수 React 메모리 상태.
+- 페이지 새로고침 → React 상태 초기화 → `isConnected = false`.
+- `isConnected`가 `true`로 복원되는 유일한 경로는 `"library", "seats"` 또는 `"library", "loans"` 쿼리가 성공하는 것인데, 채팅 페이지에는 그 쿼리를 실행하는 컴포넌트가 없음.
+
+### 수정
+- `LibraryAuthContext`에 `sessionStorage` 영속화 추가:
+  - `setConnected(true)` 시 `sessionStorage.setItem("library_connected", "true")`
+  - `logout()` 및 `LIBRARY_SESSION_REQUIRED` 에러 수신 시 `sessionStorage.removeItem(...)`
+  - 컴포넌트 마운트 시 `useState(readStorage)` 로 초기값 복원.
+- 커밋: `8008681` (ssuAI main)
+
+### 핵심 파일 및 커밋
+- `ssuAI/contexts/LibraryAuthContext.tsx`
+- 커밋: `8008681`
+
+### 포트폴리오 포인트
+- React Context 상태는 SPA 내 네비게이션에서는 유지되지만 페이지 새로고침에서 초기화됨. 서버 세션과 클라이언트 UI 상태의 생명주기 불일치 처리 방법.
+- `sessionStorage`(탭 단위 유지)와 `localStorage`(브라우저 단위 유지)의 선택 기준 — 도서관 로그인은 탭 세션 범위가 적절함.
+
+### 예상 면접 질문
+1. React Context 상태와 서버 세션의 생명주기가 다를 때 어떻게 동기화하나요?
+2. `sessionStorage`와 `localStorage` 중 인증 상태 캐시에 어느 쪽을 선택하고 그 이유는?
+3. 클라이언트 상태가 서버 실제 상태와 달라질(stale) 경우 어떻게 처리하나요?
+
+---
+
 ## 2026-06-13 - Groq STT multipart 테스트 EOF 실패
 
 ### 상황
