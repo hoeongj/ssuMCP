@@ -28,6 +28,7 @@ import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.auth.lms.LmsCookies;
 import com.ssuai.domain.auth.lms.LmsSsoProperties;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.domain.lms.video.dto.CourseWithLectures;
 import com.ssuai.domain.lms.video.dto.LectureItem;
 import com.ssuai.global.exception.ConnectorUnavailableException;
@@ -58,14 +59,23 @@ class RealLmsVideoConnector implements LmsVideoConnector {
     }
 
     @Override
-    public List<CourseWithLectures> fetchLectureList(String studentId, LmsCookies cookies) {
+    public List<LmsTermItem> fetchTerms(String studentId, LmsCookies cookies) {
+        String bearer = extractXnApiToken(cookies.rawCookieHeader());
+        if (bearer == null || bearer.isBlank()) {
+            throw new LmsSessionExpiredException("xn_api_token missing from stored cookies");
+        }
+        return fetchTermItems(bearer, cookies, studentId);
+    }
+
+    @Override
+    public List<CourseWithLectures> fetchLectureList(String studentId, LmsCookies cookies, Long termId) {
         String bearer = extractXnApiToken(cookies.rawCookieHeader());
         if (bearer == null || bearer.isBlank()) {
             throw new LmsSessionExpiredException("xn_api_token missing from stored cookies");
         }
 
-        long termId = fetchCurrentTermId(bearer, cookies, studentId);
-        List<CourseSummary> courses = fetchCourses(bearer, cookies, termId);
+        long resolvedTermId = (termId != null) ? termId : resolveDefaultTermId(bearer, cookies, studentId);
+        List<CourseSummary> courses = fetchCourses(bearer, cookies, resolvedTermId);
         List<CourseWithLectures> result = new ArrayList<>(courses.size());
         for (CourseSummary course : courses) {
             result.add(new CourseWithLectures(course.courseId(), course.courseName(),
@@ -152,22 +162,41 @@ class RealLmsVideoConnector implements LmsVideoConnector {
         return Optional.empty();
     }
 
-    private long fetchCurrentTermId(String bearer, LmsCookies cookies, String studentId) {
+    private List<LmsTermItem> fetchTermItems(String bearer, LmsCookies cookies, String studentId) {
         String encoded = URLEncoder.encode(studentId, StandardCharsets.UTF_8);
         String url = ssoProperties.getCanvasBaseUrl()
                 + "/learningx/api/v1/users/" + encoded
                 + "/terms?include_invited_course_contained=true";
         JsonNode body = getJsonStrict(bearer, cookies, url);
         JsonNode terms = body.path("enrollment_terms");
-        if (terms.isArray() && !terms.isEmpty()) {
+        List<LmsTermItem> result = new ArrayList<>();
+        if (terms.isArray()) {
             for (JsonNode term : terms) {
-                if (term.path("default").asBoolean(false)) {
-                    return term.path("id").asLong();
+                long id = term.path("id").asLong();
+                String name = term.path("name").asText("");
+                String startAt = term.path("start_at").isNull() ? null : term.path("start_at").asText(null);
+                String endAt = term.path("end_at").isNull() ? null : term.path("end_at").asText(null);
+                boolean isDefault = term.path("default").asBoolean(false);
+                if (id > 0) {
+                    result.add(new LmsTermItem(id, name, startAt, endAt, isDefault));
                 }
             }
-            return terms.get(0).path("id").asLong();
         }
-        throw new LmsSessionExpiredException("no terms returned for student");
+        if (result.isEmpty()) {
+            throw new LmsSessionExpiredException("no terms returned for student");
+        }
+        return result;
+    }
+
+    private long resolveDefaultTermId(String bearer, LmsCookies cookies, String studentId) {
+        List<LmsTermItem> terms = fetchTermItems(bearer, cookies, studentId);
+        log.info("lms-video terms: count={} names={}",
+                terms.size(), terms.stream().map(LmsTermItem::name).toList());
+        return terms.stream()
+                .filter(LmsTermItem::defaultTerm)
+                .mapToLong(LmsTermItem::id)
+                .findFirst()
+                .orElse(terms.get(0).id());
     }
 
     private List<CourseSummary> fetchCourses(String bearer, LmsCookies cookies, long termId) {

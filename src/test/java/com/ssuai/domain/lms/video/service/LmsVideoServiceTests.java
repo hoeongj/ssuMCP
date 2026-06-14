@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -139,9 +141,9 @@ class LmsVideoServiceTests {
     void lectureListUsesStoredSessionCookies() {
         Fixture fixture = fixture();
 
-        fixture.service.getLectureList(STUDENT_ID);
+        fixture.service.getLectureList(STUDENT_ID, null);
 
-        verify(fixture.connector).fetchLectureList(STUDENT_ID, COOKIES);
+        verify(fixture.connector).fetchLectureList(STUDENT_ID, COOKIES, null);
     }
 
     private Fixture fixture() {
@@ -159,7 +161,7 @@ class LmsVideoServiceTests {
 
         when(sessionStore.cookies(STUDENT_ID)).thenReturn(hasSession ? Optional.of(COOKIES) : Optional.empty());
         when(contentClient.fetchContentInfo(CONTENT_ID)).thenReturn(CONTENT);
-        when(connector.fetchLectureList(STUDENT_ID, COOKIES)).thenReturn(List.of());
+        when(connector.fetchLectureList(eq(STUDENT_ID), eq(COOKIES), isNull())).thenReturn(List.of());
 
         LmsVideoService service = new LmsVideoService(
                 connector, contentClient, captionParser, audioExtractor,
