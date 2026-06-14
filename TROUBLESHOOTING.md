@@ -78,6 +78,57 @@
 
 ---
 
+## 2026-06-14 - ssuAgent 채팅 "network error" — Gemini Free Tier 쿼타 소진으로 LLM 호출 무한 hang
+
+### 상황
+- `ssuai.vercel.app/chat`에서 메시지 전송 시 로딩이 수십 초 지속된 후 "network error" 표시.
+- Mixed Content 버그 수정(`4c8bbfd`) 이후에도 동일 증상 재발.
+- ssuAgent `/health` 200 정상, kubectl pods 모두 Running, 재시작 없음.
+- kubectl 로그: `Key 'additionalProperties' is not supported in schema, ignoring` 경고 × 7 (그래프 초기화 정상), 이후 health check 로그만 반복.
+- `curl --max-time 30 https://ssuagent.duckdns.org/chat/stream` → 30초 후 timeout, SSE 이벤트 0건.
+
+### 잘못된 가설
+1. **Mixed Content 재발 가능성**: URL 수정 이후 `ssuagent.duckdns.org`로 정상 도달 중임을 확인 → 기각.
+2. **GOOGLE_API_KEY 누락**: k8s secret `ssuagent-secrets`가 `optional: true`라 Pod가 키 없이도 기동 가능. `kubectl exec` 으로 key 길이 확인 → length 53, 설정됨 → 기각.
+3. **Oracle Cloud → Google API 네트워크 차단**: `urllib.request.urlopen("https://generativelanguage.googleapis.com/", timeout=10)` → HTTP 404 (TCP/TLS 정상) → 기각.
+4. **모델명 잘못됨 또는 모델 미제공**: `/v1beta/models?key=` 로 모델 목록 조회 → `gemini-2.0-flash` 정상 목록에 존재 → 기각.
+
+### 실제 원인
+- Gemini API에 직접 POST 요청 `gemini-2.0-flash:generateContent` → HTTP 429 반환:
+  ```
+  "limit: 0, model: gemini-2.0-flash"
+  GenerateRequestsPerDayPerProjectPerModel-FreeTier: limit 0
+  GenerateRequestsPerMinutePerProjectPerModel-FreeTier: limit 0
+  GenerateContentInputTokensPerModelPerMinute-FreeTier: limit 0
+  ```
+- `gemini-2.0-flash` Free Tier 일별·분당 요청 및 토큰 쿼타가 **모두 0(소진)**.
+- LangChain `ChatGoogleGenerativeAI` 내부 tenacity retry가 429 수신 후 11초 대기 → 재시도를 반복. timeout 설정 없음 → 외부에서 보기에 무한 hang처럼 보임.
+- 선택적 진단 포인트: `supervisor_node`에서 `supervisor_react.invoke()` (동기 호출)를 사용 → LangGraph가 스레드 풀에서 실행하지만, Gemini 호출이 tenacity retry loop에 빠지면 해당 스레드가 영구 점유됨.
+
+### 수정
+- `gemini-2.5-flash` 쿼타 확인: 직접 REST 요청 → 정상 응답.
+- `ssuAgent/ssu_agent/config.py`에 `GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")` 추가 → 배포 없이 모델 변경 가능.
+- `ssuAgent/ssu_agent/supervisor/graph.py` line 239: `model="gemini-2.0-flash"` → `model=config.GEMINI_MODEL`.
+- CI 통과, ArgoCD Image Updater가 새 이미지 감지 → Pod 교체(`ssu-agent-7bb448fcd4-7xv6r`).
+- 교체 후 `ssu_agent.config` 모듈로 LLM 호출 확인 → "Hi" 응답 성공.
+- 커밋: `b6a1190` (ssuAgent main)
+
+### 핵심 파일 및 커밋
+- `ssuAgent/ssu_agent/config.py`, `ssuAgent/ssu_agent/supervisor/graph.py`
+- 커밋: `b6a1190`
+
+### 포트폴리오 포인트
+- LangChain tenacity retry는 기본적으로 429에 대해 무한 재시도한다. API 쿼타 소진이 "무한 hang"처럼 보이는 이유. 프로덕션에서는 `max_retries` 와 request timeout을 명시해야 한다.
+- Free Tier Gemini 모델의 쿼타 구조: RPD(일별 요청), RPM(분당 요청), TPM(분당 토큰) 세 개가 동시에 관리됨. 한 프로젝트에서 모델을 교체하는 것만으로 해결 가능한 이유.
+- `GEMINI_MODEL`을 env var로 분리하면 새 이미지 배포 없이 쿼타 초과 시 모델을 즉시 교체할 수 있다 — Kubernetes ConfigMap/Secret 업데이트만으로 운영 대응 가능.
+
+### 예상 면접 질문
+1. LangChain에서 Gemini API 쿼타 초과(429) 시 왜 즉각 에러가 나지 않고 hang처럼 보이나요? tenacity retry 동작을 설명하세요.
+2. 프로덕션 LLM 서비스에서 API 쿼타를 초과할 때 대응 방법은? (모델 전환, fallback, 쿼타 알림)
+3. LLM 모델명 같은 운영 파라미터를 환경 변수로 분리하는 이유와 Kubernetes 환경에서 적용 방법은?
+
+---
+
 ## 2026-06-13 - Groq STT multipart 테스트 EOF 실패
 
 ### 상황
