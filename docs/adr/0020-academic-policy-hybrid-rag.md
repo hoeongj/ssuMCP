@@ -93,3 +93,35 @@ around the three failure modes of an external dependency."*
   6 h interval) + one embedding per query. Acceptable; can add contentHash-based
   skip-unchanged later.
 - Future: if the corpus grows large, revisit pgvector for persistence + ANN.
+
+---
+
+## 2026-06-15 Amendment — 임베딩 모델 전환: gemini-embedding-001 → gemini-embedding-2-preview
+
+- **상태**: 배포 완료 (커밋 `35ac2ad`). `embeddingUsed:true` prod 확인 예정.
+
+### 전환 계기
+
+`gemini-embedding-001` 무료 티어 쿼터가 2026-06-11 CrashLoop 109회 재시도 이후 **영구 0으로 고착** (Google 공식 포럼 확인 버그 — 일별 리셋 없음, 프로젝트 교체로도 해결 불가).
+
+### 후보 검토
+
+| 후보 | 결과 |
+|---|---|
+| `gemini-embedding-001` 대기 | 불가. Google-confirmed: 오버레이지 후 무료 티어 쿼터 영구 고착. |
+| `text-embedding-004` | 불가. 2026-01-14 deprecated → 이 키 티어에서 404. |
+| `gemini-embedding-2` (no suffix) | 불가. OpenAI-compat endpoint에서 올바른 모델 ID 아님 → RestClientException. |
+| **`gemini-embedding-2-preview`** | **선택**. 독립 쿼터 버킷, 동일 OpenAI-compat endpoint(`/v1beta/openai/embeddings`), Matryoshka 128–3072차원. |
+
+### 왜 재임베딩이 필요 없는가
+
+ADR 본문 "768차원 Matryoshka 접두사"는 `gemini-embedding-001` **단일 모델 내** 차원 절삭 이야기다.
+
+**모델이 달라지면 벡터 공간 자체가 달라진다 — 차원이 같아도 호환되지 않는다.** Matryoshka는 동일 모델 내에서만 접두사가 의미를 유지함을 보장할 뿐이다.
+
+이 전환이 투명한 실제 이유는 **아키텍처**다: `AcademicPolicyCorpusCache`는 `AtomicReference<EmbeddedCorpus>`로 corpus를 in-memory에만 유지하며 pgvector/DB에 저장하지 않는다. 재시작·갱신마다 설정된 모델로 전체 재임베딩하므로 "기존 벡터"가 존재하지 않아 마이그레이션 문제가 없다.
+
+### 변경 파일 (커밋 `35ac2ad`)
+
+- `deploy/charts/ssuai-backend/values.yaml` — `academicEmbeddingModel: "gemini-embedding-2-preview"`
+- `src/main/resources/application.yml` — 기본값 `gemini-embedding-2-preview`

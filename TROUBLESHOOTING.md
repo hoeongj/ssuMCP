@@ -333,7 +333,8 @@
 ### 해결
 - `gemini-embedding-2-preview` (2026-03-10 출시, Matryoshka 128~3072차원) 전환.
   - 이 키 유형에서 OpenAI-compat endpoint(`/v1beta/openai/embeddings`)로 정상 동작하는 모델.
-  - 768차원 요청은 Matryoshka 범위 내 → 기존 DB 벡터와 호환 (재임베딩 불필요).
+  - corpus는 in-memory 전용(`AtomicReference<EmbeddedCorpus>`, pgvector 미사용) — 재시작·갱신마다 새 모델로 전체 재임베딩됨 → 기존 벡터가 없으므로 전환 투명.
+    ※ 주의: 차원이 같아도 모델이 다르면 벡터 공간 자체가 달라 호환 안 됨 (Matryoshka는 동일 모델 내 접두사만 보장).
   - `gemini-embedding-2` (no `-preview`) 는 OpenAI-compat에서 올바른 모델 ID가 아니어서 RestClientException 발생했음 (2026-06-13 항목 참조) — `-preview` 접미사 필수.
 - `deploy/charts/ssuai-backend/values.yaml`: `academicEmbeddingModel: "gemini-embedding-2-preview"`
 - `src/main/resources/application.yml`: 기본값도 `gemini-embedding-2-preview`로 변경.
@@ -349,7 +350,7 @@
 ### 포트폴리오 포인트
 - **무료 티어 쿼타 "영구 고착" 버그**: 클라우드 무료 티어의 재시도 폭발(CrashLoop)이 쿼타를 영구 소진시킬 수 있다. "리셋 대기"가 아니라 "다른 버킷"으로 탈출해야 한다.
 - **모델 ID 정밀도**: 같은 모델 계열이라도 OpenAI-compat endpoint에서 허용되는 모델 ID(`gemini-embedding-2-preview`)와 아닌 것(`gemini-embedding-2`)이 다르다. curl로 사전 검증이 필수.
-- **Matryoshka 호환성**: 새 모델의 출력 차원이 기존 벡터 열(768)과 호환되는지 확인 후 재임베딩 여부 결정 — 범위 내라면 재임베딩 불필요.
+- **in-memory corpus → 전환 투명**: corpus는 pgvector/DB에 저장되지 않고 매 refresh마다 전체 재임베딩 (`AtomicReference<EmbeddedCorpus>`). 모델을 바꿔도 기존 벡터가 없으므로 재임베딩 문제 없음. ※ 차원이 같아도 모델이 다르면 벡터 공간이 달라 호환 안 됨 (Matryoshka는 같은 모델 내 접두사 의미만 보장).
 
 ### 예상 면접 질문
 1. 클라우드 무료 티어 API에서 CrashLoop 재시도가 쿼타를 영구 소진시키는 것을 막으려면 어떤 설계가 필요한가?
