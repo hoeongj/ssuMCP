@@ -139,7 +139,7 @@ ssuai:
       enabled: ${SSUAI_ACADEMIC_EMBEDDING_ENABLED:false}
       base-url: ${SSUAI_GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
       api-key: ${SSUAI_GEMINI_API_KEY:}
-      model: ${SSUAI_ACADEMIC_EMBEDDING_MODEL:gemini-embedding-001}
+      model: ${SSUAI_ACADEMIC_EMBEDDING_MODEL:gemini-embedding-2-preview}
       dimensions: ${SSUAI_ACADEMIC_EMBEDDING_DIMENSIONS:768}
       batch-size: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE:96}
       # Free-tier RPM protection (prod 429s, 2026-06-11): space out batch
