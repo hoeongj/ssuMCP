@@ -313,6 +313,51 @@
 
 ---
 
+## 2026-06-15 - Gemini 임베딩 쿼타 영구 고착 — 모델 전환으로 해결 (gemini-embedding-2-preview)
+
+### 상황
+- 2026-06-11 임베딩 CrashLoop(항목: "9시간 CrashLoopBackOff") 수습 후 `gemini-embedding-001`로 복귀.
+- 이후 prod에서 매일 기동 직후부터 임베딩 첫 배치에서 즉시 429, `embeddingUsed:false` 지속.
+- 2026-06-13 모델 교체 시도 중(항목: "404 → RestClientException") 남은 RPD 할당량 소진.
+- "다음날 할당량이 리셋되면 정상화될 것"으로 판단, 수일 대기.
+
+### 틀린 가설
+1. **"일별 쿼타 리셋으로 해결될 것"**: Google 무료 티어 `gemini-embedding-001` RPD는 정상적으로 UTC 자정 리셋되지만, **한 번 오버레이지(CrashLoop 109회 재시도)가 발생한 후 쿼타가 0으로 고착되는 Google 버그**가 있다.
+2. **"같은 키의 다른 Gemini 모델도 영향받을 것"**: 임베딩 모델별로 쿼타 버킷이 분리돼 있어, 새 모델은 독립된 버킷을 가진다.
+
+### 실제 원인
+- **Google 공식 포럼 확인 버그**: "Gemini Embeddings Free Tier Quota Stuck at 0 After Overage – No Reset Across Projects". 프로젝트 변경으로도 리셋 불가.
+- 우리 키(`AQ.Ab8RN6L...` 유형)의 `gemini-embedding-001` 버킷이 2026-06-11 CrashLoop 재시도(109회 × 배치 크기 96) 과정에서 영구 고착.
+- 기다려도 리셋이 안 되고 새 쿼타 버킷을 쓰는 다른 모델로 전환해야만 해결됨.
+
+### 해결
+- `gemini-embedding-2-preview` (2026-03-10 출시, Matryoshka 128~3072차원) 전환.
+  - 이 키 유형에서 OpenAI-compat endpoint(`/v1beta/openai/embeddings`)로 정상 동작하는 모델.
+  - 768차원 요청은 Matryoshka 범위 내 → 기존 DB 벡터와 호환 (재임베딩 불필요).
+  - `gemini-embedding-2` (no `-preview`) 는 OpenAI-compat에서 올바른 모델 ID가 아니어서 RestClientException 발생했음 (2026-06-13 항목 참조) — `-preview` 접미사 필수.
+- `deploy/charts/ssuai-backend/values.yaml`: `academicEmbeddingModel: "gemini-embedding-2-preview"`
+- `src/main/resources/application.yml`: 기본값도 `gemini-embedding-2-preview`로 변경.
+
+### 핵심 파일
+- `deploy/charts/ssuai-backend/values.yaml` (`academicEmbeddingModel`)
+- `src/main/resources/application.yml` (기본값)
+- 관련 항목: "2026-06-11 임베딩 CrashLoopBackOff", "2026-06-13 모델명 불일치"
+
+### 검증 예정
+- 배포 후 pod 기동 시 embedding WARN 없이 INFO 로그 → `embeddingUsed:true` 확인.
+
+### 포트폴리오 포인트
+- **무료 티어 쿼타 "영구 고착" 버그**: 클라우드 무료 티어의 재시도 폭발(CrashLoop)이 쿼타를 영구 소진시킬 수 있다. "리셋 대기"가 아니라 "다른 버킷"으로 탈출해야 한다.
+- **모델 ID 정밀도**: 같은 모델 계열이라도 OpenAI-compat endpoint에서 허용되는 모델 ID(`gemini-embedding-2-preview`)와 아닌 것(`gemini-embedding-2`)이 다르다. curl로 사전 검증이 필수.
+- **Matryoshka 호환성**: 새 모델의 출력 차원이 기존 벡터 열(768)과 호환되는지 확인 후 재임베딩 여부 결정 — 범위 내라면 재임베딩 불필요.
+
+### 예상 면접 질문
+1. 클라우드 무료 티어 API에서 CrashLoop 재시도가 쿼타를 영구 소진시키는 것을 막으려면 어떤 설계가 필요한가?
+2. Matryoshka Embedding이란 무엇이며, 기존 벡터 DB와의 호환성을 어떻게 판단하는가?
+3. 외부 API 모델 ID를 배포 설정에서 환경 변수로 분리했을 때의 운영 이점과 위험은?
+
+---
+
 > 역사 기록 주의: 2026-05-27 저장소 분리 전 항목의 `backend/`는 현재
 > `ssuMCP/` 루트, `frontend/`는 별도 `ssuAI/` 루트를 의미합니다. SSE
 > 관련 항목은 당시 원인 분석을 보존한 것이며, 현재 MCP endpoint는
