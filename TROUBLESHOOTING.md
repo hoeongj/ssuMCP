@@ -163,6 +163,76 @@
 2. multipart STT 업로드 실패 시 사용자 경험을 어떻게 보호하나요?
 3. 실제 Groq API와 WireMock 테스트의 차이가 있을 때 어떤 순서로 원인을 좁히나요?
 
+## 2026-06-14 - 도서관 HITL 확인 다이얼로그가 절대 뜨지 않음 + `[object Object]` 채팅 텍스트
+
+### 상황 (두 버그 동시 발생)
+1. `ssuai.vercel.app/chat`에서 "도서관 6층 마루열람실 116번 예약해" 입력 시 로딩이 수십 초 계속된 후, 확인 다이얼로그 없이 채팅에서 "예약이 완료되었습니다"라는 응답이 나타남 (할루시네이션).
+2. 이후 추가 질문 입력 시 채팅 텍스트에 `[object Object]`가 그대로 출력됨.
+
+### 잘못된 가설
+**버그 1 (HITL 미작동)**
+- 처음에는 LangGraph `interrupt()` 구현 자체가 서브그래프에서 전파되지 않는다고 의심.
+- `astream_events(version="v2")` 이벤트 흐름에서 `on_interrupt`가 아닌 다른 이벤트 이름으로 전달된다고 가정.
+- 위 두 가설을 기각: 실제 문제는 `_extract_action_id` 함수가 actionId를 발견하지 못해 `check_approval_node` 자체에 도달하지 않는 것이었음.
+
+**버그 2 (`[object Object]`)**
+- 처음에는 SSE 역직렬화 오류로 프론트엔드 `JSON.parse` 실패로 판단.
+- 실제로는 파이썬 쪽 문제였음.
+
+### 실제 원인
+
+#### 버그 1: prepare_* 도구가 String을 반환해 actionId 파싱 불가
+- `ssu_agent/agents/library.py`의 `_extract_action_id(messages)` 함수는 `ToolMessage.content`를 JSON으로 파싱 후 `data["data"]`가 `dict`이고 `"actionId"` 키가 있는지 확인함.
+- `ssuMCP`의 `prepare_reserve/cancel/swap_library_seat` 세 도구는 모두 `McpPrivateToolResponse<String>`을 반환했음. JSON으로 직렬화하면 `{"status":"OK","data":"6층 마루열람실... 예약을 준비했습니다."}` 형태.
+- `data` 필드가 `String`이므로 `isinstance(inner, dict)` 체크 실패 → `_extract_action_id` 항상 `None` 반환.
+- 결과: `_has_pending_action` 라우터가 항상 `"done"` 엣지 선택 → `done_node` 실행 → `active_agent=None` 설정 후 부모 그래프 종료.
+- 부모 수퍼바이저가 결과를 LLM에 전달하면 LLM이 맥락 없이 "완료됐습니다"라고 추측해서 출력 (할루시네이션).
+
+#### 버그 2: Gemini 2.5 Flash 스트리밍이 content를 list로 반환
+- `gemini-2.5-flash` 는 청크 스트리밍 시 `chunk.content`가 Python list(`[{"type":"text","text":"안녕하세요"}]`)로 반환되는 경우가 있음 (2.0-flash는 string 반환).
+- `ssu_agent/main.py`의 `_stream_graph`는 `content = chunk.content`를 그대로 JSON으로 직렬화해 SSE 전송.
+- 프론트엔드에서 `message += event.content` 하면 `string += Array` → JavaScript 암묵적 형변환 → `"[object Object]"`.
+
+### 수정
+
+#### 버그 1: LibraryPrepareResult 구조체 도입
+- `ssuMCP/src/main/java/com/ssuai/domain/library/reservation/LibraryPrepareResult.java` 신규:
+  ```java
+  public record LibraryPrepareResult(long actionId, String message) {}
+  ```
+- `LibraryReservationMcpTool`, `LibraryCancelMcpTool`, `LibrarySwapMcpTool` 세 클래스의 반환 타입을 `McpPrivateToolResponse<LibraryPrepareResult>`로 변경.
+- 각 도구에서 `actionService.createPendingAction(...).getId()`를 캡처해 `LibraryPrepareResult(actionId, message)` 로 반환.
+- `ssu_agent/agents/library.py` `check_approval_node`: `confirm_tool.ainvoke` 호출에서 `action_id` 제거 (confirm_action 도구는 `mcp_session_id`만 받고 내부적으로 pending action을 조회함).
+- `ssuAI/components/chat/HitlCard.tsx` `formatDetails()`: `details.message` 필드가 있으면 그대로 반환하도록 추가.
+
+#### 버그 2: list content 정규화
+- `ssu_agent/main.py` `_stream_graph`:
+  ```python
+  if isinstance(content, list):
+      content = "".join(
+          item["text"] if isinstance(item, dict) and "text" in item else str(item)
+          for item in content
+      )
+  ```
+  SSE 전송 전에 list를 string으로 합침.
+
+### 핵심 파일 및 커밋
+- `ssuMCP`: `LibraryPrepareResult.java`, `LibraryReservationMcpTool.java`, `LibraryCancelMcpTool.java`, `LibrarySwapMcpTool.java` + 테스트 3종 — 커밋 `2fe67d9`
+- `ssuAgent`: `agents/library.py`, `main.py` — 커밋 `9f6021e`
+- `ssuAI`: `components/chat/HitlCard.tsx` — 커밋 `e59505d`
+
+### 포트폴리오 포인트
+- **백엔드 API 계약과 클라이언트 파싱 코드의 암묵적 결합**: ssuMCP의 `data` 필드 타입이 `String`에서 `LibraryPrepareResult`로 바뀌어야 ssuAgent의 `isinstance(inner, dict)` 체크가 통과한다. API 스키마 변경이 다계층(ssuMCP → ssuAgent → ssuAI)에 걸쳐 동기화되어야 함을 보여주는 실사례.
+- **LLM 할루시네이션의 실제 원인**: HITL이 작동하지 않아 `done_node` → 부모 LLM으로 흘러갔을 때, 맥락 없는 LLM이 "완료됐습니다"로 추측하는 것이 전형적인 잘못된 tool 결과 전파 패턴.
+- **스트리밍 API 버전별 응답 형식 차이**: `gemini-2.0-flash`는 `chunk.content`가 str인 반면, `gemini-2.5-flash`는 list로 반환할 수 있음. 동적 타입 언어(Python)에서 모델 업그레이드 시 SSE 레이어에서 방어 코드가 필요함.
+
+### 예상 면접 질문
+1. LangGraph HITL `interrupt()`가 서브그래프에서 트리거되려면 라우터(edge 함수)가 아닌 노드 내부에서 호출해야 하는 이유는?
+2. 다계층 마이크로서비스(MCP 서버 → 에이전트 → 프론트엔드)에서 API 응답 스키마를 변경할 때 어떤 순서로 테스트하고 배포하나요?
+3. Gemini streaming에서 `chunk.content`가 `str`인지 `list`인지 런타임에 다를 수 있는 이유는? LLM API 버전 업그레이드 시 방어 코드를 어떻게 설계하나요?
+
+---
+
 > 역사 기록 주의: 2026-05-27 저장소 분리 전 항목의 `backend/`는 현재
 > `ssuMCP/` 루트, `frontend/`는 별도 `ssuAI/` 루트를 의미합니다. SSE
 > 관련 항목은 당시 원인 분석을 보존한 것이며, 현재 MCP endpoint는
