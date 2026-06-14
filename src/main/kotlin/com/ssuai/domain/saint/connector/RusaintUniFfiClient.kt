@@ -36,6 +36,7 @@ import dev.eatsteak.rusaint.model.SemesterType
 import dev.eatsteak.rusaint.model.Scholarship
 import dev.eatsteak.rusaint.model.Weekday
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 @Component
 class RusaintUniFfiClient : RusaintClient {
@@ -48,8 +49,13 @@ class RusaintUniFfiClient : RusaintClient {
             runBlocking {
                 USaintSessionBuilder().useAuto { builder ->
                     builder.withToken(studentId.trim(), ssoToken).useAuto { session ->
-                        val info = StudentInformationApplicationBuilder().useAuto { appBuilder ->
-                            appBuilder.build(session).useAuto { app -> app.general() }
+                        // Reaching here means withToken() exchanged the one-shot SmartID token.
+                        // Any failure past this point is in student-info fetch, not token auth.
+                        log.debug("rusaint withToken exchanged; fetching student info")
+                        val info = withRetry(3, "student-info general()") {
+                            StudentInformationApplicationBuilder().useAuto { appBuilder ->
+                                appBuilder.build(session).useAuto { app -> app.general() }
+                            }
                         }
                         RusaintAuthenticatedSession(
                             info.studentNumber.toString(),
@@ -432,6 +438,29 @@ class RusaintUniFfiClient : RusaintClient {
     private fun firstNonBlank(vararg values: String?): String? =
         values.firstOrNull { !it.isNullOrBlank() }
 
+    private inline fun <T> withRetry(maxAttempts: Int, label: String, action: () -> T): T {
+        var attempt = 0
+        while (true) {
+            val result = runCatching { action() }
+            if (result.isSuccess) return result.getOrThrow()
+            val ex = result.exceptionOrNull()!!
+            attempt++
+            if (attempt >= maxAttempts) {
+                log.warn(
+                    "rusaint {} failed after {} attempts: {} — {}",
+                    label, maxAttempts, ex.javaClass.simpleName, ex.message,
+                )
+                throw ex
+            }
+            val delayMs = 200L * (1L shl (attempt - 1))
+            log.warn(
+                "rusaint {} attempt {}/{} failed ({}: {}); retrying in {}ms",
+                label, attempt, maxAttempts, ex.javaClass.simpleName, ex.message, delayMs,
+            )
+            Thread.sleep(delayMs)
+        }
+    }
+
     private inline fun <T> withClientError(
         message: String,
         block: () -> T,
@@ -441,6 +470,7 @@ class RusaintUniFfiClient : RusaintClient {
         } catch (exception: RusaintClientException) {
             throw exception
         } catch (exception: Exception) {
+            log.warn("rusaint client error — {}: {} {}", message, exception.javaClass.simpleName, exception.message)
             throw RusaintClientException(message, exception)
         }
 
@@ -453,6 +483,7 @@ class RusaintUniFfiClient : RusaintClient {
         }
 
     private companion object {
+        private val log = LoggerFactory.getLogger(RusaintUniFfiClient::class.java)
         private val TIME_START_PATTERN = Regex("""\d{2}:\d{2}""")
     }
 }

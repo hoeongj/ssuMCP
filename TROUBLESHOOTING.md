@@ -273,6 +273,46 @@
 
 ---
 
+## 2026-06-15 - u-SAINT SmartID 로그인 간헐적 실패 — 단계별 진단 로그 추가 (원인 조사 중)
+
+### 상황
+- 사용자가 SmartID 로그인 후 `/sso-callback`에서 `auth_failed`가 간헐적으로 발생.
+- 재시도(새 SmartID 토큰 발급 포함) 2~3회 후 성공하는 패턴.
+
+### 틀린 가설
+- `StudentInformationApplicationBuilder.general()`(학생 정보 조회)이 일시적 네트워크 오류로 실패한다고 가정했다.
+- **확인 불가**: 기존 `withClientError()` 래퍼가 모든 예외를 동일한 `RusaintClientException("rusaint token authentication failed")`으로 균일 래핑 → 예외 클래스명·메시지가 로그에서 소실돼 어느 단계(`withToken()` vs `general()`)가 실패했는지 구분 불가.
+
+### 실제 원인 (TBD — 배포 후 로그 관찰 필요)
+- `authenticateWithToken()` 내부의 두 단계:
+  1. `builder.withToken(studentId, ssoToken)` — SmartID one-shot 토큰 소모, SAP 세션 수립
+  2. `StudentInformationApplicationBuilder.general()` — 세션 내 학생 정보 SAP 조회
+- **1번이 실패하면**: SmartID 토큰이 이미 소모됐으므로 컨트롤러 레벨 재시도 불가. 사용자가 SmartID를 처음부터 다시 밟아야 한다.
+- **2번이 실패하면**: 세션은 유효하므로 세션 내에서 재시도 가능.
+- 현재로서는 어느 쪽 실패인지 로그에서 판별 불가.
+
+### 조치
+- `withClientError()`: 예외 래핑 전 WARN 로그 추가 (`javaClass.simpleName + message`)
+- `authenticateWithToken()`: `withToken()` 성공 직후 DEBUG 로그 추가 → 프로덕션 로그에서 `"rusaint withToken exchanged"` 메시지가 실패 직전에 찍히면 2번(general) 실패, 찍히지 않으면 1번(withToken) 실패
+- `withRetry(maxAttempts, label, action)` 헬퍼 추가: `general()` 호출에 3회, 지수 백오프 200ms·400ms 재시도 적용. 이미 수립된 세션 내 재시도이므로 SmartID 토큰 재소모 없음.
+- 테스트: `RusaintUniFfiClientRetryTest.kt` — `withRetry` 성공·복구·소진 케이스 검증
+
+### 핵심 파일
+- `src/main/kotlin/com/ssuai/domain/saint/connector/RusaintUniFfiClient.kt`
+- `src/test/kotlin/com/ssuai/domain/saint/connector/RusaintUniFfiClientRetryTest.kt`
+
+### 포트폴리오 포인트
+- **진단 우선 원칙**: 원인을 모르는 상태에서 fix를 먼저 작성하는 것은 오진 처방. 단계별 구분 로그를 먼저 추가해 다음 장애 발생 시 단계를 확정할 수 있게 함.
+- **SmartID one-shot 토큰의 보안 설계**: 소모된 토큰은 재사용 불가 → `withToken()` 실패 시 컨트롤러 레벨에서 같은 토큰으로 재시도하는 것은 구조적으로 불가. 이 제약을 코드 레벨에서 정확히 인식하지 않으면 재시도 로직을 잘못된 위치(컨트롤러)에 추가할 수 있다.
+- **`PyxisResilience` vs SAINT**: Pyxis(도서관)에는 Resilience4j CB·Retry·RateLimiter가 모두 적용돼 있지만, SAINT rusaint 호출에는 어떠한 fault tolerance도 없었음. 외부 의존성별 resilience 커버리지 감사의 필요성.
+
+### 예상 면접 질문
+1. SmartID one-shot 토큰이 재사용 불가인 보안 이유는? 재사용 가능하다면 어떤 공격이 가능한가?
+2. 외부 시스템 연동 시 retry와 circuit breaker를 어떻게 구분하여 설계하는가? SAINT와 Pyxis를 다르게 처리한 이유는?
+3. 간헐적 오류를 진단할 때 어떤 관찰 지점(로그·메트릭)을 선택하고 어떤 순서로 좁혀 가는가?
+
+---
+
 > 역사 기록 주의: 2026-05-27 저장소 분리 전 항목의 `backend/`는 현재
 > `ssuMCP/` 루트, `frontend/`는 별도 `ssuAI/` 루트를 의미합니다. SSE
 > 관련 항목은 당시 원인 분석을 보존한 것이며, 현재 MCP endpoint는
