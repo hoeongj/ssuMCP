@@ -3,7 +3,7 @@
 ## 1. 개요
 ssuMCP server 는 숭실대학교 학생을 위한 캠퍼스 정보 조회 기능을 MCP(Model Context Protocol) tool 로 노출한다. Claude Desktop, Cursor, MCP inspector 같은 MCP client 는 이 서버에 붙어서 학식, 기숙사 식단, 캠퍼스 시설 정보를 대화 중에 조회할 수 있다.
 
-외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `simulate_gpa`, `get_my_assignments`, `get_library_seat_status`, `recommend_library_seats`, `prepare_reserve_library_seat`, `wait_for_library_seat`, `get_library_wait_status`, `cancel_library_wait`, `get_my_library_seat`, `prepare_swap_library_seat`, `prepare_cancel_library_seat`, `get_my_library_loans` 를 직접 호출할 수 있다. 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다.
+외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `simulate_gpa`, `get_my_assignments`, `get_library_seat_status`, `recommend_library_seats`, `prepare_reserve_library_seat`, `wait_for_library_seat`, `get_library_wait_status`, `cancel_library_wait`, `get_my_library_seat`, `prepare_swap_library_seat`, `prepare_cancel_library_seat`, `get_my_library_loans`, `get_lms_dashboard` 를 직접 호출할 수 있다. 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다.
 
 MCP server 는 REST API 와 같은 Spring Boot 프로세스 안에서 실행된다. endpoint: `http://localhost:8080/mcp` (Streamable HTTP).
 
@@ -127,6 +127,7 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_scholarships` | 장학금 수혜 내역 | SAINT | `year` (선택), `mcp_session_id` |
 | `simulate_gpa` | 누적 GPA 시뮬레이션. 예상 학점·목표 GPA 입력 시 필요 평균 또는 예상 GPA 반환 | SAINT | `plannedCredits`, `plannedGradePointAverage` (선택), `targetGpa` (선택), `mcp_session_id` |
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록. 비어 있으면 `message`로 안내 | LMS | `mcp_session_id`, `compact` (선택) |
+| `get_lms_dashboard` | 미제출 과제·학사일정·공지사항을 모아보는 대시보드 | LMS | `mcp_session_id`, `term_id` (선택) |
 | `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
 | `get_library_available_seats` | 전체 7개 열람실 live per-seat 가용 좌석 요약. externalSeatId 목록 포함 | LIBRARY | `mcp_session_id` |
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive, remainingTime) | LIBRARY | `room_id`, `mcp_session_id` |
@@ -247,7 +248,7 @@ npx @modelcontextprotocol/inspector
   get_my_scholarships,
   simulate_gpa
 
-개인(LMS): get_my_assignments
+개인(LMS): get_my_assignments, get_lms_dashboard
 개인(LIBRARY):
   get_library_seat_status, get_library_available_seats, get_room_available_seats,
   recommend_library_seats, get_my_library_loans,
@@ -345,7 +346,7 @@ MCP login URL의 외부 origin을 별도로 지정하려면
 `http://localhost:8080`)을 사용한다.
 
 ## 8. 위험·write tool 정책
-현재 노출된 45개 MCP tool 중 대부분은 read-only다. 세션 상태를 변경하는 도구는
+현재 노출된 46개 MCP tool 중 대부분은 read-only다. 세션 상태를 변경하는 도구는
 `start_auth`, `logout_provider`, `logout_all`이고, 학교 시스템 상태를 바꾸는 도서관
 좌석 즉시 action은 반드시 `prepare_*` + `confirm_action` 2단계로만 실행된다.
 장기 대기형 `wait_for_library_seat`는 예외적으로 등록 호출 자체가 동의이며,
