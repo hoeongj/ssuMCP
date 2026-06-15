@@ -3,6 +3,99 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-15 - ssuAgent "Connection error." — k8s 시크릿 env 키 trailing `\r` 오염
+
+### 상황
+
+ssuAI 챗봇에서 "도서관 예약해줘" 요청이 연속으로 5가지 다른 에러를 뱉으며 완전히 다운됐다. Claude Desktop(Anthropic LLM 직접 사용)에서는 동일 요청이 정상 작동함. 마지막 에러: `"Connection error."`
+
+에러 cascade 흐름:
+1. verbal loop (prepare_* 전에 LLM이 "하시겠어요?" 반복)
+2. "Error in input stream" (스트림 예외가 catch 없이 SSE 닫힘)
+3. "NetworkError when attempting to fetch resource" (ArgoCD 롤아웃 중 일시 다운)
+4. "Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429" (Gemini 20/day 소진)
+5. **"Connection error."** ← 이 항목의 대상
+
+### 잘못된 가설
+
+- **처음 가설**: Groq/OpenRouter API 키가 k8s 시크릿에 없거나 잘못 설정됨.
+  - `kubectl get secret ssuagent-secrets` 으로 키가 존재 확인 → 기각.
+- **두 번째 가설**: `llm_factory.py` fallback 루프가 이미 `Gemini 429`에서 수정됐는데 배포가 안 된 것.
+  - pod 이미지 SHA가 이미 최신 커밋과 일치 확인 → 기각.
+- **세 번째 가설**: OpenAI SDK 버전 호환성 문제로 Groq 요청 자체가 실패.
+  - SDK 버전 문제라면 `LocalProtocolError`가 아닌 다른 계층 에러가 나야 함 → 기각.
+
+### 실제 원인
+
+k8s 시크릿 `ssuagent-secrets`(namespace `ssuai-prod`)의 `GROQ_API_KEY`(길이 57)와
+`OPENROUTER_API_KEY`(길이 74) 값 **끝에 캐리지 리턴(`\r`)이 붙어 있었음**.
+
+**발견 방법:** `kubectl exec` 후 Python에서 바이트 단위 직접 검사:
+```python
+import os
+key = os.environ.get('GROQ_API_KEY', '')
+print(len(key), key[-2:].encode())  # → 57 b'mW\r'  ← trailing_CR True
+```
+
+**장애 전파 경로:**
+1. `ssu_agent/config.py` 가 `os.getenv("GROQ_API_KEY", "")` 결과를 `.strip()` 없이 그대로 사용.
+2. LangChain `ChatOpenAI` 가 `api_key` 값을 Bearer 토큰으로 HTTP 헤더에 삽입:
+   `Authorization: Bearer gsk_...\r`
+3. `httpcore` 가 HTTP/1.1 스펙 위반 헤더를 감지하여 `LocalProtocolError: Illegal header value` 발생.
+4. OpenAI SDK 가 이를 `APIConnectionError("Connection error.")` 로 래핑하여 반환.
+5. Gemini(20 req/day)가 소진된 상태에서 Groq·OpenRouter 모두 같은 이유로 죽어 **챗봇 전체 다운**.
+
+**Windows CRLF 오염 경로:** 시크릿을 `kubectl create secret` 에 값을 직접 붙여넣을 때
+Windows 클립보드가 줄바꿈 `\r\n`을 추가했고, 그 `\r`이 Base64 인코딩되어 시크릿에 저장됨.
+`GOOGLE_API_KEY`(53)·`DATABASE_URL`(82)은 `\r` 없이 깨끗했음.
+
+### 현장 증명
+
+pod exec 안에서 `.strip()` 만 추가해 Groq 호출:
+```python
+key = os.environ.get('GROQ_API_KEY', '').strip()  # ← 이 한 줄
+c = OpenAI(api_key=key, base_url='https://api.groq.com/openai/v1')
+r = c.chat.completions.create(model='llama-3.3-70b-versatile', messages=[...])
+print(r.choices[0].message.content)  # → "OK"
+```
+`LocalProtocolError` 사라지고 Groq 정상 응답 확인.
+
+### 해결 방법
+
+**영구 코드 수정 채택** — 시크릿을 건드리지 않고 읽는 시점에 제거.
+
+`ssu_agent/config.py` 전체 `os.getenv()` 호출에 `.strip()` 추가:
+```python
+# Before
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+
+# After
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
+```
+6개 env 변수 전부 동일하게 적용(방어적 처리 — 포맷 오염 위치를 가정하지 않음).
+
+관측성 개선(`ssu_agent/main.py`): `_stream_graph` except 블록에 `logger.exception("agent stream failed")` 추가. 이전에는 예외가 삼켜져 `kubectl logs` 에 트레이스백이 전혀 남지 않아 `kubectl exec` 직접 진단이 필요했음.
+
+- **커밋**: ssuAgent `59ea5b0` (fix/strip-env-keys-and-log-stream-errors, PR #3 → main fast-forward)
+- **보안 후속**: 진단 중 pod 트레이스백에서 Groq 키 전체 노출 → console.groq.com에서 키 로테이션 권장.
+
+### 핵심 파일 및 커밋
+
+- `ssuAgent/ssu_agent/config.py` — `.strip()` 6개 추가 (`59ea5b0`)
+- `ssuAgent/ssu_agent/main.py` — `logger.exception` 추가 (`59ea5b0`)
+
+### 포트폴리오 포인트
+
+"환경 변수 포맷을 신뢰하지 말라" — Windows 환경에서 클립보드를 통해 시크릿을 만들면 CRLF가 따라오며, HTTP 헤더로 전달될 때 프레임워크(httpcore)가 스펙 위반으로 거부한다. 에러 메시지만 봐선 API 키 문제가 아니라 네트워크 문제처럼 보이므로, pod exec + 바이트 단위 검사라는 저수준 진단 절차가 필요했던 사례. 또한 "스트림에서 예외를 삼키면 미래의 자신을 막다른 곳에 몰 수 있다"는 관측성 교훈.
+
+### 예상 면접 질문
+
+1. `Authorization: Bearer <token>\r` 헤더가 HTTPS 위에서도 요청을 막는 이유는 무엇인가요? TLS와 HTTP 헤더 파싱 레이어를 나눠서 설명해보세요.
+2. Kubernetes Secret에 저장된 값이 실제 pod 내에서 어떻게 주입되는지(volume mount vs envFrom), 그리고 Secret 변경 후 pod 재시작 없이는 반영되지 않는 이유는 무엇인가요?
+3. 예외를 catch해서 에러 메시지만 사용자에게 보내는 것의 trade-off는 무엇인가요? 어떤 정보를 어디에 기록해야 운영 가능한 시스템이 되나요?
+
+---
+
 ## 2026-06-15 - ssuAgent LLM fallback 무력화 버그: RunnableWithFallbacks.bind_tools 부재
 
 ### 상황
