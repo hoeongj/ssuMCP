@@ -3,6 +3,32 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-16 — LMS Dashboard 도구 컴파일 에러: Java Generic Type Inference 한계로 인한 McpPrivateToolResponse 타입 불일치
+
+- 맥락:
+  - `get_lms_dashboard` MCP 도구를 구현하던 중, 인증 상태와 세션 만료 등의 예외 흐름을 처리하기 위해 `Optional.map().orElseGet()` 체인을 활용했다.
+- 증상:
+  - Java 컴파일 단계에서 다음과 같은 에러가 발생하며 빌드가 실패함:
+    `error: incompatible types: McpPrivateToolResponse<CAP#1> cannot be converted to McpPrivateToolResponse<Object>`
+- 처음 세운 가설 (틀린 방향):
+  - `.orElseGet(() -> authHelper.<Object>buildAuthRequired(...))`에서 제네릭 타입 `<Object>` 지정을 생략했거나 잘못 입력하여 컴파일러가 반환형 타입을 맞추지 못했다고 판단했다.
+  - 하지만 코드에는 명확히 `<Object>`가 정의되어 있었으므로 이 가설은 기각되었다.
+- 실제 원인:
+  - Java 컴파일러는 `Optional.map()` 내부의 lambda 식의 반환 타입을 추론할 때, 성공 경로인 `McpPrivateToolResponse.ok(..., dashboard)` (여기서 `dashboard`는 `LmsDashboardResponse` 타입)와 실패 경로(예외 catch)인 `authHelper.<Object>buildAuthRequired(...)`의 공통 상위 타입으로 `McpPrivateToolResponse<? extends Object>`를 추론했다.
+  - Java 제네릭은 무공변성(Invariant)을 가지므로 `McpPrivateToolResponse<? extends Object>` (즉, `McpPrivateToolResponse<CAP#1>`)를 `McpPrivateToolResponse<Object>`로 바로 캐스팅하거나 할당할 수 없어 컴파일러 에러가 발생했다.
+- 해결:
+  - `McpPrivateToolResponse.ok(mcp_session_id, dashboard)` 호출 부분에 명시적으로 타입 파라미터 `<Object>`를 지정하여 `McpPrivateToolResponse.<Object>ok(mcp_session_id, dashboard)`로 수정했다. 이로써 컴파일러가 map 내부의 lambda 반환형을 일관되게 `McpPrivateToolResponse<Object>`로 인지하여 타입 불일치가 해결되었다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/mcp/tool/LmsDashboardMcpTool.java`
+- 검증:
+  - `.\gradlew.bat cleanTest test` 빌드 완료 및 모든 테스트 통과 확인.
+- 포트폴리오 포인트:
+  - Java 제네릭의 무공변성(Invariance) 특성과 `Optional.map`의 타입 추론 메커니즘을 명확히 이해하고, 와일드카드 캡처(`CAP#`) 오류가 발생한 원인을 정확히 짚어내어 명시적 타입 아규먼트 제공으로 문제를 해결한 사례.
+- 면접 예상 질문:
+  1. Java 제네릭의 무공변성(Invariant)이란 무엇이며, 공변성(Covariant)과의 차이는 무엇인가요?
+  2. `McpPrivateToolResponse<LmsDashboardResponse>`를 왜 `McpPrivateToolResponse<Object>`로 바로 캐스팅하거나 할당할 수 없나요?
+  3. `Optional.map` 내에서 컴파일러가 반환 타입을 결정할 때 다중 경로(try-catch)의 반환 타입이 다르면 어떻게 추론하는지 설명해 보세요.
+
 ## 2026-06-15 - ssuAgent "Connection error." — k8s 시크릿 env 키 trailing `\r` 오염
 
 ### 상황

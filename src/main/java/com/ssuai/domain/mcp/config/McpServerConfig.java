@@ -31,6 +31,7 @@ import com.ssuai.domain.mcp.tool.LibrarySeatRecommendationMcpTool;
 import com.ssuai.domain.mcp.tool.LibrarySwapMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryWaitMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
+import com.ssuai.domain.mcp.tool.LmsDashboardMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
 import com.ssuai.domain.mcp.tool.McpAuthMcpTools;
 import com.ssuai.domain.mcp.tool.NoticeMcpTools;
@@ -86,6 +87,7 @@ class McpServerConfig {
             SaintGradesMcpTool saintGradesMcpTool,
             SaintExtendedMcpTools saintExtendedMcpTools,
             LmsAssignmentsMcpTool lmsAssignmentsMcpTool,
+            LmsDashboardMcpTool lmsDashboardMcpTool,
             NoticeMcpTools noticeMcpTools,
             AcademicPolicyMcpTools academicPolicyMcpTools
     ) {
@@ -112,6 +114,7 @@ class McpServerConfig {
                         saintGradesMcpTool,
                         saintExtendedMcpTools,
                         lmsAssignmentsMcpTool,
+                        lmsDashboardMcpTool,
                         noticeMcpTools,
                         academicPolicyMcpTools)
                 .build();
