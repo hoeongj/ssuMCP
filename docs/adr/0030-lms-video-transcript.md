@@ -1,5 +1,9 @@
 # ADR 0030: LMS Video Transcript MCP Tools
 
+> ⚠️ 이 기능은 2026-06-16 refactor/remove-lms-video PR에서 제거되었습니다. ADR-0032를 참조하세요.
+
+- **Status**: Superseded by ADR-0032 (2026-06-16)
+
 ## 배경 (Background)
 
 - 숭실대학교 LMS는 `commons.ssu.ac.kr`의 uni-player 기반 강의 영상을 제공한다. 교수자가 직접 녹화한 강의는 Canvas LearningX 활동과 Commons 콘텐츠 서버에 나뉘어 저장된다.

@@ -8,8 +8,10 @@ import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
+import java.util.List;
 import com.ssuai.domain.lms.dto.AssignmentsCompactResponse;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
+import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.domain.lms.service.LmsAssignmentsService;
 
 /**
@@ -68,5 +70,23 @@ public class LmsAssignmentsMcpTool {
                     log.debug("get_my_assignments: LMS not linked, returning AUTH_REQUIRED");
                     return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                 });
+    }
+
+    @Tool(
+            name = "get_my_lms_terms",
+            description = "사용자의 LMS 등록 학기 목록을 반환합니다. "
+                    + "각 학기의 id, name, 시작/종료 날짜, 현재 기본 학기 여부를 포함합니다. "
+                    + "반환된 id를 get_my_lecture_list 또는 get_my_assignments의 term_id 파라미터에 사용하세요. "
+                    + "mcp_session_id with LMS provider required."
+    )
+    public McpPrivateToolResponse<Object> getMyLmsTerms(
+            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            String mcp_session_id) {
+        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
+                .map(studentId -> {
+                    List<LmsTermItem> terms = assignmentsService.fetchTerms(studentId);
+                    return McpPrivateToolResponse.ok(mcp_session_id, (Object) terms);
+                })
+                .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
     }
 }
