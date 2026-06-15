@@ -3,6 +3,81 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-15 - ssuAgent LLM fallback 무력화 버그: RunnableWithFallbacks.bind_tools 부재
+
+### 상황
+- ssuAI 챗봇에서 "도서관 예약해줘" 요청 시 Gemini 429 RESOURCE_EXHAUSTED 오류 발생.
+- `llm_factory.py`에서 `primary.with_fallbacks([groq, openrouter])` 구성이 있었음에도 Groq/OpenRouter로 fallback되지 않음.
+- 에러 메시지: "Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED"
+
+### 잘못된 가설
+- **처음 가설**: `with_fallbacks()` 가 제대로 작동하지 않는 것은 Groq/OpenRouter API 키 미설정 때문.
+- k8s secret에 `GROQ_API_KEY`, `OPENROUTER_API_KEY` 이미 추가되어 있음을 확인 → 기각.
+- **두 번째 가설**: `exceptions_to_handle` 파라미터를 명시해야 한다.
+- `with_fallbacks()`의 기본값은 `exceptions_to_handle=(Exception,)` — 모든 예외를 잡음 → 기각.
+
+### 실제 원인
+`langchain_core 1.4.6`의 `RunnableWithFallbacks` 클래스에 `bind_tools` 메서드가 없음.
+
+```python
+# 확인 방법
+from langchain_core.runnables import RunnableWithFallbacks
+hasattr(RunnableWithFallbacks, 'bind_tools')  # → False
+```
+
+LangGraph의 `create_react_agent(model, tools)` 내부에서 첫 번째로 하는 작업:
+```python
+model_with_tools = model.bind_tools(tool_classes)
+```
+
+`model`이 `RunnableWithFallbacks`이면 Python이 `__getattr__`를 통해 `self.runnable.bind_tools` (primary LLM의 bind_tools)를 호출함. 결과는 `primary.bind_tools(tools)` 단독 객체로, fallback chain이 완전히 사라짐.
+
+이후 Gemini가 429를 던져도 잡아주는 fallback이 없음.
+
+### 핵심 파일 및 커밋
+- `ssuAgent/ssu_agent/llm_factory.py` — `get_llm_sequence()` 추가, `create_llm()` Groq 우선 반환으로 변경 (`e104e0b`)
+- `ssuAgent/ssu_agent/agents/library.py`, `academic.py`, `lms.py` — `agent_node`를 `llm_seq` 루프로 변경: 각 LLM 시도 → 성공 시 반환 / 실패 시 next (`e104e0b`)
+
+### 해결 방법 (채택)
+`with_fallbacks()` 래퍼 제거. `agent_node` 안에서 LLM 목록을 순서대로 직접 시도:
+
+```python
+# llm_factory.py
+def get_llm_sequence() -> list[BaseChatModel]:
+    llms = []
+    if GROQ_API_KEY:
+        llms.append(ChatOpenAI(base_url="groq...", model="llama-3.3-70b-versatile"))
+    llms.append(ChatGoogleGenerativeAI(model="gemini-2.5-flash"))
+    if OPENROUTER_API_KEY:
+        llms.append(ChatOpenAI(base_url="openrouter...", model="llama-3.3-70b-instruct:free"))
+    return llms
+
+# agent_node (library/academic/lms)
+for _llm in llm_seq:
+    try:
+        inner = create_react_agent(_llm, tools, prompt=prompt)
+        result = await inner.ainvoke(...)
+        return result
+    except Exception:
+        continue
+raise RuntimeError("All LLM providers exhausted")
+```
+
+우선순위: **Groq(14,400 req/day) → Gemini(20 req/day) → OpenRouter(무제한 무료 모델)**.
+Gemini가 exhausted되어도 Groq가 primary로 동작.
+
+### 대안 검토
+- **`with_fallbacks()` 유지 + bind_tools 수동 적용**: `primary.bind_tools(tools).with_fallbacks([groq.bind_tools(tools), ...])` 형태로 구성 가능하나, `create_react_agent`가 tools를 이미 바인딩하므로 중복 bind. 또 테스트 주입 패턴도 바꿔야 함.
+- **LangChain 업그레이드**: 최신 버전에서 `RunnableWithFallbacks.bind_tools` 구현 여부 미확인. 의존성 변경 리스크가 있어 채택하지 않음.
+
+### 포트폴리오 포인트
+LangChain/LangGraph 프레임워크의 내부 구현을 직접 검증하고(소스 검사 + 버전 확인), 프레임워크 API를 우회하는 실용적 fallback 패턴을 설계. "라이브러리 추상화를 믿지 말고 동작을 검증하라"는 교훈.
+
+### 예상 면접 질문
+1. `RunnableWithFallbacks`와 `BaseChatModel`의 상속 관계에서 왜 `bind_tools`가 동작하지 않았나요? `__getattr__` 위임의 한계를 설명해보세요.
+2. LLM 멀티 프로바이더 fallback 설계 시 어떤 예외를 잡아야 할지 어떻게 결정했나요? (quota vs tool error vs programming error)
+3. Groq, Gemini, OpenRouter의 무료 티어 제한 차이와 각 프로바이더를 선택한 이유는 무엇인가요?
+
 ## 2026-06-14 - ssuAI 프로덕션 채팅 "Failed to fetch" — .env.local Git 추적으로 인한 Mixed Content
 
 ### 상황
