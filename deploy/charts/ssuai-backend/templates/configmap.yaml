@@ -41,4 +41,3 @@ data:
   SSUAI_LIBRARY_REDIS_ENABLED: {{ .Values.env.libraryRedisEnabled | quote }}
   SSUAI_LIBRARY_SEAT_EVENT_CHANNEL: {{ .Values.env.librarySeatEventChannel | quote }}
   SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT: {{ .Values.env.librarySchedulerLockWait | quote }}
-  SSUAI_CONNECTOR_LMS_VIDEO: {{ .Values.env.connectorLmsVideo | quote }}
