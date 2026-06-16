@@ -1,6 +1,7 @@
 package com.ssuai.domain.mcp.config;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -16,6 +17,7 @@ import org.springframework.context.annotation.Primary;
 
 import com.ssuai.domain.mcp.tool.AcademicPolicyMcpTools;
 import com.ssuai.domain.mcp.tool.CampusMcpTools;
+import com.ssuai.domain.mcp.tool.DiagnosticMcpTool;
 import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
 import com.ssuai.domain.mcp.tool.LibraryAvailableSeatsMcpTool;
@@ -96,36 +98,41 @@ class McpServerConfig {
             LmsMaterialsMcpTool lmsMaterialsMcpTool,
             LmsMaterialExportMcpTool lmsMaterialExportMcpTool,
             NoticeMcpTools noticeMcpTools,
-            AcademicPolicyMcpTools academicPolicyMcpTools
+            AcademicPolicyMcpTools academicPolicyMcpTools,
+            List<DiagnosticMcpTool> diagnosticMcpTools
     ) {
+        List<Object> tools = new ArrayList<>(List.of(
+                mealMcpTools,
+                dormMcpTools,
+                campusMcpTools,
+                mcpAuthMcpTools,
+                libraryMcpTool,
+                librarySeatCatalogMcpTool,
+                librarySeatRecommendationMcpTool,
+                libraryAvailableSeatsMcpTool,
+                libraryRoomAvailableSeatsMcpTool,
+                libraryBookMcpTool,
+                libraryLoansMcpTool,
+                libraryReservationMcpTool,
+                libraryCancelMcpTool,
+                libraryCurrentSeatMcpTool,
+                librarySwapMcpTool,
+                libraryWaitMcpTool,
+                confirmActionMcpTool,
+                saintScheduleMcpTool,
+                saintGradesMcpTool,
+                saintExtendedMcpTools,
+                lmsAssignmentsMcpTool,
+                lmsDashboardMcpTool,
+                lmsMaterialsMcpTool,
+                lmsMaterialExportMcpTool,
+                noticeMcpTools,
+                academicPolicyMcpTools
+        ));
+        tools.addAll(diagnosticMcpTools);
+
         return MethodToolCallbackProvider.builder()
-                .toolObjects(
-                        mealMcpTools,
-                        dormMcpTools,
-                        campusMcpTools,
-                        mcpAuthMcpTools,
-                        libraryMcpTool,
-                        librarySeatCatalogMcpTool,
-                        librarySeatRecommendationMcpTool,
-                        libraryAvailableSeatsMcpTool,
-                        libraryRoomAvailableSeatsMcpTool,
-                        libraryBookMcpTool,
-                        libraryLoansMcpTool,
-                        libraryReservationMcpTool,
-                        libraryCancelMcpTool,
-                        libraryCurrentSeatMcpTool,
-                        librarySwapMcpTool,
-                        libraryWaitMcpTool,
-                        confirmActionMcpTool,
-                        saintScheduleMcpTool,
-                        saintGradesMcpTool,
-                        saintExtendedMcpTools,
-                        lmsAssignmentsMcpTool,
-                        lmsDashboardMcpTool,
-                        lmsMaterialsMcpTool,
-                        lmsMaterialExportMcpTool,
-                        noticeMcpTools,
-                        academicPolicyMcpTools)
+                .toolObjects(tools.toArray())
                 .build();
     }
 
