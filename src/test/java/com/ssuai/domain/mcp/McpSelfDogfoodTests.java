@@ -100,6 +100,7 @@ class McpSelfDogfoodTests {
                             "get_my_lms_materials",
                             "prepare_lms_material_export",
                             "confirm_lms_material_export",
+                            "export_all_lms_materials",
                             "get_recent_notices",
                             "search_notices",
                             "list_notice_categories",

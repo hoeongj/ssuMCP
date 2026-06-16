@@ -58,6 +58,33 @@ public class LmsMaterialExportMcpTool {
     }
 
     @Tool(
+        name = "export_all_lms_materials",
+        description = "현재 학기 전체 과목의 LMS 학습 자료(PDF, PPT, HWP, DOC 등)를 자동으로 수집하여 내보내기 미리보기를 반환합니다. "
+            + "get_my_lms_courses, get_my_lms_materials를 먼저 호출할 필요 없이 이 도구 하나로 전 과목 자료를 수집합니다. "
+            + "결과에는 과목별 파일 목록, 파일 수, 용량, 제외 항목이 포함됩니다. "
+            + "확인 후 confirm_lms_material_export를 호출하면 ZIP 다운로드 링크가 발급됩니다. "
+            + "비디오·오디오 파일은 용량 제한으로 자동 제외됩니다. "
+            + "mcp_session_id with LMS provider linked required."
+    )
+    public McpPrivateToolResponse<Object> exportAllLmsMaterials(
+            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            String mcp_session_id,
+            @ToolParam(required = false, description = "조회할 학기 ID. 생략 시 현재 활성 학기가 자동 선택됩니다.")
+            Long term_id
+    ) {
+        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
+                .map(studentId -> {
+                    try {
+                        LmsExportPrepareResponse preview = exportService.exportAll(studentId, term_id);
+                        return McpPrivateToolResponse.ok(mcp_session_id, (Object) preview);
+                    } catch (LmsSessionExpiredException e) {
+                        return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
+                    }
+                })
+                .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
+    }
+
+    @Tool(
             name = "confirm_lms_material_export",
             description = "대기 상태인 LMS 자료 내보내기 액션을 실행 승인합니다. "
                     + "승인 성공 시 비동기 ZIP 압축 빌드 작업이 큐에 쌓이고, 20분간 유효한 capability URL 다운로드 링크가 반환됩니다. "

@@ -66,7 +66,8 @@ class McpServerConfig {
             "cancel_library_wait",
             "confirm_action",
             "prepare_lms_material_export",
-            "confirm_lms_material_export");
+            "confirm_lms_material_export",
+            "export_all_lms_materials");
 
     @Bean
     ToolCallbackProvider ssuaiMcpTools(

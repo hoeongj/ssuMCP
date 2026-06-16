@@ -117,6 +117,72 @@ public class LmsMaterialExportService {
             }
         }
 
+        return finalizeExport(studentId, courseMap, whitelistedSelections, excluded);
+    }
+
+    public LmsExportPrepareResponse exportAll(String studentId, Long termId) {
+        if (studentId == null || studentId.isBlank()) {
+            throw new UnauthorizedException();
+        }
+        LmsCookies cookies = sessionStore.cookies(studentId)
+                .orElseThrow(LmsSessionExpiredException::new);
+
+        // Resolve term — fetch terms to get term name for the response message
+        long resolvedTermId;
+        String termLabel;
+        List<LmsTermItem> terms = assignmentsService.fetchTerms(studentId);
+        if (termId != null) {
+            resolvedTermId = termId;
+            termLabel = terms.stream()
+                    .filter(t -> t.id() == termId)
+                    .map(LmsTermItem::name)
+                    .findFirst()
+                    .orElse("학기 #" + termId);
+        } else {
+            resolvedTermId = LmsTermResolver.resolveCurrentTermId(terms);
+            termLabel = terms.stream()
+                    .filter(t -> t.id() == resolvedTermId)
+                    .map(LmsTermItem::name)
+                    .findFirst()
+                    .orElse("현재 학기");
+        }
+
+        // Gather all courses and all eligible materials
+        List<LmsCourse> courses = connector.fetchCourses(studentId, cookies, resolvedTermId);
+        Map<Long, LmsCourse> courseMap = new HashMap<>();
+        List<LmsMaterial> whitelistedSelections = new ArrayList<>();
+
+        for (LmsCourse course : courses) {
+            courseMap.put(course.id(), course);
+            List<LmsMaterial> materials = connector.fetchMaterials(studentId, cookies, course);
+            for (LmsMaterial material : materials) {
+                if (material.contentId() != null && MaterialFileFilter.isIncluded(material)) {
+                    whitelistedSelections.add(material);
+                }
+            }
+        }
+
+        // Delegate limit/grouping/pending-action creation to shared helper
+        LmsExportPrepareResponse response = finalizeExport(studentId, courseMap, whitelistedSelections, new ArrayList<>());
+
+        // Prepend term label to the response message (reuse message field — no DTO schema change)
+        String newMessage = "[" + termLabel + "] " + response.message();
+        return new LmsExportPrepareResponse(
+                response.courseCount(),
+                response.fileCount(),
+                response.totalBytes(),
+                response.selected(),
+                response.excluded(),
+                newMessage);
+    }
+
+    private LmsExportPrepareResponse finalizeExport(
+            String studentId,
+            Map<Long, LmsCourse> courseMap,
+            List<LmsMaterial> whitelistedSelections,
+            List<LmsExportExclusion> seededExclusions) {
+        List<LmsExportExclusion> excluded = new ArrayList<>(seededExclusions);
+
         // Sort whitelisted selections by size descending to prioritize largest files for limit check
         List<LmsMaterial> sortedSelections = whitelistedSelections.stream()
                 .sorted(Comparator.comparing(LmsMaterial::sizeBytes, Comparator.nullsLast(Long::compareTo)).reversed())

@@ -112,6 +112,31 @@ class LmsMaterialExportMcpToolTests {
     }
 
     @Test
+    void exportAll_returnsAuthRequiredWhenNoSession() {
+        McpPrivateToolResponse<Object> stub =
+                McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
+        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.exportAllLmsMaterials(null, null);
+
+        assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
+        verify(exportService, never()).exportAll(any(), any());
+    }
+
+    @Test
+    void exportAll_returnsOkWhenLinked() {
+        LmsExportPrepareResponse stub = new LmsExportPrepareResponse(0, 0, 0, List.of(), List.of(), "message");
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(exportService.exportAll("20221528", null)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.exportAllLmsMaterials(SESSION_ID, null);
+
+        assertThat(resp.status()).isEqualTo("OK");
+        assertThat(resp.data()).isEqualTo(stub);
+    }
+
+    @Test
     void toStringDoesNotLeakStudentId() {
         LmsExportConfirmResponse stub = new LmsExportConfirmResponse("job1", 1, 100L, "expiry", "url", "");
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));

@@ -156,4 +156,76 @@ class LmsMaterialExportServiceTests {
         assertThatThrownBy(() -> service.confirm(STUDENT_ID))
                 .isInstanceOf(ActionExpiredException.class);
     }
+
+    @Test
+    void exportAll_includesAllEligibleMaterials() {
+        // Given
+        LmsCourse course1 = new LmsCourse(1L, "Math", "MATH101", 100L);
+        LmsCourse course2 = new LmsCourse(2L, "Physics", "PHYS101", 100L);
+        List<LmsTermItem> terms = List.of(new LmsTermItem(100L, "Term Label", null, null, true));
+        when(assignmentsService.fetchTerms(STUDENT_ID)).thenReturn(terms);
+        when(connector.fetchCourses(STUDENT_ID, COOKIES, 100L)).thenReturn(List.of(course1, course2));
+
+        LmsMaterial mat1 = new LmsMaterial("c1", 1L, "Math", "a.pdf", "pdf", 10L, "Week 1", "Lecture 1");
+        LmsMaterial mat2 = new LmsMaterial("c2", 1L, "Math", "b.pdf", "pdf", 10L, "Week 1", "Lecture 2");
+        when(connector.fetchMaterials(STUDENT_ID, COOKIES, course1)).thenReturn(List.of(mat1, mat2));
+
+        LmsMaterial mat3 = new LmsMaterial("c3", 2L, "Physics", "c.pdf", "pdf", 10L, "Week 1", "Lecture 1");
+        LmsMaterial mat4 = new LmsMaterial("c4", 2L, "Physics", "d.pdf", "pdf", 10L, "Week 1", "Lecture 2");
+        when(connector.fetchMaterials(STUDENT_ID, COOKIES, course2)).thenReturn(List.of(mat3, mat4));
+
+        properties.setMaxFilesPerExport(10); // set high so all are included
+
+        // When
+        LmsExportPrepareResponse resp = service.exportAll(STUDENT_ID, 100L);
+
+        // Then
+        assertThat(resp.fileCount()).isEqualTo(4);
+        assertThat(resp.totalBytes()).isEqualTo(40L);
+        assertThat(resp.selected()).hasSize(2); // 2 courses
+        assertThat(resp.excluded()).isEmpty();
+        assertThat(resp.message()).contains("[Term Label]");
+    }
+
+    @Test
+    void exportAll_respectsFileLimitCap() {
+        // Given
+        LmsCourse course1 = new LmsCourse(1L, "Math", "MATH101", 100L);
+        List<LmsTermItem> terms = List.of(new LmsTermItem(100L, "Term Label", null, null, true));
+        when(assignmentsService.fetchTerms(STUDENT_ID)).thenReturn(terms);
+        when(connector.fetchCourses(STUDENT_ID, COOKIES, 100L)).thenReturn(List.of(course1));
+
+        LmsMaterial mat1 = new LmsMaterial("c1", 1L, "Math", "a.pdf", "pdf", 10L, "Week 1", "Lecture 1");
+        LmsMaterial mat2 = new LmsMaterial("c2", 1L, "Math", "b.pdf", "pdf", 10L, "Week 1", "Lecture 2");
+        LmsMaterial mat3 = new LmsMaterial("c3", 1L, "Math", "c.pdf", "pdf", 10L, "Week 1", "Lecture 3");
+        when(connector.fetchMaterials(STUDENT_ID, COOKIES, course1)).thenReturn(List.of(mat1, mat2, mat3));
+
+        properties.setMaxFilesPerExport(2); // only allow 2 files
+
+        // When
+        LmsExportPrepareResponse resp = service.exportAll(STUDENT_ID, 100L);
+
+        // Then
+        assertThat(resp.fileCount()).isEqualTo(2);
+        assertThat(resp.excluded()).hasSize(1);
+        assertThat(resp.excluded().get(0).reason()).isEqualTo("한도 초과");
+    }
+
+    @Test
+    void exportAll_createsPendingActionWithCorrectType() {
+        // Given
+        LmsCourse course1 = new LmsCourse(1L, "Math", "MATH101", 100L);
+        List<LmsTermItem> terms = List.of(new LmsTermItem(100L, "Term Label", null, null, true));
+        when(assignmentsService.fetchTerms(STUDENT_ID)).thenReturn(terms);
+        when(connector.fetchCourses(STUDENT_ID, COOKIES, 100L)).thenReturn(List.of(course1));
+
+        LmsMaterial mat1 = new LmsMaterial("c1", 1L, "Math", "a.pdf", "pdf", 10L, "Week 1", "Lecture 1");
+        when(connector.fetchMaterials(STUDENT_ID, COOKIES, course1)).thenReturn(List.of(mat1));
+
+        // When
+        service.exportAll(STUDENT_ID, 100L);
+
+        // Then
+        verify(actionService).createPendingAction(eq(STUDENT_ID), eq("LMS_MATERIAL_EXPORT"), any(SelectionPayload.class));
+    }
 }
