@@ -114,6 +114,7 @@ ssuai:
     saint-graduation: mock # mock | rusaint
     saint-scholarship: mock # mock | rusaint
     lms-assignments: mock # mock | real
+    lms-materials: mock # mock | real
     academic-calendar: mock # mock | real
     academic-policy: mock # mock | real
     chat: ${SSUAI_CONNECTOR_CHAT:mock} # mock | llm
@@ -240,6 +241,13 @@ ssuai:
       ttl: ${SSUAI_LMS_SESSION_TTL:7d}
       max-sessions: 1000
       encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+    export:
+      max-files-per-export: ${SSUAI_LMS_EXPORT_MAX_FILES:500}
+      max-bytes-per-export: ${SSUAI_LMS_EXPORT_MAX_BYTES:2147483648} # 2GB
+      download-ttl: ${SSUAI_LMS_EXPORT_DOWNLOAD_TTL:20m}
+      temp-dir: ${SSUAI_LMS_EXPORT_TEMP_DIR:${java.io.tmpdir}/ssuai-lms-export}
+      poll-interval: ${SSUAI_LMS_EXPORT_POLL_INTERVAL:5s}
+      public-base-url: ${SSUAI_LMS_EXPORT_PUBLIC_BASE_URL:}
 
   auth:
     # Public origin of THIS backend, used to build the SmartID

@@ -1,0 +1,101 @@
+package com.ssuai.domain.mcp.tool;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.ssuai.domain.auth.mcp.McpProviderType;
+import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
+import com.ssuai.domain.lms.dto.LmsCourse;
+import com.ssuai.domain.lms.dto.LmsCourseMaterials;
+import com.ssuai.domain.lms.service.LmsMaterialsService;
+import com.ssuai.global.exception.LmsSessionExpiredException;
+
+class LmsMaterialsMcpToolTests {
+
+    private McpAuthHelper authHelper;
+    private LmsMaterialsService materialsService;
+    private LmsMaterialsMcpTool tool;
+
+    private static final String SESSION_ID = "test-session-lms";
+    private static final Instant EXPIRES = Instant.parse("2026-05-18T15:00:00Z");
+
+    @BeforeEach
+    void setUp() {
+        authHelper = mock(McpAuthHelper.class);
+        materialsService = mock(LmsMaterialsService.class);
+        tool = new LmsMaterialsMcpTool(materialsService, authHelper);
+    }
+
+    @Test
+    void returnsAuthRequiredWhenNoSession() {
+        McpPrivateToolResponse<Object> stub =
+                McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
+        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(null, null);
+
+        assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
+        verify(materialsService, never()).listCourses(any(), any());
+    }
+
+    @Test
+    void returnsAuthRequiredWhenSessionExpired() {
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(materialsService.listCourses("20221528", null)).thenThrow(new LmsSessionExpiredException());
+
+        McpPrivateToolResponse<Object> stub =
+                McpPrivateToolResponse.authRequired(SESSION_ID, "LMS", "https://login.url", EXPIRES);
+        when(authHelper.<Object>buildAuthRequired(SESSION_ID, McpProviderType.LMS)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
+
+        assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
+    }
+
+    @Test
+    void returnsOkWithCoursesWhenLinked() {
+        List<LmsCourse> stub = List.of(new LmsCourse(1L, "Math", "MATH101", 100L));
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(materialsService.listCourses("20221528", null)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
+
+        assertThat(resp.status()).isEqualTo("OK");
+        assertThat(resp.data()).isEqualTo(stub);
+    }
+
+    @Test
+    void returnsOkWithMaterialsWhenLinked() {
+        List<LmsCourseMaterials> stub = List.of();
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(materialsService.listMaterials("20221528", List.of(1L), null)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.getMyLmsMaterials(SESSION_ID, List.of(1L), null);
+
+        assertThat(resp.status()).isEqualTo("OK");
+        assertThat(resp.data()).isEqualTo(stub);
+    }
+
+    @Test
+    void toStringDoesNotLeakStudentId() {
+        List<LmsCourse> stub = List.of(new LmsCourse(1L, "Math", "MATH101", 100L));
+        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(materialsService.listCourses("20221528", null)).thenReturn(stub);
+
+        McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
+
+        assertThat(resp.toString()).doesNotContain("20221528");
+    }
+}

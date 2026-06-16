@@ -1,0 +1,67 @@
+[
+  {
+    "module_id": 101,
+    "title": "1주차",
+    "week_position": 1,
+    "module_items": [
+      {
+        "module_item_id": 1001,
+        "title": "Statistical Learning Lecture Note",
+        "content_data": {
+          "item_content_data": {
+            "content_id": "69a14b412f396",
+            "content_type": "pdf",
+            "file_name": "StatisticalLearning.pdf",
+            "title": "StatisticalLearning",
+            "total_file_size": 12345
+          }
+        }
+      },
+      {
+        "module_item_id": 1002,
+        "title": "Introduction Video",
+        "content_data": {
+          "item_content_data": {
+            "content_id": "video123",
+            "content_type": "everlec",
+            "title": "Introduction Video",
+            "total_file_size": 987654
+          }
+        }
+      },
+      {
+        "module_item_id": 1003,
+        "title": "Music File",
+        "content_data": {
+          "item_content_data": {
+            "content_id": "music789",
+            "content_type": "audio",
+            "file_name": "sample.mp3",
+            "title": "Music File",
+            "total_file_size": 5555
+          }
+        }
+      }
+    ]
+  },
+  {
+    "module_id": 102,
+    "title": "2주차",
+    "week_position": 2,
+    "module_items": [
+      {
+        "module_item_id": 1004,
+        "title": "Assignment Document",
+        "content_data": {
+          "item_content_data": {
+            "content_id": "doc456",
+            "content_type": "docx",
+            "file_name": "Homework1.docx",
+            "title": "Homework1",
+            "total_file_size": 2222
+          }
+        }
+      }
+    ]
+  }
+]

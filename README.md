@@ -53,7 +53,7 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 
 ---
 
-## 도구 목록 (43개)
+## 도구 목록 (51개)
 
 ### 공개 도구 — 인증 불필요
 
@@ -128,7 +128,12 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | 도구 | 설명 |
 |------|------|
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록 |
+| `get_my_lms_terms` | 사용자의 LMS 등록 학기 목록 조회 |
 | `get_lms_dashboard` | 미제출 과제·학사일정·공지사항을 모아보는 대시보드 |
+| `get_my_lms_courses` | 사용자의 LMS 수강 과목 목록 조회 |
+| `get_my_lms_materials` | 비영상 주차학습 자료(PDF, PPT 등) 목록 조회 (비디오/오디오 제외) |
+| `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성) |
+| `confirm_lms_material_export` | 내보내기 최종 승인 및 20분 유효 다운로드 링크 발급 |
 
 **도서관 (provider: LIBRARY)**
 

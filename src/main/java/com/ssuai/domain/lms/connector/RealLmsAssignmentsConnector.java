@@ -28,6 +28,7 @@ import com.ssuai.domain.lms.dto.AssignmentItem;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
 import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.global.exception.LmsSessionExpiredException;
+import com.ssuai.domain.lms.service.LmsTermResolver;
 
 /**
  * Calls the canvas.ssu.ac.kr LearningX API with the student's session cookies.
@@ -174,11 +175,7 @@ class RealLmsAssignmentsConnector implements LmsAssignmentsConnector {
 
     private long resolveDefaultTermId(HttpClient client, String bearer, String studentId) {
         List<LmsTermItem> terms = fetchTermItems(client, bearer, studentId);
-        return terms.stream()
-                .filter(LmsTermItem::defaultTerm)
-                .mapToLong(LmsTermItem::id)
-                .findFirst()
-                .orElse(terms.get(0).id());
+        return LmsTermResolver.resolveCurrentTermId(terms);
     }
 
     private Map<Long, String> fetchCourseNames(HttpClient client, String bearer, long termId) {
