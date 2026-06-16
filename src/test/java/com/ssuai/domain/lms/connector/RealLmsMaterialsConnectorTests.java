@@ -48,18 +48,23 @@ class RealLmsMaterialsConnectorTests {
     }
 
     @Test
-    void fetchCoursesStripsXssiPrefix() throws Exception {
-        // Enqueue courses list with canvas anti-XSSI prefix while(1);
+    void fetchCourses_returnsCoursesFromLearningXEndpoint() throws Exception {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("while(1); [{\"id\":1,\"name\":\"Course 1\",\"course_code\":\"C1\",\"enrollment_term_id\":10}]"));
+                .setBody("[{\"id\":1,\"name\":\"Course 1\",\"course_code\":\"C1\"}]"));
 
         List<LmsCourse> courses = connector.fetchCourses("student1", new LmsCookies("xn_api_token=tok;"), 10L);
 
         assertThat(courses).hasSize(1);
         assertThat(courses.get(0).id()).isEqualTo(1L);
         assertThat(courses.get(0).name()).isEqualTo("Course 1");
+
+        okhttp3.mockwebserver.RecordedRequest request = server.takeRequest();
+        assertThat(request.getPath()).startsWith("/learningx/api/v1/learn_activities/courses");
+        assertThat(request.getPath()).contains("term_ids");
+        assertThat(request.getPath()).contains("10");
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer tok");
     }
 
     @Test

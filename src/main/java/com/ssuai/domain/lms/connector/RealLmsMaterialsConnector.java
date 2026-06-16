@@ -84,7 +84,13 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
     @Override
     public List<LmsCourse> fetchCourses(String studentId, LmsCookies cookies, long termId) {
         randomDelay();
-        String url = properties.getCanvasBaseUrl() + "/api/v1/courses?enrollment_state=active&per_page=100";
+        String bearer = extractXnApiToken(cookies.rawCookieHeader());
+        if (bearer == null || bearer.isBlank()) {
+            throw new LmsSessionExpiredException("xn_api_token missing from stored cookies");
+        }
+
+        String url = properties.getCanvasBaseUrl()
+                + "/learningx/api/v1/learn_activities/courses?term_ids[]=" + termId;
         CookieManager cookieManager = createCookieManager(cookies.rawCookieHeader(), url);
         HttpClient client = HttpClient.newBuilder()
                 .cookieHandler(cookieManager)
@@ -95,6 +101,7 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Accept", "application/json")
+                .header("Authorization", "Bearer " + bearer)
                 .header("Cookie", cookies.rawCookieHeader())
                 .timeout(properties.getTimeout())
                 .GET()
@@ -104,31 +111,31 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
             HttpResponse<String> response = client.send(
                     request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() == 401) {
-                throw new LmsSessionExpiredException("Canvas returned 401 — session expired");
+                throw new LmsSessionExpiredException("LearningX returned 401 — session expired");
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new LmsSessionExpiredException("Canvas API error: status=" + response.statusCode());
+                throw new LmsSessionExpiredException("LearningX API error: status=" + response.statusCode());
             }
 
-            JsonNode root = parseCanvasJson(response.body());
+            JsonNode root = objectMapper.readTree(response.body());
             List<LmsCourse> list = new ArrayList<>();
             if (root.isArray()) {
                 for (JsonNode node : root) {
                     long id = node.path("id").asLong();
                     String name = node.path("name").asText("");
                     String courseCode = node.path("course_code").asText("");
-                    long enrollmentTermId = node.path("enrollment_term_id").asLong();
-                    if (id > 0 && enrollmentTermId == termId) {
-                        list.add(new LmsCourse(id, name, courseCode, enrollmentTermId));
+                    if (id > 0) {
+                        // endpoint already filters by term_ids[] — use termId param directly
+                        list.add(new LmsCourse(id, name, courseCode, termId));
                     }
                 }
             }
             return list;
         } catch (IOException exception) {
-            throw new LmsSessionExpiredException("Canvas API IO error: " + exception.getMessage());
+            throw new LmsSessionExpiredException("LearningX API IO error: " + exception.getMessage());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new LmsSessionExpiredException("Canvas API interrupted");
+            throw new LmsSessionExpiredException("LearningX API interrupted");
         }
     }
 

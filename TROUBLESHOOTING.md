@@ -3,6 +3,35 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-16 — LMS 과목 조회 API 버그: Canvas Native API 호출 실패로 인한 AUTH_REQUIRED 오진
+
+- 맥락:
+  - LMS 세션이 활성화되어 있음에도 `get_my_lms_courses` 도구가 `AUTH_REQUIRED`를 잘못 반환하는 현상이 발생했다.
+- 증상:
+  - 사용자의 LMS 로그인 세션이 유효함에도 불구하고, 과목 조회를 요청할 때마다 세션 만료 응답이 돌아왔다. 이로 인해 주차별 학습 자료 조회(`get_my_lms_materials`) 및 zip 내보내기(`prepare_lms_material_export`) 등의 하위 기능들도 전부 차단되었다.
+- 처음 세운 가설 (틀린 방향):
+  - u-SAINT SSO 연동 문제나 LMS 세션 쿠키 쿠키스토어(CookieStore)의 만료 등으로 인해 실제 세션이 끊어졌다고 판단했다.
+  - 하지만 다른 LMS API 요청(예: 과제 조회 `RealLmsAssignmentsConnector`)은 동일한 세션 쿠키를 사용해 정상적으로 수행되고 있었으므로 기각되었다.
+- 실제 원인:
+  - `RealLmsMaterialsConnector.fetchCourses()`가 Canvas Native 엔드포인트인 `/api/v1/courses`를 호출할 때 Cookie 기반 인증으로만 요청을 보내고 있었고, 이 API가 4xx 에러를 반환하자 커넥터가 이를 `LmsSessionExpiredException`으로 처리하여 발생한 일이었다.
+  - 다른 모든 LMS 관련 호출들은 Bearer 토큰(`xn_api_token`)을 이용해 LearningX 엔드포인트 `/learningx/api/v1/...`를 호출하고 있었다.
+- 해결:
+  - `fetchCourses` API를 `RealLmsAssignmentsConnector.fetchCourseNames()`와 일치하도록 LearningX 엔드포인트인 `/learningx/api/v1/learn_activities/courses?term_ids[]={termId}`로 전환했다.
+  - 쿠키에서 `xn_api_token`을 추출하여 `Authorization: Bearer` 헤더를 추가하도록 수정했다.
+  - LearningX API는 Canvas Native API와 달리 XSSI 방지용 `while(1);` 접두사가 응답에 포함되지 않으므로, 문자열을 전치 스캔하는 `parseCanvasJson` 대신 표준 `objectMapper.readTree()`로 전환하여 불필요한 연산을 제거했다.
+  - 또한, 신규 엔드포인트가 `term_ids[]` 쿼리 매개변수를 통해 서버 사이드에서 이미 학기별 필터링을 수행하므로, 기존의 클라이언트 사이드 학기 매칭 필터(`enrollmentTermId == termId`)를 완전히 제거했다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/lms/connector/RealLmsMaterialsConnector.java`
+  - `src/test/java/com/ssuai/domain/lms/connector/RealLmsMaterialsConnectorTests.java`
+- 검증:
+  - `RealLmsMaterialsConnectorTests` 내 `fetchCoursesStripsXssiPrefix` 테스트를 `fetchCourses_returnsCoursesFromLearningXEndpoint`로 개명하여, LearningX 엔드포인트 호출 여부, Bearer 헤더 검증, 그리고 학기 파라미터가 포함되었는지를 모의 서버(MockWebServer)로 완벽히 검증했다. `.\gradlew.bat test` 실행 결과 전체 테스트 통과를 확인했다.
+- 포트폴리오 포인트:
+  - 동일한 외부 연동 도메인 내에서 Canvas Native 스펙과 LearningX 커스텀 스펙의 혼용으로 인한 인증 및 엔드포인트 불일치 문제를 해결하고, 일관된 Bearer 토큰 인증과 최적화된 파싱(Standard ObjectMapper vs Custom Regex Stripping)을 설계해 시스템 안정성을 개선한 실전 디버깅 및 고도화 사례.
+- 면접 예상 질문:
+  1. Canvas Native API와 LearningX API의 구조적 차이와, 이를 통합할 때 발생한 세션/인증 처리 문제를 어떻게 해결했나요?
+  2. XSSI 방지용 접두사(`while(1);`)가 들어오는 API와 들어오지 않는 API를 구별해 파싱을 최적화(Standard ObjectMapper 사용)한 이유와 기대 효과를 설명해 주세요.
+  3. 클라이언트 사이드 필터링 대신 쿼리 파라미터를 활용한 서버 사이드 필터링으로 변경 시 성능과 네트워크 대역폭 측면에서 어떤 장점이 있나요?
+
 ## 2026-06-16 — LMS 학기 판별 버그: Canvas defaultTerm 플래그 오작동으로 인한 잘못된 학기 조회
 
 - 맥락:
