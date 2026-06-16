@@ -43,3 +43,8 @@ data:
   SSUAI_LIBRARY_REDIS_ENABLED: {{ .Values.env.libraryRedisEnabled | quote }}
   SSUAI_LIBRARY_SEAT_EVENT_CHANNEL: {{ .Values.env.librarySeatEventChannel | quote }}
   SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT: {{ .Values.env.librarySchedulerLockWait | quote }}
+  SSUAI_OAUTH_RS_ENABLED: {{ .Values.env.oauthRsEnabled | default "false" | quote }}
+  SSUAI_OAUTH_ISSUER_URI: {{ .Values.env.oauthIssuerUri | default "" | quote }}
+  SSUAI_OAUTH_AUDIENCE: {{ .Values.env.oauthAudience | default "" | quote }}
+  SSUAI_OAUTH_RESOURCE_BASE_URL: {{ .Values.env.oauthResourceBaseUrl | default "" | quote }}
+  SSUAI_MCP_CLIENT_ENABLED: {{ .Values.env.mcpClientEnabled | default "true" | quote }}

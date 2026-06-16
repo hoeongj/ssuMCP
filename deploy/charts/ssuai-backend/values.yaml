@@ -66,6 +66,16 @@ env:
   libraryRedisEnabled: "true"
   librarySeatEventChannel: ssuai.library.seat-events.v1
   librarySchedulerLockWait: 0ms
+  # OAuth 2.1 Resource Server — SPIKE (Step 0 gate, 2026-06-16)
+  # Set oauthRsEnabled to "true" only during the OAuth round-trip smoke test.
+  # Revert to "false" after the spike; Phase 1 will re-enable with production values.
+  oauthRsEnabled: "true"
+  oauthIssuerUri: "https://dev-q784z2phbyf5gzj7.us.auth0.com/"
+  oauthAudience: "https://ssumcp.duckdns.org"
+  oauthResourceBaseUrl: "https://ssumcp.duckdns.org"
+  # Disable the internal self-MCP-client during the spike — it has no Bearer token
+  # and would get 401s on /mcp while OAuth RS is active. Re-enable after spike.
+  mcpClientEnabled: "false"
 redis:
   enabled: true
   image:
