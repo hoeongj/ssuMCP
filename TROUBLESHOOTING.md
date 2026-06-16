@@ -3732,3 +3732,73 @@ async def agent_node(state: SsuAgentState, config: RunnableConfig) -> dict:
 1. LangGraph `create_react_agent`와 직접 `bind_tools + ainvoke` 루프의 차이는 무엇인가요? 어떤 상황에서 직접 루프가 더 유리한가요?
 2. `astream_events(version="v2")`에서 중첩된 `ainvoke`가 이벤트를 emit하려면 왜 `config`를 전파해야 하나요? LangGraph의 callback/context propagation 메커니즘을 설명해보세요.
 3. HITL(Human-in-the-Loop) 패턴 구현 시 `interrupt()`를 node 안에 두어야 하는 이유와, router/edge 함수에 두면 어떤 문제가 생기는지 설명해보세요.
+
+## 2026-06-16 — LMS 자료 ZIP 기능이 prod에서 가짜(Mock) 데이터 반환 — Helm 배포 설정 누락
+
+### 상황
+
+사용자가 실서버(`https://ssumcp.duckdns.org`)에 ChatGPT 커스텀 GPT로 직접 접속해
+`get_my_lms_courses`/`get_my_lms_materials`를 호출했더니, 본인이 수강한 적 없는
+"빅데이터 분석(CSE101)", "기초 통계학(MATH201)" 같은 가짜 과목이 반환되고, 자료 조회는
+`Fixture not found on classpath: fixtures/lms/materials.json` 서버 오류로 실패했다.
+같은 세션에서 `get_my_assignments`는 실제 과목명("네트워크프로그래밍 (2150534301)")을
+정확히 반환해 LMS 인증 자체는 정상이었다.
+
+### 잘못된 가설
+
+처음엔 "LearningX API 스키마가 과목마다 달라서 Real 커넥터가 깨졌다"거나 "인증 토큰이
+일부만 유효하다"는 쪽을 의심했다.
+
+### 실제 원인
+
+코드 문제가 전혀 아니었다. **Helm 차트에 새 커넥터의 prod 토글이 누락**됐다.
+- `lms-assignments` 커넥터는 `deploy/charts/ssuai-backend/values.yaml`에
+  `connectorLmsAssignments: real`이 명시되어 `SSUAI_CONNECTOR_LMS_ASSIGNMENTS=real`로
+  prod에 주입된다.
+- Phase C에서 추가한 `lms-materials` 커넥터는 같은 패턴(`@ConditionalOnProperty(...,
+  matchIfMissing = true)`로 안전 기본값 Mock)을 따랐지만, **Helm `values.yaml`/
+  `configmap.yaml`에 대응 매핑을 추가하는 걸 빠뜨렸다** — AGY 위임 지시문이
+  `application.yml` 토글 추가만 명시하고 인프라 쪽 동반 변경을 지시하지 않았기 때문.
+- 그 결과 prod는 `MockLmsMaterialsConnector`로 운영됐다. Mock의 `fetchCourses()`는
+  하드코딩된 가짜 과목을 **에러 없이** 반환했고(이게 진짜 위험한 부분 — 실패가 아니라
+  조용히 잘못된 데이터가 나갔다), `fetchMaterials()`가 의존하는 픽스처
+  `src/test/resources/fixtures/lms/materials.json`은 테스트 리소스라 프로덕션 JAR에
+  패키징되지 않아 "Fixture not found" 에러로 이어졌다.
+- 부가로, ZIP 다운로드 링크를 만드는 `ssuai.lms.export.public-base-url`도 Helm에
+  와이어링이 안 돼 빈 문자열 기본값 → 다운로드 URL이 호스트 없는 상대경로로 나갈 뻔했다
+  (사용자가 자료 조회 단계에서 막혀 아직 도달하지 않았지만 같은 원인 계열).
+- `RealLmsAssignmentsConnector`가 정상 동작했던 건 그 커넥터만 우연히 prod 토글이
+  처음부터 있었기 때문이고, 이게 새 커넥터도 똑같이 되어있을 거라는 착각을 만들었다.
+
+### 해결 방법
+
+`deploy/charts/ssuai-backend/values.yaml`에 `connectorLmsMaterials: real`과
+`lmsExportPublicBaseUrl: https://ssumcp.duckdns.org` 추가, `templates/configmap.yaml`에
+각각 `SSUAI_CONNECTOR_LMS_MATERIALS`/`SSUAI_LMS_EXPORT_PUBLIC_BASE_URL` 매핑 추가.
+애플리케이션 코드는 전혀 수정하지 않음 — 순수 배포 설정 변경. ArgoCD
+`syncPolicy.automated.selfHeal: true`라 머지 즉시 prod에 자동 반영됨.
+
+### 핵심 파일 및 커밋
+
+- `deploy/charts/ssuai-backend/values.yaml`, `deploy/charts/ssuai-backend/templates/configmap.yaml`
+- 비교 대상(정상 패턴): `connectorLmsAssignments`/`SSUAI_CONNECTOR_LMS_ASSIGNMENTS`,
+  `mcpApiBaseUrl`/`SSUAI_MCP_API_BASE_URL`
+
+### 포트폴리오 포인트
+
+"커넥터 토글"이라는 코드-인프라 분리 패턴(Mock/Real `@ConditionalOnProperty` + Helm
+환경변수)에서, 코드 쪽 토글 추가는 했지만 인프라 쪽 와이어링을 빠뜨리면 **CI는 절대 못
+잡는다** — 단위 테스트는 `application.yml`의 기본값(Mock)으로 돌고, Helm 차트는 별도
+검증 없이 머지·배포되기 때문이다. 게다가 Mock이 에러를 던지지 않고 그럴듯한 가짜 데이터를
+반환하는 경우, 에러보다 훨씬 늦게 발견된다(이번 건은 사용자가 직접 실서버를 두드려보고서야
+발견). 신규 커넥터를 추가할 때마다 "코드 토글 + Helm 와이어링"을 한 쌍으로 묶어 체크리스트화
+해야 한다는 교훈.
+
+### 예상 면접 질문
+
+1. Mock/Real 커넥터 패턴에서 "안전한 기본값(Mock)"이 오히려 운영 사고를 가린 이유는
+   무엇인가요? 이런 종류의 설정 누락을 CI에서 잡으려면 어떤 테스트/체크가 필요할까요?
+2. 에러를 던지는 실패와 "그럴듯한 잘못된 데이터를 조용히 반환하는" 실패 중 어느 쪽이 더
+   위험하다고 생각하나요? 그 이유와, 후자를 방지하기 위한 설계 원칙을 설명해보세요.
+3. Helm 차트의 `values.yaml`/`configmap.yaml`처럼 애플리케이션 코드와 분리된 배포 설정의
+   변경을 PR 리뷰나 CI에서 검증하는 방법에는 어떤 것들이 있을까요?

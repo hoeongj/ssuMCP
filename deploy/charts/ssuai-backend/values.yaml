@@ -26,6 +26,10 @@ env:
   # already connect to this origin for SSE, and this avoids relying on the
   # Vercel /api proxy for SmartID returns.
   mcpApiBaseUrl: https://ssumcp.duckdns.org
+  # Public host for LMS material export ZIP download links (capability URLs
+  # returned by confirm_lms_material_export). Same host as mcpApiBaseUrl but
+  # kept as its own key since the two configs serve different purposes.
+  lmsExportPublicBaseUrl: https://ssumcp.duckdns.org
   tavilyMcpUrl: ""
   javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
   connectorMeal: real
@@ -37,6 +41,7 @@ env:
   connectorSaintSchedule: rusaint
   connectorSaintGrades: rusaint
   connectorLmsAssignments: real
+  connectorLmsMaterials: real
   connectorChat: llm
   mistralTrainingOptOutConfirmed: "false"
   llmMaxTokens: "400"

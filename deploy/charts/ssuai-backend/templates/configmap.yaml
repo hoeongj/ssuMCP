@@ -14,6 +14,7 @@ data:
   SSUAI_DB_USERNAME: {{ .Values.env.dbUsername | quote }}
   SSUAI_API_BASE_URL: {{ .Values.env.apiBaseUrl | quote }}
   SSUAI_MCP_API_BASE_URL: {{ .Values.env.mcpApiBaseUrl | quote }}
+  SSUAI_LMS_EXPORT_PUBLIC_BASE_URL: {{ .Values.env.lmsExportPublicBaseUrl | quote }}
   SSUAI_TAVILY_MCP_URL: {{ .Values.env.tavilyMcpUrl | quote }}
   JAVA_OPTS: {{ .Values.env.javaOpts | quote }}
   SSUAI_CONNECTOR_MEAL: {{ .Values.env.connectorMeal | quote }}
@@ -25,6 +26,7 @@ data:
   SSUAI_CONNECTOR_SAINT_SCHEDULE: {{ .Values.env.connectorSaintSchedule | quote }}
   SSUAI_CONNECTOR_SAINT_GRADES: {{ .Values.env.connectorSaintGrades | quote }}
   SSUAI_CONNECTOR_LMS_ASSIGNMENTS: {{ .Values.env.connectorLmsAssignments | quote }}
+  SSUAI_CONNECTOR_LMS_MATERIALS: {{ .Values.env.connectorLmsMaterials | quote }}
   SSUAI_CONNECTOR_CHAT: {{ .Values.env.connectorChat | quote }}
   SSUAI_MISTRAL_TRAINING_OPT_OUT_CONFIRMED: {{ .Values.env.mistralTrainingOptOutConfirmed | quote }}
   SSUAI_LLM_MAX_TOKENS: {{ .Values.env.llmMaxTokens | quote }}
