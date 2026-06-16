@@ -31,6 +31,13 @@ dependencyManagement {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    // OAuth 2.1 Resource Server (SPIKE: Step 0 gate). Spring Boot manages versions.
+    // Why standard RS instead of spring-ai-community/mcp-server-security:
+    //   mcp-server-security v0.1.13 requires Spring AI 2.0.0 + Boot 4.1.0;
+    //   our BOM is Spring AI 1.1.7 + Boot 4.0.6 — version mismatch. The standard
+    //   OAuth2 RS is mature, tested, and compatible; we hand-roll the PRM endpoint.
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'

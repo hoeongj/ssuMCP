@@ -1,6 +1,7 @@
 package com.ssuai.domain.mcp.config;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import com.ssuai.domain.mcp.tool.AcademicPolicyMcpTools;
+import com.ssuai.domain.mcp.tool.OAuthProbeSpikeTool;
 import com.ssuai.domain.mcp.tool.CampusMcpTools;
 import com.ssuai.domain.mcp.tool.ConfirmActionMcpTool;
 import com.ssuai.domain.mcp.tool.DormMcpTools;
@@ -96,36 +98,44 @@ class McpServerConfig {
             LmsMaterialsMcpTool lmsMaterialsMcpTool,
             LmsMaterialExportMcpTool lmsMaterialExportMcpTool,
             NoticeMcpTools noticeMcpTools,
-            AcademicPolicyMcpTools academicPolicyMcpTools
+            AcademicPolicyMcpTools academicPolicyMcpTools,
+            // SPIKE: OAuthProbeSpikeTool is @Profile("!test") so this list is empty in tests,
+            // keeping McpServerConfigTests / McpSelfDogfoodTests exact-match assertions intact.
+            // Remove this parameter when the spike is cleaned up (post smoke test).
+            List<OAuthProbeSpikeTool> oauthProbeTools
     ) {
+        List<Object> tools = new ArrayList<>(List.of(
+                mealMcpTools,
+                dormMcpTools,
+                campusMcpTools,
+                mcpAuthMcpTools,
+                libraryMcpTool,
+                librarySeatCatalogMcpTool,
+                librarySeatRecommendationMcpTool,
+                libraryAvailableSeatsMcpTool,
+                libraryRoomAvailableSeatsMcpTool,
+                libraryBookMcpTool,
+                libraryLoansMcpTool,
+                libraryReservationMcpTool,
+                libraryCancelMcpTool,
+                libraryCurrentSeatMcpTool,
+                librarySwapMcpTool,
+                libraryWaitMcpTool,
+                confirmActionMcpTool,
+                saintScheduleMcpTool,
+                saintGradesMcpTool,
+                saintExtendedMcpTools,
+                lmsAssignmentsMcpTool,
+                lmsDashboardMcpTool,
+                lmsMaterialsMcpTool,
+                lmsMaterialExportMcpTool,
+                noticeMcpTools,
+                academicPolicyMcpTools
+        ));
+        tools.addAll(oauthProbeTools);
+
         return MethodToolCallbackProvider.builder()
-                .toolObjects(
-                        mealMcpTools,
-                        dormMcpTools,
-                        campusMcpTools,
-                        mcpAuthMcpTools,
-                        libraryMcpTool,
-                        librarySeatCatalogMcpTool,
-                        librarySeatRecommendationMcpTool,
-                        libraryAvailableSeatsMcpTool,
-                        libraryRoomAvailableSeatsMcpTool,
-                        libraryBookMcpTool,
-                        libraryLoansMcpTool,
-                        libraryReservationMcpTool,
-                        libraryCancelMcpTool,
-                        libraryCurrentSeatMcpTool,
-                        librarySwapMcpTool,
-                        libraryWaitMcpTool,
-                        confirmActionMcpTool,
-                        saintScheduleMcpTool,
-                        saintGradesMcpTool,
-                        saintExtendedMcpTools,
-                        lmsAssignmentsMcpTool,
-                        lmsDashboardMcpTool,
-                        lmsMaterialsMcpTool,
-                        lmsMaterialExportMcpTool,
-                        noticeMcpTools,
-                        academicPolicyMcpTools)
+                .toolObjects(tools.toArray())
                 .build();
     }
 

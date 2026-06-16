@@ -121,6 +121,22 @@ ssuai:
     notice: mock # mock | real
     department-notice: real # mock | real
   mcp:
+    # OAuth 2.1 Resource Server (SPIKE: Step 0 gate, Phase 1 in production)
+    # Set SSUAI_OAUTH_RS_ENABLED=true in k8s ConfigMap to activate. All other
+    # values must also be set in the ConfigMap/Secret before deployment.
+    # With rs-enabled=false (default), Spring Security permits all requests —
+    # existing behavior is fully preserved for dev, test, and pre-spike prod.
+    oauth:
+      rs-enabled: ${SSUAI_OAUTH_RS_ENABLED:false}
+      # Managed Authorization Server issuer URI (e.g. https://<tenant>.auth0.com/).
+      # Used for OIDC discovery on startup and JWT issuer validation at runtime.
+      issuer-uri: ${SSUAI_OAUTH_ISSUER_URI:}
+      # OAuth audience that must appear in the JWT aud claim (= the API identifier
+      # in Auth0 / Descope). Empty = audience validation skipped (Phase 1 enforces it).
+      audience: ${SSUAI_OAUTH_AUDIENCE:}
+      # Public base URL of this Resource Server. Appears in WWW-Authenticate and
+      # in the RFC 9728 Protected Resource Metadata document.
+      resource-base-url: ${SSUAI_OAUTH_RESOURCE_BASE_URL:https://ssumcp.duckdns.org}
     auth:
       # Keep external MCP clients usable across long Claude/ChatGPT sessions.
       # Provider cookies may still expire earlier if the upstream rejects them.
