@@ -28,6 +28,7 @@ import com.ssuai.domain.lms.dto.ContentDownloadInfo;
 import com.ssuai.domain.lms.dto.LmsCourse;
 import com.ssuai.domain.lms.dto.LmsMaterial;
 import com.ssuai.domain.lms.util.CommonsXmlParser;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 @Component
@@ -110,11 +111,17 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
         try {
             HttpResponse<String> response = client.send(
                     request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() == 401) {
-                throw new LmsSessionExpiredException("LearningX returned 401 — session expired");
+            if (response.statusCode() == 401 || response.statusCode() == 403) {
+                throw new LmsSessionExpiredException("LearningX returned " + response.statusCode() + " — session expired or forbidden");
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new LmsSessionExpiredException("LearningX API error: status=" + response.statusCode());
+                // Truncate body to avoid logging sensitive data
+                String bodyExcerpt = response.body() != null && response.body().length() > 200
+                        ? response.body().substring(0, 200) + "..."
+                        : response.body();
+                throw new LmsApiException(
+                        "LearningX API error: status=" + response.statusCode() + " body=" + bodyExcerpt,
+                        response.statusCode());
             }
 
             JsonNode root = objectMapper.readTree(response.body());
@@ -167,11 +174,17 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
         try {
             HttpResponse<String> response = client.send(
                     request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() == 401) {
-                throw new LmsSessionExpiredException("Canvas returned 401 — session expired");
+            if (response.statusCode() == 401 || response.statusCode() == 403) {
+                throw new LmsSessionExpiredException("LearningX returned " + response.statusCode() + " — session expired or forbidden");
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new LmsSessionExpiredException("Canvas API error: status=" + response.statusCode());
+                // Truncate body to avoid logging sensitive data
+                String bodyExcerpt = response.body() != null && response.body().length() > 200
+                        ? response.body().substring(0, 200) + "..."
+                        : response.body();
+                throw new LmsApiException(
+                        "LearningX API error: status=" + response.statusCode() + " body=" + bodyExcerpt,
+                        response.statusCode());
             }
 
             JsonNode root = objectMapper.readTree(response.body());

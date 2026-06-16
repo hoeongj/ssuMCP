@@ -1,6 +1,9 @@
 package com.ssuai.domain.lms.connector;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.ssuai.global.exception.LmsApiException;
+import com.ssuai.global.exception.LmsSessionExpiredException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -144,5 +147,88 @@ class RealLmsMaterialsConnectorTests {
         connector.download(new LmsCookies("xn_api_token=tok;"), downloadUrl, out);
 
         assertThat(out.toString()).isEqualTo("test-download-bytes");
+    }
+
+    @Test
+    void fetchCourses_throwsLmsApiExceptionOnServerError() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(500)
+                .setBody("Internal Server Error"));
+
+        assertThatThrownBy(() ->
+                connector.fetchCourses("student1", new LmsCookies("xn_api_token=tok;"), 10L)
+        ).isInstanceOf(LmsApiException.class)
+         .hasMessageContaining("LearningX API error: status=500")
+         .satisfies(e -> {
+             LmsApiException ex = (LmsApiException) e;
+             assertThat(ex.getStatusCode()).isEqualTo(500);
+         });
+    }
+
+    @Test
+    void fetchCourses_throwsLmsSessionExpiredOn401() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(401)
+                .setBody("Unauthorized"));
+
+        assertThatThrownBy(() ->
+                connector.fetchCourses("student1", new LmsCookies("xn_api_token=tok;"), 10L)
+        ).isInstanceOf(LmsSessionExpiredException.class)
+         .hasMessageContaining("LearningX returned 401");
+    }
+
+    @Test
+    void fetchCourses_throwsLmsSessionExpiredOn403() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(403)
+                .setBody("Forbidden"));
+
+        assertThatThrownBy(() ->
+                connector.fetchCourses("student1", new LmsCookies("xn_api_token=tok;"), 10L)
+        ).isInstanceOf(LmsSessionExpiredException.class)
+         .hasMessageContaining("LearningX returned 403");
+    }
+
+    @Test
+    void fetchMaterials_throwsLmsApiExceptionOnServerError() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(500)
+                .setBody("Internal Server Error"));
+
+        LmsCourse course = new LmsCourse(1L, "Course 1", "C1", 10L);
+        assertThatThrownBy(() ->
+                connector.fetchMaterials("student1", new LmsCookies("xn_api_token=tok;"), course)
+        ).isInstanceOf(LmsApiException.class)
+         .hasMessageContaining("LearningX API error: status=500")
+         .satisfies(e -> {
+             LmsApiException ex = (LmsApiException) e;
+             assertThat(ex.getStatusCode()).isEqualTo(500);
+         });
+    }
+
+    @Test
+    void fetchMaterials_throwsLmsSessionExpiredOn401() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(401)
+                .setBody("Unauthorized"));
+
+        LmsCourse course = new LmsCourse(1L, "Course 1", "C1", 10L);
+        assertThatThrownBy(() ->
+                connector.fetchMaterials("student1", new LmsCookies("xn_api_token=tok;"), course)
+        ).isInstanceOf(LmsSessionExpiredException.class)
+         .hasMessageContaining("LearningX returned 401");
+    }
+
+    @Test
+    void fetchMaterials_throwsLmsSessionExpiredOn403() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(403)
+                .setBody("Forbidden"));
+
+        LmsCourse course = new LmsCourse(1L, "Course 1", "C1", 10L);
+        assertThatThrownBy(() ->
+                connector.fetchMaterials("student1", new LmsCookies("xn_api_token=tok;"), course)
+        ).isInstanceOf(LmsSessionExpiredException.class)
+         .hasMessageContaining("LearningX returned 403");
     }
 }

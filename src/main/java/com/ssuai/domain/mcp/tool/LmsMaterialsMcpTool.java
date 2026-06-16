@@ -13,6 +13,7 @@ import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.lms.dto.LmsCourse;
 import com.ssuai.domain.lms.dto.LmsCourseMaterials;
 import com.ssuai.domain.lms.service.LmsMaterialsService;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 @Component
@@ -44,9 +45,12 @@ public class LmsMaterialsMcpTool {
                 .map(studentId -> {
                     try {
                         List<LmsCourse> courses = materialsService.listCourses(studentId, term_id);
-                        return McpPrivateToolResponse.ok(mcp_session_id, (Object) courses);
+                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, courses);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
+                    } catch (LmsApiException e) {
+                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
@@ -71,9 +75,12 @@ public class LmsMaterialsMcpTool {
                 .map(studentId -> {
                     try {
                         List<LmsCourseMaterials> materials = materialsService.listMaterials(studentId, course_ids, term_id);
-                        return McpPrivateToolResponse.ok(mcp_session_id, (Object) materials);
+                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, materials);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
+                    } catch (LmsApiException e) {
+                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

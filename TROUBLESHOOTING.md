@@ -3,6 +3,38 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-16 — LMS 예외 분류 개선: 비인증 API 에러와 세션 만료 예외의 분리 및 진단성 확보
+
+- 맥락:
+  - LMS 관련 도구(예: `get_my_lms_courses`, `export_all_lms_materials` 등)가 세션 만료 외의 API 에러(404, 500, 존재하지 않는 엔드포인트 호출 등)를 만났을 때도 전부 `LmsSessionExpiredException`으로 오진되어 사용자에게 무조건 "AUTH_REQUIRED - please log in again"이라고 안내되는 현상이 발생했다.
+- 증상:
+  - 잘못된 엔드포인트 호출 등으로 인한 4xx 에러가 발생해도 단순 세션 끊김으로 표시되어 실제 API 버그 진단이 불가능했다. Part A 단계에서 발생한 경로 에러가 쉽게 발견되지 못했던 본질적인 원인이었다.
+- 처음 세운 가설 (틀린 방향):
+  - "LMS 세션이 죽었다"거나 "defaultTerm 다중으로 학기 자동선택이 깨졌다"고 추정하여 사용자 로그인 연동이나 세션 유틸의 오류로 접근했다.
+- 실제 원인:
+  - `RealLmsMaterialsConnector`의 `fetchCourses()` 및 `fetchMaterials()`가 모든 non-2xx 응답에 대해 일괄적으로 `LmsSessionExpiredException`을 발생시키고 있었으며, 상위 도구 레이어(`LmsMaterialsMcpTool`, `LmsMaterialExportMcpTool`)가 이를 캐치하여 일률적으로 `AUTH_REQUIRED` 상태를 클라이언트에 반환하고 있었다.
+- 해결:
+  - 인증 에러인 401 및 403 코드만 `LmsSessionExpiredException`으로 분류하고, 그 외의 non-2xx 응답에 대해서는 새로운 `LmsApiException`을 정의하여 실제 HTTP 응답 코드 및 응답 본문 요약(200자 제한)을 실어 던지도록 분리하였다.
+  - 도구 레이어의 각 메소드에 `LmsApiException`의 catch 블록을 추가하여, 세션 재인증 요구가 아닌 상세 오류 메시지("LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. ...")를 반환하도록 개선하였다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/global/exception/LmsApiException.java`
+  - `src/main/java/com/ssuai/domain/lms/connector/RealLmsMaterialsConnector.java`
+  - `src/main/java/com/ssuai/domain/mcp/tool/LmsMaterialsMcpTool.java`
+  - `src/main/java/com/ssuai/domain/mcp/tool/LmsMaterialExportMcpTool.java`
+  - `src/test/java/com/ssuai/domain/lms/connector/RealLmsMaterialsConnectorTests.java`
+  - 커밋 해시: `2d7ac187a419eb7f6f8df0f3d97f2e16d43e5c9f`
+- 검증:
+  - `RealLmsMaterialsConnectorTests`에 서버 에러(500) 시 `LmsApiException` 발생 및 상태 코드 확인 테스트, 401 및 403 발생 시 `LmsSessionExpiredException` 발생 테스트를 각각 추가하여 동작을 검증하였으며, `.\gradlew.bat test`가 전부 통과함을 확인했다.
+- 포트폴리오 포인트:
+  - 외부 연동 모듈에서 인증 만료 상황(401/403)과 일반 API/네트워크 서버 오류를 명확히 구분하는 예외 계층 구조를 설계하고, 비인증 오류가 인증 오류로 위장해 디버깅 장벽을 높이는 문제를 차단하여 시스템의 유지보수성 및 진단 가능성을 극대화한 사례.
+- 면접 예상 질문:
+  1. "왜 다른 LMS 도구는 다 되는데 get_my_lms_courses만 실패했나? (같은 세션인데)"
+     - (답변 요약: 동일 세션 쿠키를 사용하지만, 다른 LMS 도구들은 LearningX 엔드포인트로 정상 작동한 반면, `get_my_lms_courses`는 이전에 Canvas 네이티브 엔드포인트 호출을 Cookie-only 방식으로 시도하면서 4xx 권한 오류가 발생했기 때문입니다. 이때 발생한 4xx 오류가 예외 분류 미비로 인해 세션 만료 예외로 둔갑되어 전체 세션 장애로 잘못 인지되었습니다.)
+  2. "비인증 API 오류를 AUTH_REQUIRED로 보고하면 어떤 문제가 생기나, 어떻게 고쳤나?"
+     - (답변 요약: 세션이 살아있는데도 반복적으로 로그인을 요구하여 사용자 경험을 해치고, 서버 로그만으로는 실제 연동 장애나 API 스펙 변경 등의 근본 원인을 진단하기 어렵게 만듭니다. 이를 401/403(인증 예외)과 그 외 4xx/5xx(LmsApiException)로 분리해 적절한 에러 안내 및 바디 로그를 출력하도록 개선했습니다.)
+  3. "Canvas와 LearningX가 같은 도메인에서 서로 다른 인증 방식을 쓰는 이유는?"
+     - (답변 요약: Canvas는 오픈소스 LMS 표준 플랫폼이고 LearningX는 해당 플랫폼 위에 얹어진 연동 커스텀 확장 서비스이기 때문입니다. Canvas Native API는 세션 쿠키 기반의 웹뷰 세션 인증을 공유하여 쓰고, LearningX API는 네이티브 앱이나 외부 비동기 처리를 위해 헤더의 Bearer 토큰(`xn_api_token`)을 주된 인증 수단으로 삼아 개발되었기에 두 사양의 차이가 발생합니다.)
+
 ## 2026-06-16 — LMS 과목 조회 API 버그: Canvas Native API 호출 실패로 인한 AUTH_REQUIRED 오진
 
 - 맥락:
