@@ -3,6 +3,34 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-16 — LMS 학기 판별 버그: Canvas defaultTerm 플래그 오작동으로 인한 잘못된 학기 조회
+
+- 맥락:
+  - 사용자가 LMS 과제나 대시보드를 조회할 때, 현재 수강 중인 학기가 아닌 다른 학기가 활성화되어 수강 중인 과목과 과제가 누락되는 현상이 발생했다.
+- 증상:
+  - 봄학기 수업을 수강 중인데 여름학기 등록 기간이 오픈되자 Canvas 포털이 여름학기를 `defaultTerm`으로 강제 활성화하면서, 사용자의 대시보드와 과제 목록에 여름학기(당시 수강 과목 없음)가 노출되어 과제 조회가 되지 않았다.
+- 처음 세운 가설 (틀린 방향):
+  - u-SAINT의 SSO 로그인 세션이 제대로 연동되지 않아 이전 학기 캐시가 만료되었거나, 사용자 학번(studentId) 매핑 오류로 엉뚱한 학생의 학기를 불러왔다고 가정했다.
+  - 하지만 다른 도구(학식, 도서관 등)는 정상 작동하며, 특정 사용자 학번에 상관없이 일관되게 특정 미래 학기로 고정되어 반환되었으므로 기각되었다.
+- 실제 원인:
+  - Canvas API는 `default` 플래그를 제공하는데, 이는 "수강 중인 학기"가 아니라 "현재 등록/수강신청을 위해 열린 최신 학기"를 가리키는 경우가 많다. 이로 인해 수강신청 오픈 시 실제 학기가 아직 진행 중임에도 미래의 계절학기나 다음 학기가 default 학기로 인식되어 잘못된 학기 ID를 가져오는 문제였다.
+- 해결:
+  - 날짜 기반의 학기 판별 유틸리티인 `LmsTermResolver`를 구현했다.
+  - 현재 시각(now)이 학기 시작일(`startAt`)과 종료일(`endAt`) 범위 내에 속하는 학기를 실제 수강 중인 학기로 간주하여 우선 선택한다.
+  - 날짜 범위가 일치하지 않는 경우(방학 기간 등)에만 Canvas의 `defaultTerm` 플래그를 확인하고, 이마저도 없으면 첫 번째 학기로 폴백하게 설계했다.
+  - 이 `LmsTermResolver`를 `RealLmsAssignmentsConnector`, `LmsDashboardService`, 그리고 신규 `LmsMaterialsService`에 공통 적용하였다.
+- 핵심 파일/커밋:
+  - `src/main/java/com/ssuai/domain/lms/service/LmsTermResolver.java`
+  - `src/main/java/com/ssuai/domain/lms/service/LmsDashboardService.java`
+  - `src/main/java/com/ssuai/domain/lms/connector/RealLmsAssignmentsConnector.java`
+- 검증:
+  - `LmsTermResolverTests`를 통해 미래 학기에 default=true 플래그가 있어도 현재 시간 오버랩 학기가 우선적으로 선택됨을 검증하고, 모든 통합 테스트가 성공함을 확인했다.
+- 포트폴리오 포인트:
+  - 외부 벤더 API(Canvas)의 스펙과 실제 비즈니스 수명 주기 간의 괴리(등록 가능 기간 vs 수강 기간)를 감지하고, 외부 플래그에 전적으로 의존하는 대신 날짜 기반 오버랩 계산과 계층형 폴백 설계로 시스템 견고성을 끌어올린 실전 트러블슈팅 사례.
+- 면접 예상 질문:
+  1. 외부 벤더 API의 특정 플래그(예: `defaultTerm`)가 서비스 요구사항과 미세하게 일치하지 않을 때, 어떻게 복원력 있는 설계를 구축할 수 있나요?
+  2. `LmsTermResolver`에서 날짜 오버랩을 판단하기 위해 ISO-8601 문자열을 `Instant`로 안전하게 파싱하고 유효하지 않은 포맷을 필터링한 방법을 설명해 주세요.
+
 ## 2026-06-16 — LMS Dashboard 도구 컴파일 에러: Java Generic Type Inference 한계로 인한 McpPrivateToolResponse 타입 불일치
 
 - 맥락:

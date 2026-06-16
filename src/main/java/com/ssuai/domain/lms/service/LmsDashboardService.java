@@ -41,13 +41,12 @@ public class LmsDashboardService {
     public LmsDashboardResponse getDashboard(String studentId, Long termId) {
         // 1. Determine current term name
         List<LmsTermItem> terms = assignmentsService.fetchTerms(studentId);
+        long resolvedTermId = (termId != null) ? termId : LmsTermResolver.resolveCurrentTermId(terms);
         LmsTermItem currentTerm = terms.stream()
-                .filter(LmsTermItem::defaultTerm)
+                .filter(t -> t.id() == resolvedTermId)
                 .findFirst()
                 .orElse(terms.isEmpty() ? null : terms.get(0));
         String termName = currentTerm != null ? currentTerm.name() : "";
-        Long resolvedTermId = termId != null ? termId
-                : (currentTerm != null ? currentTerm.id() : null);
 
         // 2. Upcoming assignment/quiz deadlines
         var assignments = assignmentsService.fetchAssignments(studentId, resolvedTermId);

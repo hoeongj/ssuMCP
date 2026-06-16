@@ -127,7 +127,12 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_scholarships` | 장학금 수혜 내역 | SAINT | `year` (선택), `mcp_session_id` |
 | `simulate_gpa` | 누적 GPA 시뮬레이션. 예상 학점·목표 GPA 입력 시 필요 평균 또는 예상 GPA 반환 | SAINT | `plannedCredits`, `plannedGradePointAverage` (선택), `targetGpa` (선택), `mcp_session_id` |
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록. 비어 있으면 `message`로 안내 | LMS | `mcp_session_id`, `compact` (선택) |
+| `get_my_lms_terms` | 사용자의 LMS 등록 학기 목록 조회 | LMS | `mcp_session_id` |
 | `get_lms_dashboard` | 미제출 과제·학사일정·공지사항을 모아보는 대시보드 | LMS | `mcp_session_id`, `term_id` (선택) |
+| `get_my_lms_courses` | 사용자의 LMS 수강 과목 목록 조회 | LMS | `mcp_session_id`, `term_id` (선택) |
+| `get_my_lms_materials` | 비영상 주차학습 자료(PDF, PPT 등) 목록 조회 (비디오/오디오 제외) | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
+| `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성) | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
+| `confirm_lms_material_export` | 내보내기 최종 승인 및 20분 유효 다운로드 링크 발급 | LMS | `mcp_session_id` |
 | `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
 | `get_library_available_seats` | 전체 7개 열람실 live per-seat 가용 좌석 요약. externalSeatId 목록 포함 | LIBRARY | `mcp_session_id` |
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive, remainingTime) | LIBRARY | `room_id`, `mcp_session_id` |
@@ -220,7 +225,7 @@ npx @modelcontextprotocol/inspector
 2. URL 에 `http://localhost:8080/mcp` 를 입력한다.
 3. Connect 를 누른다.
 4. `Tools` 탭에서 `List Tools` 를 누른다.
-5. tool 45개가 보이는지 확인한다. (공개 29개 + 인증 관리 4개 + 개인 12개)
+5. tool 51개가 보이는지 확인한다. (공개 20개 + 인증 관리 4개 + 개인 27개)
 
 보여야 하는 tool 이름:
 ```
@@ -248,7 +253,10 @@ npx @modelcontextprotocol/inspector
   get_my_scholarships,
   simulate_gpa
 
-개인(LMS): get_my_assignments, get_lms_dashboard
+개인(LMS):
+  get_my_assignments, get_my_lms_terms, get_lms_dashboard,
+  get_my_lms_courses, get_my_lms_materials,
+  prepare_lms_material_export, confirm_lms_material_export
 개인(LIBRARY):
   get_library_seat_status, get_library_available_seats, get_room_available_seats,
   recommend_library_seats, get_my_library_loans,

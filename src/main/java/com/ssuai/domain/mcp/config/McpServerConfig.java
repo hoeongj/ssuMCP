@@ -32,6 +32,8 @@ import com.ssuai.domain.mcp.tool.LibrarySwapMcpTool;
 import com.ssuai.domain.mcp.tool.LibraryWaitMcpTool;
 import com.ssuai.domain.mcp.tool.LmsAssignmentsMcpTool;
 import com.ssuai.domain.mcp.tool.LmsDashboardMcpTool;
+import com.ssuai.domain.mcp.tool.LmsMaterialsMcpTool;
+import com.ssuai.domain.mcp.tool.LmsMaterialExportMcpTool;
 import com.ssuai.domain.mcp.tool.MealMcpTools;
 import com.ssuai.domain.mcp.tool.McpAuthMcpTools;
 import com.ssuai.domain.mcp.tool.NoticeMcpTools;
@@ -62,7 +64,9 @@ class McpServerConfig {
             "prepare_swap_library_seat",
             "wait_for_library_seat",
             "cancel_library_wait",
-            "confirm_action");
+            "confirm_action",
+            "prepare_lms_material_export",
+            "confirm_lms_material_export");
 
     @Bean
     ToolCallbackProvider ssuaiMcpTools(
@@ -88,6 +92,8 @@ class McpServerConfig {
             SaintExtendedMcpTools saintExtendedMcpTools,
             LmsAssignmentsMcpTool lmsAssignmentsMcpTool,
             LmsDashboardMcpTool lmsDashboardMcpTool,
+            LmsMaterialsMcpTool lmsMaterialsMcpTool,
+            LmsMaterialExportMcpTool lmsMaterialExportMcpTool,
             NoticeMcpTools noticeMcpTools,
             AcademicPolicyMcpTools academicPolicyMcpTools
     ) {
@@ -115,6 +121,8 @@ class McpServerConfig {
                         saintExtendedMcpTools,
                         lmsAssignmentsMcpTool,
                         lmsDashboardMcpTool,
+                        lmsMaterialsMcpTool,
+                        lmsMaterialExportMcpTool,
                         noticeMcpTools,
                         academicPolicyMcpTools)
                 .build();
