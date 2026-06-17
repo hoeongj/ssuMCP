@@ -28,6 +28,7 @@ class McpAuthMcpToolsTests {
 
     private McpAuthService mcpAuthService;
     private McpAuthUrlFactory urlFactory;
+    private McpAuthHelper mcpAuthHelper;
     private McpAuthMcpTools tools;
 
     private static final McpAuthSessionId SESSION_ID = new McpAuthSessionId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -37,14 +38,15 @@ class McpAuthMcpToolsTests {
     void setUp() {
         mcpAuthService = mock(McpAuthService.class);
         urlFactory = mock(McpAuthUrlFactory.class);
-        tools = new McpAuthMcpTools(mcpAuthService, urlFactory);
+        mcpAuthHelper = mock(McpAuthHelper.class);
+        tools = new McpAuthMcpTools(mcpAuthService, urlFactory, mcpAuthHelper);
     }
 
     // --- get_auth_status ---
 
     @Test
     void getAuthStatus_unknownSession_returnsAllNotLinked() {
-        when(mcpAuthService.find("unknown")).thenReturn(Optional.empty());
+        when(mcpAuthHelper.resolveSession("unknown")).thenReturn(Optional.empty());
 
         McpAuthStatusResponse resp = tools.getAuthStatus("unknown");
 
@@ -55,7 +57,7 @@ class McpAuthMcpToolsTests {
 
     @Test
     void getAuthStatus_nullSession_returnsAllNotLinked() {
-        when(mcpAuthService.find(null)).thenReturn(Optional.empty());
+        when(mcpAuthHelper.resolveSession(null)).thenReturn(Optional.empty());
 
         McpAuthStatusResponse resp = tools.getAuthStatus(null);
 
@@ -66,7 +68,7 @@ class McpAuthMcpToolsTests {
     @Test
     void getAuthStatus_linkedSession_returnsMcpSessionId() {
         McpAuthSession session = new McpAuthSession(SESSION_ID, Instant.now(), EXPIRES, java.util.Map.of());
-        when(mcpAuthService.find(SESSION_ID.value())).thenReturn(Optional.of(session));
+        when(mcpAuthHelper.resolveSession(SESSION_ID.value())).thenReturn(Optional.of(session));
 
         McpAuthStatusResponse resp = tools.getAuthStatus(SESSION_ID.value());
 
@@ -78,7 +80,7 @@ class McpAuthMcpToolsTests {
         McpAuthSession session = new McpAuthSession(SESSION_ID, Instant.now(), EXPIRES,
                 java.util.Map.of(McpProviderType.SAINT,
                         new com.ssuai.domain.auth.mcp.McpProviderLink(McpProviderType.SAINT, "20231234", Instant.now())));
-        when(mcpAuthService.find(SESSION_ID.value())).thenReturn(Optional.of(session));
+        when(mcpAuthHelper.resolveSession(SESSION_ID.value())).thenReturn(Optional.of(session));
 
         McpAuthStatusResponse resp = tools.getAuthStatus(SESSION_ID.value());
 

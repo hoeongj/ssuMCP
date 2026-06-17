@@ -36,10 +36,16 @@ public class McpAuthMcpTools {
 
     private final McpAuthService mcpAuthService;
     private final McpAuthUrlFactory urlFactory;
+    private final McpAuthHelper mcpAuthHelper;
 
-    public McpAuthMcpTools(McpAuthService mcpAuthService, McpAuthUrlFactory urlFactory) {
+    public McpAuthMcpTools(
+            McpAuthService mcpAuthService,
+            McpAuthUrlFactory urlFactory,
+            McpAuthHelper mcpAuthHelper
+    ) {
         this.mcpAuthService = mcpAuthService;
         this.urlFactory = urlFactory;
+        this.mcpAuthHelper = mcpAuthHelper;
     }
 
     @Tool(
@@ -47,12 +53,12 @@ public class McpAuthMcpTools {
             description = "Returns the current MCP auth session status for each provider (SAINT, LMS, LIBRARY). "
                     + "Call this before private tools when you have an mcp_session_id and want to avoid unnecessary AUTH_REQUIRED retries. "
                     + "If mcp_session_id is missing or invalid, all providers show as not linked. "
-                    + "Sessions are stored in server memory and reset on server restart — call start_auth again if your session is lost."
+                    + "Sessions are persisted in the database and survive server restarts — call start_auth again only if your session has expired."
     )
     public McpAuthStatusResponse getAuthStatus(
             @ToolParam(description = "MCP session ID issued by start_auth. If absent or invalid, all providers show as not linked.", required = false)
             String mcp_session_id) {
-        McpAuthSession session = mcpAuthService.find(mcp_session_id).orElse(null);
+        McpAuthSession session = mcpAuthHelper.resolveSession(mcp_session_id).orElse(null);
         String sessionIdValue = session != null ? session.id().value() : null;
 
         List<McpProviderStatusEntry> providers = Arrays.stream(McpProviderType.values())
@@ -95,6 +101,11 @@ public class McpAuthMcpTools {
         }
 
         McpAuthSession session = mcpAuthService.getOrCreate(mcp_session_id);
+        // Bind transport id immediately so subsequent private tool calls can find this
+        // session via the transport fallback path (ADR 0036 §1B), even when the LLM
+        // drops the opaque mcp_session_id across turns (e.g. ChatGPT turn-boundary drop).
+        mcpAuthHelper.bindCurrentTransportId(session.id());
+
         McpAuthStateEntry state = mcpAuthService.generateState(session.id(), providerType);
         String loginUrl = urlFactory.buildLoginUrl(providerType, state.state());
 

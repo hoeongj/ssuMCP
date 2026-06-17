@@ -126,6 +126,14 @@ ssuai:
       # Provider cookies may still expire earlier if the upstream rejects them.
       session-ttl: ${SSUAI_MCP_AUTH_SESSION_TTL:7d}
       state-ttl: 10m
+    oauth:
+      # Opt-in OAuth 2.1 Resource Server mode (ADR 0036).
+      # Off by default — all existing classic-mode behaviour is fully preserved.
+      # Set rs-enabled=true + issuer-uri + audience to activate JWT validation.
+      rs-enabled: ${SSUAI_OAUTH_RS_ENABLED:false}
+      issuer-uri: ${SSUAI_OAUTH_ISSUER_URI:}
+      audience: ${SSUAI_OAUTH_AUDIENCE:}
+      resource-base-url: ${SSUAI_OAUTH_RESOURCE_BASE_URL:https://ssumcp.duckdns.org}
   academic-policy:
     # Official-source RAG refresh. The seed corpus is only a fast fallback;
     # scheduled refresh pulls rule.ssu.ac.kr / ssu.ac.kr source documents into

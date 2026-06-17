@@ -51,6 +51,32 @@ public interface McpAuthService {
     Optional<McpAuthStateEntry> consumeState(String state);
 
     /**
+     * Returns the session whose {@code transport_session_id} matches, if active.
+     * Fallback lookup path when the LLM drops the opaque session id (ADR 0036 §1B).
+     */
+    Optional<McpAuthSession> findByTransportId(String transportId);
+
+    /**
+     * Returns the session whose {@code oauth_subject} matches, if active.
+     * Primary identity path when OAuth RS is enabled (ADR 0036 §1A).
+     */
+    Optional<McpAuthSession> findByOauthSubject(String oauthSubject);
+
+    /**
+     * Binds the HTTP-layer transport session id to the given session (idempotent).
+     * Call on {@code start_auth} so that transport-based fallback works for all
+     * subsequent private tool calls within the same connection.
+     */
+    void bindTransportId(McpAuthSessionId sessionId, String transportId);
+
+    /**
+     * Binds the OAuth {@code sub} to the given session (idempotent, opportunistic).
+     * Call when a session is found via transport or opaque paths and a JWT is present,
+     * so that future calls can find the session via the OAuth sub directly.
+     */
+    void bindOauthSubject(McpAuthSessionId sessionId, String oauthSubject);
+
+    /**
      * Links a provider session to the MCP auth session identified by {@code sessionId}.
      * {@code principalKey} is the key used to look up credentials in the provider store
      * (studentId for SAINT/LMS, library session key for LIBRARY).

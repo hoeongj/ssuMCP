@@ -101,6 +101,73 @@ public class McpAuthSessionStore {
     }
 
     /**
+     * Fallback lookup by transport session id (ADR 0036 §1B).
+     * Used when the LLM drops the opaque {@code mcp_session_id} across turns (e.g. ChatGPT).
+     */
+    @Transactional(readOnly = true)
+    public Optional<McpAuthSession> findByTransportId(String transportId) {
+        if (transportId == null || transportId.isBlank()) {
+            return Optional.empty();
+        }
+        Instant now = clock.instant();
+        return repository.findByTransportSessionIdAndExpiresAtAfter(transportId, now)
+                .map(this::toSession);
+    }
+
+    /**
+     * Lookup by OAuth {@code sub} claim (ADR 0036 §1A — first-tier principal).
+     * Returns the session bound to this identity across conversations and connections.
+     */
+    @Transactional(readOnly = true)
+    public Optional<McpAuthSession> findByOauthSubject(String oauthSubject) {
+        if (oauthSubject == null || oauthSubject.isBlank()) {
+            return Optional.empty();
+        }
+        Instant now = clock.instant();
+        return repository.findByOauthSubjectAndExpiresAtAfter(oauthSubject, now)
+                .map(this::toSession);
+    }
+
+    /**
+     * Binds the HTTP-layer transport session id to this auth session (idempotent).
+     * Only sets the value when the column is still null — existing binding is preserved.
+     */
+    @Transactional
+    public void bindTransportId(McpAuthSessionId id, String transportId) {
+        if (id == null || transportId == null || transportId.isBlank()) {
+            return;
+        }
+        Instant now = clock.instant();
+        repository.findBySessionIdAndExpiresAtAfter(id.value(), now).ifPresent(entity -> {
+            if (entity.getTransportSessionId() == null) {
+                entity.setTransportSessionId(transportId);
+                repository.save(entity);
+                log.debug("mcp transport bound session={}", id.fingerprint());
+            }
+        });
+    }
+
+    /**
+     * Binds the OAuth {@code sub} to this auth session (idempotent, opportunistic).
+     * Only sets the value when the column is still null — existing binding is preserved.
+     * Called when the session is found via tier-2/3 and a JWT is present in SecurityContext.
+     */
+    @Transactional
+    public void bindOauthSubject(McpAuthSessionId id, String oauthSubject) {
+        if (id == null || oauthSubject == null || oauthSubject.isBlank()) {
+            return;
+        }
+        Instant now = clock.instant();
+        repository.findBySessionIdAndExpiresAtAfter(id.value(), now).ifPresent(entity -> {
+            if (entity.getOauthSubject() == null) {
+                entity.setOauthSubject(oauthSubject);
+                repository.save(entity);
+                log.debug("mcp oauth sub bound session={}", id.fingerprint());
+            }
+        });
+    }
+
+    /**
      * Links a provider to the session, replacing any prior link for the same provider.
      * A no-op if the session does not exist or has expired.
      */

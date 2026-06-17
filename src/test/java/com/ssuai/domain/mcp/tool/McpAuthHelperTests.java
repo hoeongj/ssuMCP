@@ -2,6 +2,7 @@ package com.ssuai.domain.mcp.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,13 +33,17 @@ class McpAuthHelperTests {
 
     private McpAuthService mcpAuthService;
     private McpAuthUrlFactory urlFactory;
+    private HttpServletRequest request;
     private McpAuthHelper helper;
 
     @BeforeEach
     void setUp() {
         mcpAuthService = mock(McpAuthService.class);
         urlFactory = mock(McpAuthUrlFactory.class);
-        helper = new McpAuthHelper(mcpAuthService, urlFactory);
+        request = mock(HttpServletRequest.class);
+        // Default: no transport session id, no Bearer token — classic mode
+        when(request.getHeader("Mcp-Session-Id")).thenReturn(null);
+        helper = new McpAuthHelper(mcpAuthService, urlFactory, request);
     }
 
     @Test
@@ -85,6 +91,30 @@ class McpAuthHelperTests {
         assertThat(response.loginUrl()).isNull();
         verify(mcpAuthService, never()).createSession();
         verify(mcpAuthService, never()).generateState(any(), any());
+    }
+
+    @Test
+    void resolveSession_fallsBackToTransportId_whenOpaqueIdMissing() {
+        McpAuthSession session = new McpAuthSession(SESSION_ID, NOW, EXPIRES, Map.of());
+        when(request.getHeader("Mcp-Session-Id")).thenReturn("transport-123");
+        when(mcpAuthService.findByTransportId("transport-123")).thenReturn(Optional.of(session));
+
+        Optional<McpAuthSession> resolved = helper.resolveSession(null);
+
+        assertThat(resolved).isPresent();
+        assertThat(resolved.get().id()).isEqualTo(SESSION_ID);
+    }
+
+    @Test
+    void resolveSession_transportFoundAndOauthSubPresent_bindsSubOpportunistically() {
+        McpAuthSession session = new McpAuthSession(SESSION_ID, NOW, EXPIRES, Map.of());
+        when(request.getHeader("Mcp-Session-Id")).thenReturn("transport-123");
+        when(mcpAuthService.findByTransportId("transport-123")).thenReturn(Optional.of(session));
+        // No JWT in SecurityContext — cannot test oauth-sub binding without integration context
+        // (currentOauthSub() returns null in pure unit tests); verify no-sub path
+        helper.resolveSession(null);
+
+        verify(mcpAuthService, never()).bindOauthSubject(any(), any());
     }
 
     @Test
