@@ -90,6 +90,18 @@ Once ArgoCD is up, ArgoCD owns everything that lives in
   goes wrong. `helm template` + `argocd app diff` are the new "what
   did I just change" commands; the project's first 1–2 deploys after
   this task land will discover the foot-guns.
+  - **Realized foot-gun (2026-06-18) — sync-wave × dynamic provisioning.**
+    ArgoCD applies `argocd.argoproj.io/sync-wave` in ascending order and
+    blocks each wave until the previous wave is **Healthy**. A PVC on a
+    `WaitForFirstConsumer` storage class (`local-path`) only binds once a
+    consumer pod is scheduled — so putting such a PVC in an *earlier* wave
+    than its Deployment deadlocks the sync: ArgoCD waits for the PVC to go
+    Bound, but the Deployment that would consume it is gated behind that
+    same wait, so the consumer is never created. **Rule: a
+    `WaitForFirstConsumer` PVC must share its consumer's sync-wave (or be
+    later), never precede it.** Full incident + recovery (terminate the
+    stuck op, re-sync) in `TROUBLESHOOTING.md` (2026-06-18); fix in PR #77
+    (`deploy/charts/ssuai-backend/templates/pvc.yaml`, wave 1 → 3).
 - ArgoCD UI is publicly exposed to keep the portfolio narrative
   visible. Mitigation is HTTPS + a strong admin password; long-term
   fix is SSO (Dex + GitHub OAuth), deferred.
