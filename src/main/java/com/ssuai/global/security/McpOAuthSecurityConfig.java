@@ -1,6 +1,7 @@
 package com.ssuai.global.security;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.OAuth2ProtectedResourceMetadata;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -56,7 +58,21 @@ import org.springframework.security.web.SecurityFilterChain;
  * {@code JwtClaimValidator<List<String>>} so tokens issued to a different
  * audience (a different resource server) are rejected.</p>
  *
- * @see ProtectedResourceMetadataController RFC 9728 PRM endpoint
+ * <h2>RFC 9728 Protected Resource Metadata — the {@code authorization_servers} fix</h2>
+ * <p>The MCP OAuth discovery flow is: (1) client hits {@code /mcp} with a missing/expired
+ * Bearer token; (2) server answers 401 with
+ * {@code WWW-Authenticate: Bearer resource_metadata="<PRM URL>"}; (3) client fetches
+ * {@code /.well-known/oauth-protected-resource} to discover the Authorization Server from
+ * its {@code authorization_servers} array; (4) client runs OAuth 2.1 + PKCE against that AS
+ * and retries {@code /mcp} with the JWT.</p>
+ * <p><b>Spring Security 7 serves this document itself.</b> Configuring
+ * {@code oauth2ResourceServer} auto-registers {@code OAuth2ProtectedResourceMetadataFilter},
+ * a servlet filter that responds at {@code /.well-known/oauth-protected-resource} <em>before</em>
+ * the DispatcherServlet — so a hand-written {@code @GetMapping} for the same path is silently
+ * shadowed and never runs. The generated document omits {@code authorization_servers} (the
+ * framework cannot know the external AS), which left ChatGPT unable to discover Auth0 and stuck
+ * looping on {@code start_auth}. We inject the managed issuer via
+ * {@link #authorizationServersCustomizer(String)} instead of a controller (TROUBLESHOOTING 2026-06-18).</p>
  */
 @Configuration
 @EnableWebSecurity
@@ -107,6 +123,11 @@ class McpOAuthSecurityConfig {
             String metadataUrl = resourceBaseUrl + "/.well-known/oauth-protected-resource";
             http.oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.decoder(decoder))
+                // RFC 9728: add the managed AS issuer to the framework-generated PRM document
+                // so MCP clients can discover Auth0 (see class javadoc — the generated default
+                // omits authorization_servers and shadows any custom @GetMapping).
+                .protectedResourceMetadata(metadata -> metadata
+                        .protectedResourceMetadataCustomizer(authorizationServersCustomizer(issuerUri)))
                 // On invalid/expired token: 401 + WWW-Authenticate with resource_metadata URL.
                 // MCP clients (ChatGPT / Claude) follow this URL to discover the AS.
                 .authenticationEntryPoint((req, res, ex) -> {
@@ -148,5 +169,20 @@ class McpOAuthSecurityConfig {
             }
             return audienceValidator.validate(token);
         };
+    }
+
+    /**
+     * Adds the managed Authorization Server issuer to the RFC 9728 Protected Resource
+     * Metadata document. Spring Security 7's {@code OAuth2ProtectedResourceMetadataFilter}
+     * generates the base document (resource, bearer_methods_supported, …) but cannot know
+     * about the external AS; without {@code authorization_servers} an MCP client has no way
+     * to find where to obtain a token and loops on re-authentication.
+     *
+     * <p>Extracted as a static method so it is unit-testable without booting the servlet
+     * filter or performing OIDC discovery: build a metadata document, apply this consumer,
+     * and assert the {@code authorization_servers} claim.
+     */
+    static Consumer<OAuth2ProtectedResourceMetadata.Builder> authorizationServersCustomizer(String issuerUri) {
+        return builder -> builder.authorizationServer(issuerUri);
     }
 }
