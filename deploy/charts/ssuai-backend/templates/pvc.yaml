@@ -7,9 +7,11 @@ metadata:
   labels:
     {{- include "ssuai-backend.labels" . | nindent 4 }}
   annotations:
-    # Provision before the Deployment (sync-wave 3) so the volume is bound
-    # when the pod starts.
-    argocd.argoproj.io/sync-wave: "1"
+    # Same sync-wave as the Deployment (3): local-path is WaitForFirstConsumer,
+    # so the PVC binds only once its consumer pod is scheduled. An earlier wave
+    # makes ArgoCD wait for the PVC to be Healthy before applying the Deployment,
+    # but the consumer is then never created — the sync deadlocks (see TROUBLESHOOTING).
+    argocd.argoproj.io/sync-wave: "3"
     # Never prune the ZIP cache volume if it is ever dropped from the chart —
     # losing it would 410 every in-flight capability download link.
     # helm.sh/resource-policy guards `helm uninstall`; Prune=false guards ArgoCD.
