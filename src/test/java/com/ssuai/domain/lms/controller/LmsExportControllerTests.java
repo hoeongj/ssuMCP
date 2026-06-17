@@ -1,5 +1,6 @@
 package com.ssuai.domain.lms.controller;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -117,6 +118,71 @@ class LmsExportControllerTests {
 
         mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
                         .param("token", token))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"lms-materials-" + job.getId() + ".zip\""))
+                .andExpect(content().contentType(MediaType.parseMediaType("application/zip")))
+                .andExpect(content().string("mock-zip-content"));
+    }
+
+    @Test
+    void browserAcceptServesHtmlPageRegardlessOfState() throws Exception {
+        // A still-building job: a browser (Accept: text/html) gets the polling page,
+        // not the BUILDING JSON — the page itself polls until READY.
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token)
+                        .accept(MediaType.TEXT_HTML))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(content().string(containsString("LMS 강의자료 다운로드")))
+                .andExpect(content().string(containsString("format=json")));
+    }
+
+    @Test
+    void formatJsonOnReadyReturnsStatusWithoutConsumingStream() throws Exception {
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        File zipFile = new File(tempDir, "ready.zip");
+        Files.writeString(zipFile.toPath(), "zip-bytes");
+        job.markReady(zipFile.getAbsolutePath(), 1, 9L, Instant.now());
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token)
+                        .param("format", "json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"));
+    }
+
+    @Test
+    void dlParamForcesBinaryStreamEvenWithHtmlAccept() throws Exception {
+        // The page's download trigger hits ?dl=1 with the browser's text/html Accept still
+        // attached; dl must win so the file streams instead of the page being re-served.
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        File zipFile = new File(tempDir, "force.zip");
+        Files.writeString(zipFile.toPath(), "mock-zip-content");
+        job.markReady(zipFile.getAbsolutePath(), 1, 16L, Instant.now());
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token)
+                        .param("dl", "1")
+                        .accept(MediaType.TEXT_HTML))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"lms-materials-" + job.getId() + ".zip\""))
                 .andExpect(content().contentType(MediaType.parseMediaType("application/zip")))

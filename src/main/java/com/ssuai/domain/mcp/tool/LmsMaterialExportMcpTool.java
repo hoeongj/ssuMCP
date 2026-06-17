@@ -33,8 +33,9 @@ public class LmsMaterialExportMcpTool {
 
     @Tool(
             name = "prepare_lms_material_export",
-            description = "사용자가 선택한 LMS 주차학습 자료들(PDF, PPT 등)의 내보내기를 검증하고 대기열 등록을 준비합니다. "
-                    + "이 도구 호출 전에 반드시 get_my_lms_courses와 get_my_lms_materials를 사용하여 exact content_id 목록을 확보해야 합니다. "
+            description = "사용자가 선택한 특정 과목의 LMS 주차학습 자료들(PDF, PPT 등)의 내보내기를 검증하고 대기열 등록을 준비합니다. "
+                    + "특정 과목 다운로드 요청의 기본 흐름입니다. 호출 전에 반드시 get_my_lms_courses로 과목 목록(과목별 파일 수·용량)을 사용자에게 보여주고 "
+                    + "어떤 과목을 받을지 선택하게 한 뒤, get_my_lms_materials로 해당 과목의 exact content_id 목록을 확보하세요. "
                     + "확보된 content_id들을 content_ids 파라미터로 전달해 주세요. 한도 초과 또는 미지원 파일은 자동 제외되고 안내됩니다. "
                     + "mcp_session_id with LMS provider linked required."
     )
@@ -63,8 +64,9 @@ public class LmsMaterialExportMcpTool {
 
     @Tool(
         name = "export_all_lms_materials",
-        description = "현재 학기 전체 과목의 LMS 학습 자료(PDF, PPT, HWP, DOC 등)를 자동으로 수집하여 내보내기 미리보기를 반환합니다. "
-            + "get_my_lms_courses, get_my_lms_materials를 먼저 호출할 필요 없이 이 도구 하나로 전 과목 자료를 수집합니다. "
+        description = "사용자가 '모든 자료', '전체 과목', '다 다운로드' 등 전 과목 일괄 다운로드를 명시적으로 요청했을 때만 사용하세요. "
+            + "특정 과목만 받으려는 일반 요청에는 사용하지 말고 get_my_lms_courses → prepare_lms_material_export 흐름을 따르세요. "
+            + "현재 학기 전체 과목의 LMS 학습 자료(PDF, PPT, HWP, DOC 등)를 한 번에 수집하여 내보내기 미리보기를 반환합니다. "
             + "결과에는 과목별 파일 목록, 파일 수, 용량, 제외 항목이 포함됩니다. "
             + "확인 후 confirm_lms_material_export를 호출하면 ZIP 다운로드 링크가 발급됩니다. "
             + "비디오·오디오 파일은 용량 제한으로 자동 제외됩니다. "
