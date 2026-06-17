@@ -24,6 +24,23 @@ public class McpSessionEntity {
     @Column(name = "providers", nullable = false, columnDefinition = "TEXT")
     private String providers = "{}";
 
+    /**
+     * HTTP-layer transport session id ({@code Mcp-Session-Id} header).
+     * Bound on {@code start_auth}; null for sessions created before ADR 0036.
+     * Used as a fallback lookup key when the LLM loses the opaque
+     * {@code mcp_session_id} across turns (e.g. ChatGPT turn-boundary drop).
+     */
+    @Column(name = "transport_session_id", length = 128)
+    private String transportSessionId;
+
+    /**
+     * OAuth {@code sub} claim from a verified Bearer JWT (opt-in mode).
+     * Bound on the first authenticated request carrying a valid JWT.
+     * Null for sessions in classic (non-OAuth) mode.
+     */
+    @Column(name = "oauth_subject", length = 255)
+    private String oauthSubject;
+
     protected McpSessionEntity() {
         // JPA
     }
@@ -65,5 +82,21 @@ public class McpSessionEntity {
 
     public void setProviders(String providers) {
         this.providers = providers == null || providers.isBlank() ? "{}" : providers;
+    }
+
+    public String getTransportSessionId() {
+        return transportSessionId;
+    }
+
+    public void setTransportSessionId(String transportSessionId) {
+        this.transportSessionId = transportSessionId;
+    }
+
+    public String getOauthSubject() {
+        return oauthSubject;
+    }
+
+    public void setOauthSubject(String oauthSubject) {
+        this.oauthSubject = oauthSubject;
     }
 }

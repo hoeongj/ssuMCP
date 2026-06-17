@@ -254,6 +254,81 @@ class McpAuthSessionStoreTests {
                 .isEqualTo("student-B");
     }
 
+    // --- transport session binding (ADR 0036 §1B) ---
+
+    @Test
+    void bindTransportId_allowsFindByTransportId() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        store.bindTransportId(session.id(), "transport-abc");
+
+        Optional<McpAuthSession> found = store.findByTransportId("transport-abc");
+        assertThat(found).isPresent();
+        assertThat(found.get().id()).isEqualTo(session.id());
+    }
+
+    @Test
+    void bindTransportId_isIdempotent() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        store.bindTransportId(session.id(), "transport-abc");
+        store.bindTransportId(session.id(), "transport-xyz"); // must not overwrite
+
+        Optional<McpAuthSession> found = store.findByTransportId("transport-abc");
+        assertThat(found).isPresent();
+        assertThat(store.findByTransportId("transport-xyz")).isEmpty();
+    }
+
+    @Test
+    void findByTransportId_expiredSessionReturnsEmpty() {
+        McpAuthSessionStore store = store(T0, Duration.ofSeconds(1));
+        McpAuthSession session = store.create();
+        store.bindTransportId(session.id(), "transport-abc");
+
+        // Advance past expiry
+        McpAuthSessionStore futureStore = store(T0.plus(Duration.ofSeconds(10)), Duration.ofHours(4));
+        assertThat(futureStore.findByTransportId("transport-abc")).isEmpty();
+    }
+
+    // --- OAuth subject binding (ADR 0036 §1A) ---
+
+    @Test
+    void bindOauthSubject_allowsFindByOauthSubject() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        store.bindOauthSubject(session.id(), "google-sub-12345");
+
+        Optional<McpAuthSession> found = store.findByOauthSubject("google-sub-12345");
+        assertThat(found).isPresent();
+        assertThat(found.get().id()).isEqualTo(session.id());
+    }
+
+    @Test
+    void bindOauthSubject_isIdempotent() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        store.bindOauthSubject(session.id(), "google-sub-12345");
+        store.bindOauthSubject(session.id(), "google-sub-other"); // must not overwrite
+
+        Optional<McpAuthSession> found = store.findByOauthSubject("google-sub-12345");
+        assertThat(found).isPresent();
+        assertThat(store.findByOauthSubject("google-sub-other")).isEmpty();
+    }
+
+    @Test
+    void findByOauthSubject_expiredSessionReturnsEmpty() {
+        McpAuthSessionStore store = store(T0, Duration.ofSeconds(1));
+        McpAuthSession session = store.create();
+        store.bindOauthSubject(session.id(), "google-sub-12345");
+
+        McpAuthSessionStore futureStore = store(T0.plus(Duration.ofSeconds(10)), Duration.ofHours(4));
+        assertThat(futureStore.findByOauthSubject("google-sub-12345")).isEmpty();
+    }
+
     private McpAuthSessionStore store(Instant now, Duration sessionTtl) {
         return store(Clock.fixed(now, ZoneOffset.UTC), sessionTtl);
     }
@@ -265,7 +340,6 @@ class McpAuthSessionStoreTests {
     private static McpAuthProperties properties(Duration sessionTtl) {
         McpAuthProperties props = new McpAuthProperties();
         props.setSessionTtl(sessionTtl);
-        props.setMaxSessions(500);
         return props;
     }
 

@@ -52,6 +52,26 @@ class McpAuthServiceImpl implements McpAuthService {
     }
 
     @Override
+    public Optional<McpAuthSession> findByTransportId(String transportId) {
+        return sessionStore.findByTransportId(transportId);
+    }
+
+    @Override
+    public Optional<McpAuthSession> findByOauthSubject(String oauthSubject) {
+        return sessionStore.findByOauthSubject(oauthSubject);
+    }
+
+    @Override
+    public void bindTransportId(McpAuthSessionId sessionId, String transportId) {
+        sessionStore.bindTransportId(sessionId, transportId);
+    }
+
+    @Override
+    public void bindOauthSubject(McpAuthSessionId sessionId, String oauthSubject) {
+        sessionStore.bindOauthSubject(sessionId, oauthSubject);
+    }
+
+    @Override
     public void linkProvider(McpAuthSessionId sessionId, McpProviderType provider, String principalKey) {
         sessionStore.linkProvider(sessionId, provider, principalKey);
     }

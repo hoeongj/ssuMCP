@@ -41,7 +41,7 @@ public record McpPrivateToolResponse<T>(
         return new McpPrivateToolResponse<>(
                 "INVALID_SESSION", provider, mcpSessionId, null, null,
                 "SESSION NOT FOUND. The provided mcp_session_id does not match any active session "
-                        + "(it may have expired after server restart). "
+                        + "(it may have expired). "
                         + "Call start_auth with the appropriate provider to begin a new session.",
                 null);
     }

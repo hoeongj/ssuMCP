@@ -136,9 +136,11 @@ public class McpSaintAuthController {
             mcpAuthService.linkProvider(entry.mcpSessionId(), McpProviderType.LMS, identity.studentId());
             log.debug("mcp saint callback: LMS also linked session={}", entry.mcpSessionId().fingerprint());
         } catch (LmsAuthFailedException e) {
-            log.info("mcp saint callback: LMS best-effort skipped session={}", entry.mcpSessionId().fingerprint());
+            log.info("mcp saint callback: LMS best-effort skipped session={} reason={}",
+                    entry.mcpSessionId().fingerprint(), e.getMessage());
         } catch (Exception e) {
-            log.info("mcp saint callback: LMS best-effort error session={}", entry.mcpSessionId().fingerprint());
+            log.info("mcp saint callback: LMS best-effort error session={} reason={}",
+                    entry.mcpSessionId().fingerprint(), e.getMessage());
         }
 
         return completionPage(true, "u-SAINT 로그인 완료. MCP 클라이언트로 돌아가 다시 요청하세요.");
