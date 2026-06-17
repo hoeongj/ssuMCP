@@ -124,7 +124,7 @@ com.ssuai
     │   ├── lms         // LmsSessionStore (AES-256-GCM, 2h TTL), LmsCredentialLoginService
     │   ├── mcp         // MCP 인증 세션 레이어 (Task 18)
     │   │   ├── McpAuthSession, McpAuthSessionId, McpProviderLink, McpAuthStateEntry
-    │   │   ├── McpAuthSessionStore (LRU, 4h TTL), McpAuthStateStore (일회용, 10min TTL)
+    │   │   ├── McpAuthSessionStore (PostgreSQL 영속, 설정 가능 TTL), McpAuthStateStore (일회용, 10min TTL)
     │   │   ├── McpAuthService, McpAuthUrlFactory
     │   │   ├── McpSaintAuthController  // GET /api/mcp/auth/saint/start|callback
     │   │   ├── McpLmsAuthController    // GET /api/mcp/auth/lms/start|callback
@@ -739,9 +739,9 @@ domain.auth.mcp
 ├── McpAuthSession        // immutable record: id, createdAt, expiresAt, providers map
 ├── McpProviderLink       // provider + principalKey + linkedAt
 ├── McpAuthStateEntry     // one-time login state token: state, mcpSessionId, provider, expiresAt
-├── McpAuthSessionStore   // LRU+TTL in-memory store (LinkedHashMap). max 500 sessions, TTL 4h
+├── McpAuthSessionStore   // PostgreSQL 영속 세션 스토어. transport/oauth 바인딩 포함. TTL 설정 가능(기본 7d)
 ├── McpAuthStateStore     // one-time state store. max 1000 states, TTL 10min, replay-protected
-├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession
+├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession, findByTransportId, findByOauthSubject, bindTransportId, bindOauthSubject
 ├── McpAuthUrlFactory     // buildLoginUrl / buildCallbackUrl per provider
 ├── McpSaintAuthController // GET /api/mcp/auth/saint/start → SmartID redirect
 │                          // GET /api/mcp/auth/saint/callback → SaintSsoService → linkProvider
@@ -754,7 +754,7 @@ domain.auth.mcp
 
 domain.mcp.tool
 ├── McpAuthMcpTools  // @Tool get_auth_status, start_auth, logout_provider, logout_all
-├── McpAuthHelper    // principalKey() lookup + buildAuthRequired() factory (shared by private tools)
+├── McpAuthHelper    // 3-tier resolveSession() — OAuth sub → transport id → opaque mcp_session_id; principalKey() + buildAuthRequired() factory
 ├── SaintScheduleMcpTool   // get_my_schedule(mcp_session_id) → McpPrivateToolResponse<ScheduleResponse>
 ├── SaintGradesMcpTool     // get_my_grades(mcp_session_id)
 ├── LmsAssignmentsMcpTool  // get_my_assignments(mcp_session_id)
