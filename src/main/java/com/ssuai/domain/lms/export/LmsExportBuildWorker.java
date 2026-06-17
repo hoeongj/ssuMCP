@@ -75,6 +75,8 @@ public class LmsExportBuildWorker {
         LmsExportJob job = jobOpt.get();
         log.info("Claimed LMS material export job: jobId={} studentId={}", job.getId(), LmsSessionStore.fingerprint(job.getStudentId()));
 
+        // Hoisted so the catch block can clean up a partially written ZIP on failure.
+        File zipFile = null;
         try {
             LmsCookies cookies = sessionStore.cookies(job.getStudentId()).orElse(null);
             if (cookies == null) {
@@ -97,7 +99,7 @@ public class LmsExportBuildWorker {
                 tempDir.mkdirs();
             }
 
-            File zipFile = new File(tempDir, job.getId() + ".zip");
+            zipFile = new File(tempDir, job.getId() + ".zip");
             int actualFileCount = 0;
             long actualBytes = 0;
             Set<String> addedPaths = new HashSet<>();
@@ -150,6 +152,22 @@ public class LmsExportBuildWorker {
             log.error("LMS material export job failed: jobId={}", job.getId(), e);
             job.markFailed("내보내기 생성 도중 오류가 발생했습니다: " + e.getMessage(), Instant.now());
             claimer.saveJob(job);
+            // A failed job never gets a filePath set, so sweepExpiredJobs cannot reclaim it.
+            // Delete the half-written ZIP here to avoid leaking partial files on the export disk.
+            deletePartialFile(zipFile, job.getId());
+        }
+    }
+
+    private void deletePartialFile(File zipFile, String jobId) {
+        if (zipFile == null) {
+            return;
+        }
+        try {
+            if (Files.deleteIfExists(zipFile.toPath())) {
+                log.info("Deleted partial ZIP after failed export: jobId={}", jobId);
+            }
+        } catch (IOException io) {
+            log.warn("Failed to delete partial ZIP after failed export: jobId={} path={}", jobId, zipFile.getAbsolutePath(), io);
         }
     }
 

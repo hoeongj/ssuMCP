@@ -76,7 +76,7 @@ class LmsExportBuildWorkerTests {
                 new LmsExportSelectionItem("c1", 1L, "Math Course", "a.pdf"),
                 new LmsExportSelectionItem("c2", 1L, "Math Course", "a.pdf"), // Duplicate name
                 new LmsExportSelectionItem("c3", 1L, "Math Course", "b.pdf")  // One with no download link
-        ));
+        ), 0L);
         String payloadJson = objectMapper.writeValueAsString(payload);
         LmsExportJob job = LmsExportJob.createQueued(STUDENT_ID, "hash", payloadJson, Instant.now(), Instant.now().plusSeconds(600));
         job.markBuilding();
@@ -128,7 +128,7 @@ class LmsExportBuildWorkerTests {
         properties.setMaxBytesPerExport(10L); // Set tiny limit
         SelectionPayload payload = new SelectionPayload(List.of(
                 new LmsExportSelectionItem("c1", 1L, "Math", "a.pdf")
-        ));
+        ), 0L);
         String payloadJson = objectMapper.writeValueAsString(payload);
         LmsExportJob job = LmsExportJob.createQueued(STUDENT_ID, "hash", payloadJson, Instant.now(), Instant.now().plusSeconds(600));
         job.markBuilding();
@@ -150,5 +150,10 @@ class LmsExportBuildWorkerTests {
         verify(claimer).saveJob(job);
         assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
         assertThat(job.getFailureReason()).contains("내보내기 한도가 초과되었습니다");
+
+        // The partial ZIP must be cleaned up on failure: FAILED jobs never get a filePath set,
+        // so sweepExpiredJobs cannot reclaim it — the worker must delete it inline.
+        File partialZip = new File(tempDir, job.getId() + ".zip");
+        assertThat(partialZip.exists()).isFalse();
     }
 }
