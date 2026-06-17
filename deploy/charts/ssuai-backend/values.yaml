@@ -74,7 +74,7 @@ env:
   librarySchedulerLockWait: 0ms
   oauthRsEnabled: "true"
   oauthIssuerUri: "https://dev-q784z2phbyf5gzj7.us.auth0.com/"
-  oauthAudience: "https://ssumcp.duckdns.org"
+  oauthAudience: "https://ssumcp.duckdns.org/mcp"
 redis:
   enabled: true
   image:
