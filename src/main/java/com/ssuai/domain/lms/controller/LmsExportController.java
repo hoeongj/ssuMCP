@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,10 +42,116 @@ public class LmsExportController {
         this.properties = properties;
     }
 
+    /**
+     * Self-contained browser page for the download link. State-agnostic: it reads the
+     * jobId+token from its own URL, polls {@code ?format=json} every 3s, shows a spinner
+     * while building, and on READY offers a button plus a 5s auto-download countdown. The
+     * actual file is fetched via {@code ?dl=1} in a hidden iframe so the page stays put and
+     * the button remains re-clickable. No template engine — the page needs no server data.
+     */
+    private static final String DOWNLOAD_PAGE_HTML = """
+            <!DOCTYPE html>
+            <html lang="ko">
+            <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>LMS 강의자료 다운로드</title>
+            <style>
+              body { font-family: -apple-system, "Segoe UI", Roboto, "Malgun Gothic", sans-serif;
+                     background: #f4f5f7; color: #1f2933; margin: 0;
+                     display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+              .card { background: #fff; padding: 40px 48px; border-radius: 14px;
+                      box-shadow: 0 6px 24px rgba(0,0,0,.08); text-align: center; max-width: 420px; width: 90%; }
+              h1 { font-size: 20px; margin: 0 0 20px; }
+              #status { font-size: 15px; color: #52606d; min-height: 22px; }
+              #countdown { font-size: 13px; color: #7b8794; margin-top: 12px; min-height: 18px; }
+              .spinner { width: 38px; height: 38px; margin: 22px auto 6px; border: 4px solid #e4e7eb;
+                         border-top-color: #2563eb; border-radius: 50%; animation: spin 0.9s linear infinite; }
+              @keyframes spin { to { transform: rotate(360deg); } }
+              button { margin-top: 18px; padding: 12px 26px; font-size: 15px; font-weight: 600;
+                       color: #fff; background: #2563eb; border: none; border-radius: 8px; cursor: pointer; }
+              button:hover { background: #1d4ed8; }
+            </style>
+            </head>
+            <body>
+            <div class="card">
+              <h1>LMS 강의자료 다운로드</h1>
+              <div id="status">상태를 확인하고 있어요…</div>
+              <div id="spinner" class="spinner"></div>
+              <button id="downloadBtn" hidden>지금 다운로드</button>
+              <div id="countdown"></div>
+            </div>
+            <script>
+            (function () {
+              var params = new URLSearchParams(location.search);
+              var token = params.get('token') || '';
+              var base = location.pathname;
+              var pollTimer = null, countdownTimer = null, downloaded = false;
+              var statusEl = document.getElementById('status');
+              var spinnerEl = document.getElementById('spinner');
+              var btnEl = document.getElementById('downloadBtn');
+              var cdEl = document.getElementById('countdown');
+
+              function withToken(extra) {
+                return base + '?token=' + encodeURIComponent(token) + extra;
+              }
+              function triggerDownload() {
+                var f = document.getElementById('dlframe');
+                if (!f) { f = document.createElement('iframe'); f.id = 'dlframe'; f.style.display = 'none'; document.body.appendChild(f); }
+                f.src = withToken('&dl=1');
+                downloaded = true;
+              }
+              function startCountdown(n) {
+                cdEl.textContent = n + '초 후 자동으로 다운로드됩니다…';
+                countdownTimer = setInterval(function () {
+                  if (downloaded) { clearInterval(countdownTimer); cdEl.textContent = ''; return; }
+                  n -= 1;
+                  if (n <= 0) { clearInterval(countdownTimer); cdEl.textContent = '다운로드를 시작합니다…'; triggerDownload(); return; }
+                  cdEl.textContent = n + '초 후 자동으로 다운로드됩니다…';
+                }, 1000);
+              }
+              function render(status, message) {
+                if (status === 'READY') {
+                  if (pollTimer) clearInterval(pollTimer);
+                  statusEl.textContent = '압축이 완료되었습니다.';
+                  spinnerEl.style.display = 'none';
+                  btnEl.hidden = false;
+                  if (!countdownTimer && !downloaded) startCountdown(5);
+                } else if (status === 'QUEUED' || status === 'BUILDING') {
+                  statusEl.textContent = message || '압축 파일을 만들고 있어요…';
+                  spinnerEl.style.display = 'block';
+                } else {
+                  if (pollTimer) clearInterval(pollTimer);
+                  spinnerEl.style.display = 'none';
+                  statusEl.textContent = message || '다운로드할 수 없습니다.';
+                }
+              }
+              function poll() {
+                fetch(withToken('&format=json'), { headers: { 'Accept': 'application/json' } })
+                  .then(function (r) { return r.json().catch(function () { return {}; }); })
+                  .then(function (data) { render(data.status, data.message); })
+                  .catch(function () { /* transient — keep polling */ });
+              }
+              btnEl.addEventListener('click', function () {
+                if (countdownTimer) clearInterval(countdownTimer);
+                cdEl.textContent = '';
+                triggerDownload();
+              });
+              poll();
+              pollTimer = setInterval(poll, 3000);
+            })();
+            </script>
+            </body>
+            </html>
+            """;
+
     @GetMapping("/{jobId}/download")
     public ResponseEntity<?> download(
             @PathVariable("jobId") String jobId,
-            @RequestParam("token") String token
+            @RequestParam("token") String token,
+            @RequestParam(value = "format", required = false) String format,
+            @RequestParam(value = "dl", required = false) String dl,
+            @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept
     ) {
         OptionalLmsExportJob jobOpt = OptionalLmsExportJob.from(jobRepository.findById(jobId));
         if (jobOpt.isEmpty()) {
@@ -70,40 +177,66 @@ public class LmsExportController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
+        // Content negotiation (token already validated above).
+        //  - dl present       → always stream the binary (the page's download trigger);
+        //                       checked first so a browser's text/html Accept can't shadow it.
+        //  - Accept text/html → serve the self-contained status/download page (real browsers).
+        //                       Matched as a literal substring, NOT via produces=, because the
+        //                       default Accept "*/*" matches text/html under MediaType negotiation
+        //                       and would route API/curl callers (and the existing JSON tests) here.
+        //  - format=json      → JSON status for every state incl. READY (the page polls this).
+        //  - otherwise        → legacy behaviour: JSON for non-ready states, binary stream on READY.
+        boolean forceDownload = dl != null && !dl.isBlank();
+        boolean wantsHtml = !forceDownload && accept != null && accept.contains("text/html");
+        boolean wantsJsonStatus = "json".equalsIgnoreCase(format);
+
+        if (wantsHtml) {
+            // charset=UTF-8 in the header (not just the <meta> tag) so the Korean copy
+            // renders correctly — without it the body is decoded as ISO-8859-1 → mojibake.
+            return ResponseEntity.ok()
+                    .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
+                    .body(DOWNLOAD_PAGE_HTML);
+        }
+
         Instant now = Instant.now();
         if (now.isAfter(job.getExpiresAt())) {
             log.info("LMS export download expired: jobId={} expiresAt={}", jobId, job.getExpiresAt());
             return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("message", "다운로드 링크가 만료되었습니다. (유효시간 " + properties.getDownloadTtl().toMinutes() + "분)"));
+                    .body(Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다. (유효시간 " + properties.getDownloadTtl().toMinutes() + "분)"));
         }
 
         LmsExportStatus status = job.getStatus();
         if (status == LmsExportStatus.QUEUED || status == LmsExportStatus.BUILDING) {
             return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(Map.of("status", "BUILDING", "message", "압축 파일이 빌드 중입니다. 잠시 후 페이지를 새로고침해 주세요."));
+                    .body(Map.of("status", "BUILDING", "message", "압축 파일이 빌드 중입니다. 잠시만 기다려 주세요."));
         }
 
         if (status == LmsExportStatus.FAILED) {
             String reason = job.getFailureReason() != null ? job.getFailureReason() : "내보내기 생성 실패";
             return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("message", "파일 생성 실패: " + reason));
+                    .body(Map.of("status", "FAILED", "message", "파일 생성 실패: " + reason));
         }
 
         if (status == LmsExportStatus.EXPIRED) {
             return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("message", "다운로드 링크가 만료되었습니다."));
+                    .body(Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다."));
         }
 
         if (status == LmsExportStatus.READY) {
             if (job.getFilePath() == null) {
                 return ResponseEntity.status(HttpStatus.GONE)
-                        .body(Map.of("message", "파일 경로를 찾을 수 없습니다."));
+                        .body(Map.of("status", "FAILED", "message", "파일 경로를 찾을 수 없습니다."));
             }
 
             File file = new File(job.getFilePath());
             if (!file.exists()) {
                 return ResponseEntity.status(HttpStatus.GONE)
-                        .body(Map.of("message", "파일이 삭제되었거나 존재하지 않습니다."));
+                        .body(Map.of("status", "FAILED", "message", "파일이 삭제되었거나 존재하지 않습니다."));
+            }
+
+            // Page poll (format=json): report readiness without consuming the one-shot stream.
+            if (wantsJsonStatus) {
+                return ResponseEntity.ok(Map.of("status", "READY", "message", "다운로드 준비가 완료되었습니다."));
             }
 
             Resource resource = new FileSystemResource(file);

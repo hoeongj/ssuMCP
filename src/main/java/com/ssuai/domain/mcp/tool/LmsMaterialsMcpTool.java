@@ -32,6 +32,7 @@ public class LmsMaterialsMcpTool {
     @Tool(
             name = "get_my_lms_courses",
             description = "인증된 사용자의 LMS 수강 과목 목록을 조회합니다. "
+                    + "사용자가 특정 과목 자료 다운로드를 원할 때 과목 목록을 요약해 보여주고 어떤 과목을 받을지 물어보는 용도로 사용하세요. "
                     + "term_id를 지정하지 않으면 현재 날짜 기준 활성 학기가 자동 선택됩니다. "
                     + "mcp_session_id with LMS provider linked required."
     )
