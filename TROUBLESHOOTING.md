@@ -3,6 +3,37 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-18 — PVC sync-wave 교착: WaitForFirstConsumer 볼륨을 consumer보다 앞 wave에 둬 ArgoCD 배포가 영구 정지
+
+- 맥락:
+  - LMS export ZIP을 pod 재시작에도 보존하려고 PVC(`ssuai-backend-lms-export`)를 추가한 #72를 머지한 뒤, 백엔드 배포가 #71 이미지(`sha-4c43870`)에서 더 진행되지 않았다. #73(V12 마이그레이션 + opt-in OAuth)·#72(PVC 마운트)가 prod에 올라가지 못함.
+- 증상:
+  - ArgoCD `ssuai-backend` 앱이 `OutOfSync / Progressing`에서 멈춤. `opPhase=Running`, `opMsg="waiting for healthy state of /PersistentVolumeClaim/ssuai-backend-lms-export"`. PVC는 `Pending`, Deployment는 새 ReplicaSet을 만들지 못한 채 옛 pod 1개만 Running.
+- 처음 세운 가설 (틀린 방향):
+  - "이미지 빌드/Image Updater writeback이 늦는 단순 배포 랙"이라고 추정. 실제로는 writeback이 `sha-54827d8`까지 정상 기록돼 있었고 git values.yaml도 최신이었음 — 멈춘 건 ArgoCD sync 그 자체였다.
+- 실제 원인:
+  - PVC가 `argocd.argoproj.io/sync-wave: "1"`, Deployment가 `"3"`. ArgoCD는 wave를 오름차순으로 적용하며 **각 wave가 Healthy가 될 때까지 다음 wave를 적용하지 않는다.** 그런데 PVC의 StorageClass `local-path`는 **WaitForFirstConsumer** 바인딩 모드라 그 PVC를 마운트하는 **consumer pod가 스케줄돼야 비로소 바인딩**된다. consumer는 wave 3의 Deployment에 있는데 ArgoCD는 wave 1의 PVC가 Bound(Healthy)될 때까지 wave 3을 적용하지 않으므로 → consumer가 영영 안 생김 → PVC 영영 Pending → 교착.
+  - PVC 주석의 의도("pod 뜨기 전에 볼륨을 미리 바인딩")는 WaitForFirstConsumer 모드에서는 원천적으로 성립할 수 없는 가정이었다.
+- 해결:
+  - PVC를 Deployment와 **같은 wave("3")**로 옮겨 동시 적용. Deployment의 새 pod가 PVC의 first consumer가 되어 볼륨이 바인딩되고 둘 다 Healthy에 도달한다. (주석만 제거해 wave 0으로 두는 건 0<3 이라 여전히 Deployment보다 앞서므로 교착 유지 — 오답.)
+  - 머지 후에도 막힌 sync op는 타임아웃 없이 자가 종료되지 않으므로, Application status의 `operationState.phase`를 `Terminating`으로 patch해 강제 종료 → auto-sync(selfHeal)가 새 리비전(PVC wave 3)으로 재싱크하게 했다. (`argocd` CLI 부재 → kubectl로 처리. ArgoCD Application CRD는 status 서브리소스를 쓰지 않아 `--subresource status` 없이 일반 merge patch로 status 수정 가능.)
+- 핵심 파일/커밋:
+  - `deploy/charts/ssuai-backend/templates/pvc.yaml` (sync-wave 1→3)
+  - `deploy/charts/ssuai-backend/templates/deployment.yaml` (consumer, wave 3 — 참조)
+  - 커밋/PR: `c70a3b4` (PR #77, `fix/pvc-sync-wave-deadlock`)
+  - terminate: `kubectl patch app ssuai-backend -n argocd --type merge -p '{"status":{"operationState":{"phase":"Terminating"}}}'`
+- 검증:
+  - 재싱크 후 ArgoCD `Synced / Healthy / opPhase=Succeeded`, PVC `Bound`(5Gi, local-path), 새 pod `sha-54827d8` `1/1 Running`. 새 pod 로그에서 Flyway `Migrating schema "public" to version "12 - add mcp session transport oauth"` → `Successfully applied 1 migration, now at version v12`(PostgreSQL 17.10) 확인 — #73 V12까지 같은 롤로 함께 해소.
+- 포트폴리오 포인트:
+  - GitOps(ArgoCD) sync-wave 순서 제어와 Kubernetes 동적 프로비저닝(WaitForFirstConsumer) 바인딩 모델의 상호작용을 모르면 생기는 전형적 교착을, 상태(opMsg)만으로 근본 원인을 특정하고 차트 1줄(wave)로 해결한 사례. "CI는 green인데 prod 배포가 멈추는" 부류의 문제.
+- 면접 예상 질문:
+  1. "PVC를 Deployment보다 먼저(낮은 wave) 만들면 더 안전하지 않나? 왜 같은 wave에 둬야 했나?"
+     - (답변 요약: WaitForFirstConsumer에선 consumer pod 없이는 PVC가 절대 바인딩되지 않는다. PVC를 consumer보다 앞 wave에 두면 ArgoCD가 PVC의 Healthy(Bound)를 기다리느라 consumer가 있는 다음 wave를 영영 적용하지 못해 교착한다. 같은 wave여야 Deployment의 pod가 first consumer가 되어 바인딩된다.)
+  2. "WaitForFirstConsumer와 Immediate 바인딩 모드의 차이는? 왜 local-path는 전자인가?"
+     - (답변 요약: Immediate는 PVC 생성 즉시 볼륨을 프로비저닝·바인딩한다. WaitForFirstConsumer는 consumer pod가 스케줄될 노드가 정해진 뒤 그 노드에 볼륨을 만들어 바인딩한다. local-path는 노드 로컬 디스크라 pod가 어느 노드에 뜰지 알아야 볼륨 위치를 정할 수 있어 WaitForFirstConsumer가 기본이다.)
+  3. "ArgoCD sync가 wave 중간에 멈췄을 때 어떻게 진단했고 어떻게 강제 종료했나?"
+     - (답변 요약: `kubectl get app -o jsonpath`로 `operationState.phase=Running` + `opMsg`(waiting for healthy state of PVC)를 보고 원인이 PVC 교착임을 특정했다. argocd CLI가 없어 Application status의 `operationState.phase`를 `Terminating`으로 patch해 op를 종료시켰고, selfHeal이 수정된 새 리비전으로 자동 재싱크하도록 했다.)
+
 ## 2026-06-16 — LMS 예외 분류 개선: 비인증 API 에러와 세션 만료 예외의 분리 및 진단성 확보
 
 - 맥락:
