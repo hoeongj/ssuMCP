@@ -3,6 +3,40 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-18 — MCP OAuth PRM에 `authorization_servers` 누락: Spring Security 7이 자동 생성한 필터가 수제 컨트롤러를 가림(shadowing)
+
+- 맥락:
+  - G3에서 opt-in OAuth RS 모드(`rs-enabled=true` + Auth0 issuer/audience)를 prod에 켠 뒤, ChatGPT(MCP 클라이언트)가 `start_auth` 루프에서 빠져나오지 못했다. RFC 9728 Protected Resource Metadata(PRM) 문서로 Authorization Server(Auth0)를 자동 발견해야 Bearer JWT 흐름에 진입하는데 그게 안 됐다.
+- 증상:
+  - `curl https://ssumcp.duckdns.org/.well-known/oauth-protected-resource` → `{"resource":"https://ssumcp.duckdns.org","bearer_methods_supported":["header"],"tls_client_certificate_bound_access_tokens":true}`. **`authorization_servers` 필드가 없음** → 클라이언트가 토큰 받을 곳(Auth0)을 모름.
+- 처음 세운 가설 (틀린 방향):
+  - MASTERPLAN엔 "PRM 응답에 `authorization_servers` 필드를 추가 구현해야 한다"고 적혀 있었다. 그러나 코드를 열어 보니 `ProtectedResourceMetadataController`가 **이미** `authorization_servers`를 포함해 반환하고 있었다. 즉 "필드 추가"가 아니라 "왜 그 컨트롤러의 응답이 안 나오는가"가 진짜 질문이었다. 결정적 단서: 실제 응답에 컨트롤러 코드엔 없는 `tls_client_certificate_bound_access_tokens` 필드가 있었고, 코드 전체 grep으로 우리 코드 어디에도 그 문자열이 없음을 확인 → 응답 출처가 우리 컨트롤러가 아니었다.
+- 실제 원인:
+  - Spring Boot 4.0.6 = **Spring Security 7.0.5**. `oauth2ResourceServer(...)`를 설정하면 Security가 **`OAuth2ProtectedResourceMetadataFilter`를 자동 등록**해 `/.well-known/oauth-protected-resource`를 직접 서빙한다. 서블릿 필터는 DispatcherServlet(=MVC `@GetMapping`)보다 먼저 실행되므로 같은 경로의 수제 컨트롤러는 **조용히 가려져 한 번도 실행되지 않는다.** 프레임워크가 만든 기본 문서에는 외부 AS를 알 길이 없어 `authorization_servers`가 빠진다.
+- 해결:
+  - 가려져 죽은 수제 컨트롤러를 삭제하고, Security 7의 확장 지점으로 필드를 주입: `oauth2ResourceServer(o -> o.protectedResourceMetadata(m -> m.protectedResourceMetadataCustomizer(b -> b.authorizationServer(issuerUri))))`. DSL/빌더 메서드는 추측하지 않고 실제 7.0.5 jar를 `javap`로 까서 검증(`OAuth2ProtectedResourceMetadata.Builder.authorizationServer(String)`, `OAuth2ResourceServerConfigurer.protectedResourceMetadata(...)`).
+  - 커스터마이저는 인라인 람다 대신 static 메서드 `authorizationServersCustomizer(issuerUri)`로 추출 → 서블릿 필터·OIDC discovery 없이 빌더에 적용 후 `authorization_servers` claim만 단위 검증.
+- 핵심 파일/브랜치:
+  - `src/main/java/com/ssuai/global/security/McpOAuthSecurityConfig.java` (커스터마이저 주입 + static 메서드)
+  - `src/main/java/com/ssuai/global/security/ProtectedResourceMetadataController.java` (삭제 — 가려진 죽은 코드)
+  - `src/test/java/com/ssuai/global/security/McpOAuthSecurityConfigTests.java` (신규)
+  - 브랜치/PR: `fix/mcp-prm-authorization-servers` (merge 후 commit hash는 MASTERPLAN에 기록)
+- 검증:
+  - 단위 테스트 green. 배포 후 `curl .../.well-known/oauth-protected-resource` 응답에 `"authorization_servers":["https://dev-...auth0.com/"]` 포함 확인이 진짜 종단 검증. ※ "ChatGPT 루프 종료"는 사용자 브라우저 게이트로 별도 확인 필요 — 코드 레벨에선 PRM 응답까지만 보장한다.
+- 포트폴리오 포인트:
+  - "프레임워크가 이미 해주는 일을 모르고 수제 구현을 얹어 shadowing이 난" 전형. 서블릿 필터 vs MVC 디스패치 실행 순서, RFC 9728, 그리고 라이브러리 동작을 추측 대신 `javap`/실측 `curl`로 확정한 디버깅 과정.
+- 면접 예상 질문:
+  1. "MVC 컨트롤러가 분명히 있는데 왜 그 응답이 안 나왔나? 서블릿 필터와 DispatcherServlet의 실행 순서는?"
+  2. "RFC 9728 PRM의 `authorization_servers`는 무슨 역할이고, 없으면 MCP 클라이언트가 왜 인증 루프에 빠지나?"
+  3. "라이브러리의 자동 설정 동작을 추측이 아니라 사실로 어떻게 확정했나?"
+
+## 2026-06-18 — LMS 다운로드 HTML 페이지의 한글 깨짐: `Content-Type`에 charset 미지정 → 본문이 ISO-8859-1로 디코딩
+
+- 맥락/증상: LMS export 다운로드 링크를 브라우저용 HTML 페이지로 바꾸면서 `ResponseEntity.contentType(MediaType.TEXT_HTML)`로 String 본문을 반환했더니, MockMvc 테스트에서 `containsString("LMS 강의자료 다운로드")`가 실패. 실제 본문 바이트는 정상 UTF-8(`강`=EA B0 95)인데 `LMS ê°ìì래…`로 보였다.
+- 원인: `text/html`에 **charset 파라미터가 없으면** 소비 측(MockMvc·일부 브라우저)이 본문을 ISO-8859-1로 디코딩한다. HTML `<meta charset="UTF-8">`는 HTTP 헤더가 아니라 문서 내부 선언이라, 헤더가 우선되는 디코딩 단계에선 무력하다. (javac 컴파일은 정상 — `.class` 상수 바이트가 UTF-8임을 mojibake 패턴으로 역확인.)
+- 해결: `new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8)` → 헤더가 `text/html;charset=UTF-8`. 테스트 통과 + 실제 브라우저 렌더링도 안전.
+- 면접 예상 질문: "`<meta charset>`가 있는데도 한글이 깨진 이유는? HTTP 헤더 charset과 문서 내 선언 중 무엇이 우선인가?"
+
 ## 2026-06-18 — PVC sync-wave 교착: WaitForFirstConsumer 볼륨을 consumer보다 앞 wave에 둬 ArgoCD 배포가 영구 정지
 
 - 맥락:
