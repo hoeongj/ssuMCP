@@ -97,6 +97,8 @@ public class LmsExportBuildWorker {
                 tempDir.mkdirs();
             }
 
+            // Declare before the zip-writing try-block so the catch block can clean up the
+            // partial file if an exception occurs after the stream is opened.
             File zipFile = new File(tempDir, job.getId() + ".zip");
             int actualFileCount = 0;
             long actualBytes = 0;
@@ -148,6 +150,16 @@ public class LmsExportBuildWorker {
 
         } catch (Exception e) {
             log.error("LMS material export job failed: jobId={}", job.getId(), e);
+            // Delete the partial ZIP so sweepExpiredJobs does not need filePath to be set.
+            // Without this, a partial file created before the exception would leak on disk.
+            File partialZip = new File(properties.getTempDir(), job.getId() + ".zip");
+            if (partialZip.exists()) {
+                try {
+                    java.nio.file.Files.deleteIfExists(partialZip.toPath());
+                } catch (java.io.IOException ioe) {
+                    log.warn("Failed to delete partial ZIP on failure: jobId={} path={}", job.getId(), partialZip, ioe);
+                }
+            }
             job.markFailed("내보내기 생성 도중 오류가 발생했습니다: " + e.getMessage(), Instant.now());
             claimer.saveJob(job);
         }

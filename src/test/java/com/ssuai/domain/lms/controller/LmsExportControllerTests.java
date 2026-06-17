@@ -11,10 +11,12 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.ssuai.domain.lms.export.LmsExportJob;
 import com.ssuai.domain.lms.export.LmsExportJobRepository;
+import com.ssuai.domain.lms.export.LmsExportProperties;
 import com.ssuai.domain.lms.export.LmsExportStatus;
 
 @ActiveProfiles("test")
@@ -38,12 +41,20 @@ class LmsExportControllerTests {
     @MockitoBean
     private LmsExportJobRepository jobRepository;
 
+    @MockitoBean
+    private LmsExportProperties lmsExportProperties;
+
     @TempDir
     File tempDir;
 
     @Autowired
     LmsExportControllerTests(MockMvc mockMvc) {
         this.mockMvc = mockMvc;
+    }
+
+    @BeforeEach
+    void setupProperties() {
+        when(lmsExportProperties.getDownloadTtl()).thenReturn(Duration.ofMinutes(20));
     }
 
     private String sha256(String raw) throws Exception {

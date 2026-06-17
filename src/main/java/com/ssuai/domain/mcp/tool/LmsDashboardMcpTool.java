@@ -3,6 +3,7 @@ package com.ssuai.domain.mcp.tool;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.lms.service.LmsDashboardService;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -39,6 +40,9 @@ public class LmsDashboardMcpTool {
                         return McpPrivateToolResponse.<Object>ok(mcp_session_id, dashboard);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
+                    } catch (LmsApiException e) {
+                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                                "LMS API 오류: " + e.getMessage());
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

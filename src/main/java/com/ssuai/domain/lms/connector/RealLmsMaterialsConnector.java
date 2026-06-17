@@ -310,27 +310,6 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
         }
     }
 
-    private JsonNode parseCanvasJson(String responseBody) throws IOException {
-        if (responseBody == null) {
-            return objectMapper.createArrayNode();
-        }
-        String cleaned = responseBody.trim();
-        int firstBracket = cleaned.indexOf('[');
-        int firstBrace = cleaned.indexOf('{');
-        int start = -1;
-        if (firstBracket != -1 && firstBrace != -1) {
-            start = Math.min(firstBracket, firstBrace);
-        } else if (firstBracket != -1) {
-            start = firstBracket;
-        } else if (firstBrace != -1) {
-            start = firstBrace;
-        }
-        if (start > 0) {
-            cleaned = cleaned.substring(start);
-        }
-        return objectMapper.readTree(cleaned);
-    }
-
     private static void randomDelay() {
         try {
             Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextLong(300, 1200));

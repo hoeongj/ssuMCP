@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ssuai.domain.lms.export.LmsExportJob;
 import com.ssuai.domain.lms.export.LmsExportJobRepository;
+import com.ssuai.domain.lms.export.LmsExportProperties;
 import com.ssuai.domain.lms.export.LmsExportStatus;
 
 @RestController
@@ -33,9 +34,11 @@ public class LmsExportController {
     private static final Logger log = LoggerFactory.getLogger(LmsExportController.class);
 
     private final LmsExportJobRepository jobRepository;
+    private final LmsExportProperties properties;
 
-    public LmsExportController(LmsExportJobRepository jobRepository) {
+    public LmsExportController(LmsExportJobRepository jobRepository, LmsExportProperties properties) {
         this.jobRepository = jobRepository;
+        this.properties = properties;
     }
 
     @GetMapping("/{jobId}/download")
@@ -71,7 +74,7 @@ public class LmsExportController {
         if (now.isAfter(job.getExpiresAt())) {
             log.info("LMS export download expired: jobId={} expiresAt={}", jobId, job.getExpiresAt());
             return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("message", "다운로드 링크가 만료되었습니다. (유효시간 20분)"));
+                    .body(Map.of("message", "다운로드 링크가 만료되었습니다. (유효시간 " + properties.getDownloadTtl().toMinutes() + "분)"));
         }
 
         LmsExportStatus status = job.getStatus();

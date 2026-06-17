@@ -307,7 +307,7 @@ public class LmsMaterialExportService {
         return new LmsExportConfirmResponse(
                 savedJob.getId(),
                 payload.selections().size(),
-                0L, // Estimated bytes not strictly needed or set to 0 initially
+                0L, // Pre-build: actual size is unknown until LmsExportBuildWorker completes
                 expiresAt.toString(),
                 downloadUrl,
                 ""

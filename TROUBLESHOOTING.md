@@ -3863,3 +3863,137 @@ async def agent_node(state: SsuAgentState, config: RunnableConfig) -> dict:
    위험하다고 생각하나요? 그 이유와, 후자를 방지하기 위한 설계 원칙을 설명해보세요.
 3. Helm 차트의 `values.yaml`/`configmap.yaml`처럼 애플리케이션 코드와 분리된 배포 설정의
    변경을 PR 리뷰나 CI에서 검증하는 방법에는 어떤 것들이 있을까요?
+
+---
+
+## 사건 9: ChatGPT mcp_session_id 드랍 → 무한 AUTH_REQUIRED 루프 (2026-06-17)
+
+### 틀린 첫 가설
+
+처음에는 세션 만료 로직이나 서버 재시작 문제라고 가정했다. 로그에서 매 호출마다 새 세션이
+발급되는 것을 보고 "세션 저장소가 초기화되는 것 아닌가?" 라고 의심. Postgres 영속 세션으로
+전환했음에도 증상이 동일해 서버 코드 문제임을 의심함.
+
+### 실제 원인
+
+**ChatGPT는 도구 호출 결과의 특정 필드를 다음 턴에 자동으로 전달하지 않는다.** `start_auth`
+가 반환한 `mcp_session_id`를 사용자가 다시 `get_my_schedule mcp_session_id=<value>`로
+명시적으로 넣어줘야 하는데, ChatGPT는 이전 도구 결과를 다음 도구 인자로 자동 매핑하지 않는다.
+
+결과: 세션 A로 로그인 → 다음 턴 도구 B 호출 시 `mcp_session_id=null` → 서버는 새 세션 B
+발급 → 미인증 → AUTH_REQUIRED → 다시 start_auth → 또 다른 세션 C 발급 → 무한 루프.
+
+Claude Desktop은 이 문제가 없다 (context window 내에서 이전 결과를 알아서 참조).
+
+### 해결 방향
+
+**HTTP 계층의 안정 신원 두 가지를 추가 조회 경로로 활용 (3-tier resolution, ADR 0036):**
+
+1. **transport session id** (`Mcp-Session-Id` HTTP 헤더): 서버가 연결마다 발급, LLM이
+   건드릴 수 없음. `start_auth` 시 세션에 바인딩 → 이후 opaque id가 없어도 transport id로
+   세션 찾기.
+   
+2. **OAuth sub** (`Authorization: Bearer <JWT>`의 `sub` claim): HTTP 계층이라 LLM이
+   절대 드랍 불가. opt-in 모드(rs-enabled=true) 시 SecurityContext에서 읽어 세션 매핑.
+
+**세션 해석 우선순위 (McpAuthHelper.resolveSession)**:
+```
+1. OAuth sub (SecurityContextHolder → JwtAuthenticationToken.getName())
+2. Mcp-Session-Id 헤더 → findByTransportId()
+3. LLM 인자 mcp_session_id → find()
+```
+
+각 tier 성공 시 하위 tier를 상위로 opportunistic 바인딩 → 다음 호출은 더 안정적인 경로 사용.
+
+### 보안 고려 (왜 transport 바인딩이 opaque id 병합보다 안전한가)
+
+과거에 "같은 mcp_session_id로 두 요청이 들어오면 병합하자"는 아이디어가 있었는데 기각됨:
+LLM이 인자로 보내는 값을 그냥 믿으면 **조작된 mcp_session_id로 남의 세션 하이재킹** 가능.
+
+transport id는 서버가 HTTP 연결에 직접 귀속시키므로 클라이언트가 임의 값을 보내도 서버가
+실제 연결과 매핑 검증 후 세션을 돌려줌 → 교차 사용자 공격 불가.
+
+### 핵심 파일 및 커밋
+
+- `domain/auth/mcp/McpAuthSessionStore.java` — bindTransportId, bindOauthSubject, findByTransportId, findByOauthSubject
+- `domain/auth/mcp/McpSessionEntity.java` — transportSessionId, oauthSubject 컬럼
+- `domain/mcp/tool/McpAuthHelper.java` — 3-tier resolveSession() + 3-tier principalKey()
+- `domain/mcp/tool/McpAuthMcpTools.java` — start_auth에서 bindCurrentTransportId() 호출
+- `global/security/McpOAuthSecurityConfig.java` — 항상 로드 + 조건부 JWT RS
+- `resources/db/migration/postgresql/V12__add_mcp_session_transport_oauth.sql`
+- PR #73, feat/mcp-auth-optin-two-mode
+
+### 포트폴리오 포인트
+
+LLM 클라이언트 거동 불균일성(ChatGPT vs Claude Desktop) 때문에 생기는 stateful 인증 문제를,
+HTTP 계층 신원(transport id, OAuth sub)으로 LLM 레이어를 우회해 해결한 사례. Spring
+Security opt-in coexistence 패턴과 RFC 9728 PRM 실제 구현 경험. "서버 버그인가?"라는
+첫 가설이 틀렸고 클라이언트 거동 분석이 핵심이었다는 점이 포인트.
+
+### 예상 면접 질문
+
+1. MCP 서버에서 인증 세션을 LLM 인자(tool argument) 기반으로 관리할 때 발생하는 근본적인
+   한계는 무엇이며, 어떤 방식으로 극복할 수 있나요?
+2. Spring Security에서 `permitAll()`로 설정된 엔드포인트에서도 Bearer JWT가 유효하면
+   SecurityContext가 채워지는 이유는 무엇인가요? (`BearerTokenAuthenticationFilter`와
+   authorization 규칙의 관계를 설명하세요.)
+3. OAuth `sub` claim을 세션 바인딩에 사용할 때, 같은 Google 계정의 다른 앱에서 발급된
+   토큰이 수락되는 것을 막기 위해 어떤 검증을 추가해야 하나요?
+
+---
+
+## 사건 10: pod 재시작 시 LMS export ZIP 유실 가능성 (설계 리스크, 2026-06-17)
+
+### 배경
+
+LMS 자료 내보내기 기능(`prepare_lms_material_export` → `confirm_lms_material_export`)은
+빌드 작업자(`LmsExportBuildWorker`)가 ZIP 파일을 `${java.io.tmpdir}/ssuai-lms-export`
+**pod-local ephemeral 디렉토리**에 저장한다. 큐(DB)는 어느 pod에서든 접근 가능하지만,
+ZIP 파일은 빌드한 pod에만 있다.
+
+### 리스크
+
+- `READY` 상태가 된 job을 사용자가 confirm 후 다운로드하기 전에 pod 재시작 → ZIP 없음 →
+  410 Gone (또는 파일 없음 에러)
+- replica > 1 환경에서는 빌드 pod ≠ 다운로드 pod일 수 있음 → 동일 증상
+
+현재는 단일 노드 k3s + replica=1이라 실사용 중 재현 확률이 낮지만, 설계상 취약점.
+
+### 해결 방향 (Part 2B)
+
+k3s `local-path-provisioner`(RWO) PVC 마운트:
+
+```yaml
+# deploy/charts/ssuai-backend/templates/pvc.yaml (신규)
+kind: PersistentVolumeClaim
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+```
+
+Deployment에 `volumes`/`volumeMounts` 추가, `SSUAI_LMS_EXPORT_TEMP_DIR` 환경변수를
+마운트 경로로 지정. RWX(multi-pod 공유)는 현재 불필요 — 주석으로 향후 확장 포인트 표시.
+
+### 핵심 파일
+
+- `deploy/charts/ssuai-backend/templates/pvc.yaml` (신규)
+- `deploy/charts/ssuai-backend/templates/deployment.yaml`
+- `deploy/charts/ssuai-backend/values.yaml`
+- `resources/application.yml` (`ssuai.lms.export.temp-dir`)
+
+### 포트폴리오 포인트
+
+stateless 애플리케이션 설계 원칙 위반(로컬 파일 시스템 의존)을 k3s PVC로 해결. "지금은
+단일 노드라 괜찮다"와 "설계상 안전하다"는 다르다는 인식. replica 확장 시 RWX/object store로
+업그레이드해야 한다는 판단 기준 포함.
+
+### 예상 면접 질문
+
+1. 컨테이너 오케스트레이션 환경에서 파일 시스템에 의존하는 비동기 작업의 내결함성을 어떻게
+   보장하나요? PVC 외에 어떤 대안(object storage, DB BLOB 등)이 있으며 각각의 트레이드오프는?
+2. RWO(ReadWriteOnce)와 RWX(ReadWriteMany) PVC의 차이와, 각각 적합한 시나리오를 설명하세요.
+3. 비동기 작업의 "상태는 DB, 결과물은 파일" 패턴에서 두 저장소의 정합성을 어떻게 보장하나요?
+   (빌드는 성공했지만 파일 저장 중 pod 재시작 등)
