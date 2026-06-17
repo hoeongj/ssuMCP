@@ -70,8 +70,8 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 
 | tool name | 설명 | 주요 인자 |
 | --- | --- | --- |
-| `get_auth_status` | 현재 MCP 세션의 provider 연결 상태 조회 | `mcp_session_id` (선택) |
-| `start_auth` | 지정 provider 로그인 URL 생성. 없으면 새 세션 발급 | `provider` (SAINT/LMS/LIBRARY), `mcp_session_id` (선택) |
+| `get_auth_status` | 현재 MCP 세션의 provider 연결 상태 조회. `mcp_session_id`가 없어도 transport session으로 자동 탐색 | `mcp_session_id` (선택) |
+| `start_auth` | 지정 provider 로그인 URL 생성. 없으면 새 세션 발급. 실행 시 현재 HTTP 연결의 transport session ID를 세션에 바인딩 | `provider` (SAINT/LMS/LIBRARY), `mcp_session_id` (선택) |
 | `logout_provider` | 특정 provider 연결 해제 | `provider`, `mcp_session_id` |
 | `logout_all` | MCP 세션 전체 삭제 | `mcp_session_id` |
 
@@ -86,6 +86,16 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
   "message": "Open loginUrl in a browser to complete login, then call private tools with mcpSessionId."
 }
 ```
+
+#### 세션 해석 — 3-tier 우선순위
+
+서버는 모든 private 도구 호출에서 다음 순서로 인증 세션을 탐색한다:
+
+1. **OAuth sub** (`Authorization: Bearer <JWT>` 헤더, OAuth RS 모드 활성 시): JWT의 `sub` 클레임 → DB에서 같은 sub로 바인딩된 세션 조회. LLM이 드랍할 수 없어 대화 간 신원 안정.
+2. **Transport session ID** (`Mcp-Session-Id` 헤더): HTTP 연결 수준 식별자 → `start_auth` 시 바인딩됨. ChatGPT처럼 `mcp_session_id`를 드랍하는 클라이언트에서 재로그인 없이 세션 복원.
+3. **Opaque mcp_session_id** (tool 인자): 기존 방식 fallback.
+
+> **보안 참고:** `mcp_session_id` 는 secret 취급. 로그에 남기지 말고 공유하지 말 것. Transport 바인딩은 서버가 연결에 귀속시키므로 클라이언트가 임의 값으로 타인 세션에 접근 불가. 세션은 DB에 영속 저장되며 서버 재시작 후에도 유지된다 (7일 TTL).
 
 ### 2c. Private tool (인증 필요)
 
@@ -132,7 +142,7 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_lms_courses` | 사용자의 LMS 수강 과목 목록 조회 | LMS | `mcp_session_id`, `term_id` (선택) |
 | `get_my_lms_materials` | 비영상 주차학습 자료(PDF, PPT 등) 목록 조회 (비디오/오디오 제외) | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
 | `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성) | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
-| `confirm_lms_material_export` | 내보내기 최종 승인 및 20분 유효 다운로드 링크 발급 | LMS | `mcp_session_id` |
+| `confirm_lms_material_export` | 내보내기 최종 승인 및 다운로드 링크 발급 (기본 20분, `SSUAI_LMS_EXPORT_DOWNLOAD_TTL` 설정 가능) | LMS | `mcp_session_id` |
 | `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
 | `get_library_available_seats` | 전체 7개 열람실 live per-seat 가용 좌석 요약. externalSeatId 목록 포함 | LIBRARY | `mcp_session_id` |
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive, remainingTime) | LIBRARY | `room_id`, `mcp_session_id` |
