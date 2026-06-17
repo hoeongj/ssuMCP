@@ -72,6 +72,9 @@ env:
   libraryRedisEnabled: "true"
   librarySeatEventChannel: ssuai.library.seat-events.v1
   librarySchedulerLockWait: 0ms
+  oauthRsEnabled: "true"
+  oauthIssuerUri: "https://dev-q784z2phbyf5gzj7.us.auth0.com/"
+  oauthAudience: "https://ssumcp.duckdns.org"
 redis:
   enabled: true
   image:

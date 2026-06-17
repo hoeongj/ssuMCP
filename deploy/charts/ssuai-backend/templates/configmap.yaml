@@ -44,3 +44,6 @@ data:
   SSUAI_LIBRARY_REDIS_ENABLED: {{ .Values.env.libraryRedisEnabled | quote }}
   SSUAI_LIBRARY_SEAT_EVENT_CHANNEL: {{ .Values.env.librarySeatEventChannel | quote }}
   SSUAI_LIBRARY_SCHEDULER_LOCK_WAIT: {{ .Values.env.librarySchedulerLockWait | quote }}
+  SSUAI_OAUTH_RS_ENABLED: {{ .Values.env.oauthRsEnabled | quote }}
+  SSUAI_OAUTH_ISSUER_URI: {{ .Values.env.oauthIssuerUri | quote }}
+  SSUAI_OAUTH_AUDIENCE: {{ .Values.env.oauthAudience | quote }}
