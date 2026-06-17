@@ -11,6 +11,7 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -27,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.ssuai.domain.lms.export.LmsExportJob;
 import com.ssuai.domain.lms.export.LmsExportJobRepository;
+import com.ssuai.domain.lms.export.LmsExportProperties;
 import com.ssuai.domain.lms.export.LmsExportStatus;
 
 @ActiveProfiles("test")
@@ -37,6 +39,9 @@ class LmsExportControllerTests {
 
     @MockitoBean
     private LmsExportJobRepository jobRepository;
+
+    @MockitoBean
+    private LmsExportProperties properties;
 
     @TempDir
     File tempDir;
@@ -73,6 +78,7 @@ class LmsExportControllerTests {
         LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now().minusSeconds(1000), Instant.now().minusSeconds(500));
 
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getDownloadTtl()).thenReturn(Duration.ofMinutes(20));
 
         mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
                         .param("token", token))

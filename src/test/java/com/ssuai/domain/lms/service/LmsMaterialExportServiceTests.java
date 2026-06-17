@@ -117,7 +117,7 @@ class LmsMaterialExportServiceTests {
         
         SelectionPayload payload = new SelectionPayload(List.of(
                 new LmsExportSelectionItem("c1", 1L, "Math", "a.pdf")
-        ));
+        ), 4096L);
         when(actionService.payload(claimed, SelectionPayload.class)).thenReturn(payload);
 
         ArgumentCaptor<LmsExportJob> jobCaptor = ArgumentCaptor.forClass(LmsExportJob.class);
@@ -130,6 +130,7 @@ class LmsMaterialExportServiceTests {
         LmsExportJob savedJob = jobCaptor.getValue();
         assertThat(resp.jobId()).isEqualTo(savedJob.getId());
         assertThat(resp.downloadUrl()).contains("/api/lms/exports/" + savedJob.getId() + "/download?token=");
+        assertThat(resp.estimatedBytes()).isEqualTo(4096L); // carried through from prepare-time SelectionPayload
 
         // Verify the raw token is not stored, but rather its SHA-256 hash
         String rawToken = resp.downloadUrl().substring(resp.downloadUrl().indexOf("token=") + 6);

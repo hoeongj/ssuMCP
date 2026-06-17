@@ -252,7 +252,7 @@ public class LmsMaterialExportService {
                 .map(m -> new LmsExportSelectionItem(m.contentId(), m.courseId(), m.courseName(), m.fileName()))
                 .toList();
 
-        SelectionPayload payload = new SelectionPayload(payloadItems);
+        SelectionPayload payload = new SelectionPayload(payloadItems, accumulatedBytes);
         actionService.createPendingAction(studentId, "LMS_MATERIAL_EXPORT", payload);
 
         String message = String.format("내보내기 준비 완료. %d개 파일 (%,d bytes)이 내보내기 목록에 추가되었습니다.",
@@ -307,7 +307,7 @@ public class LmsMaterialExportService {
         return new LmsExportConfirmResponse(
                 savedJob.getId(),
                 payload.selections().size(),
-                0L, // Estimated bytes not strictly needed or set to 0 initially
+                payload.totalBytes(), // estimate captured at prepare time (sum of known material sizes)
                 expiresAt.toString(),
                 downloadUrl,
                 ""
