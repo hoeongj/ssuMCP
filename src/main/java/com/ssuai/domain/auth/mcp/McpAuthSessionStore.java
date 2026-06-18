@@ -110,7 +110,7 @@ public class McpAuthSessionStore {
             return Optional.empty();
         }
         Instant now = clock.instant();
-        return repository.findByTransportSessionIdAndExpiresAtAfter(transportId, now)
+        return repository.findFirstByTransportSessionIdAndExpiresAtAfterOrderByCreatedAtDesc(transportId, now)
                 .map(this::toSession);
     }
 
@@ -124,13 +124,13 @@ public class McpAuthSessionStore {
             return Optional.empty();
         }
         Instant now = clock.instant();
-        return repository.findByOauthSubjectAndExpiresAtAfter(oauthSubject, now)
+        return repository.findFirstByOauthSubjectAndExpiresAtAfterOrderByCreatedAtDesc(oauthSubject, now)
                 .map(this::toSession);
     }
 
     /**
-     * Binds the HTTP-layer transport session id to this auth session (idempotent).
-     * Only sets the value when the column is still null — existing binding is preserved.
+     * Binds the HTTP-layer transport session id to this auth session.
+     * A transport id is connection-scoped, so at most one live auth session may hold it.
      */
     @Transactional
     public void bindTransportId(McpAuthSessionId id, String transportId) {
@@ -139,7 +139,8 @@ public class McpAuthSessionStore {
         }
         Instant now = clock.instant();
         repository.findBySessionIdAndExpiresAtAfter(id.value(), now).ifPresent(entity -> {
-            if (entity.getTransportSessionId() == null) {
+            repository.releaseTransportSessionIdFromOtherSessions(transportId, id.value());
+            if (!transportId.equals(entity.getTransportSessionId())) {
                 entity.setTransportSessionId(transportId);
                 repository.save(entity);
                 log.debug("mcp transport bound session={}", id.fingerprint());

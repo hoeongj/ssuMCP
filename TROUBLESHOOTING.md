@@ -4126,3 +4126,27 @@ stateless 애플리케이션 설계 원칙 위반(로컬 파일 시스템 의존
 2. RWO(ReadWriteOnce)와 RWX(ReadWriteMany) PVC의 차이와, 각각 적합한 시나리오를 설명하세요.
 3. 비동기 작업의 "상태는 DB, 결과물은 파일" 패턴에서 두 저장소의 정합성을 어떻게 보장하나요?
    (빌드는 성공했지만 파일 저장 중 pod 재시작 등)
+
+## 2026-06-18 MCP 인증 세션 NonUniqueResultException (transport fallback 자가붕괴)
+
+**증상**: 한 MCP 연결에서 로그인(start_auth) 후 모든 private 도구 호출과 get_auth_status가 `Query did not return a unique result: 2 results were returned`로 실패. 로그인 자체(SSO·콜백·provider 링크)는 정상 완료됨.
+
+**틀린 가설들**:
+1. state TTL이 너무 짧다 → 실제 10분. 첫 실패는 링크를 만들어두고 10분 넘겨 클릭한 타이밍 문제(별개 이슈).
+2. mcp_sessions에 같은 session_id 중복행(레이스 + UNIQUE 제약 부재) → 불가능. session_id가 @Id(PK)라 DB가 중복을 막고, create()도 항상 랜덤 id라 같은 id 2행 생성 불가.
+3. 엔티티가 state와 JOIN되어 1세션이 2행으로 뻥튀기 → McpSessionEntity에 연관관계 매핑 없음(단일 테이블). 폐기.
+
+**실제 원인**: 3-tier 세션 해석(McpAuthHelper.resolveSession, ADR 0036)의 Tier 2가 비유니크 컬럼 transport_session_id로 단건 조회(findByTransportSessionIdAndExpiresAtAfter → Optional). 한 연결(같은 Mcp-Session-Id)에서 start_auth를 2번 이상 호출하면 매번 새 auth 세션이 생성되어 같은 transport_session_id에 바인딩되는데, bindTransportId가 기존 바인딩을 회수하지 않아 한 transport에 세션이 누적된다. Tier 2 조회가 2행 반환 → NonUniqueResultException. Tier 2가 Tier 3(명시적 mcp_session_id, PK라 안전)보다 먼저 돌기 때문에 정확한 id를 줘도 구제되지 않는다.
+
+**아이러니(포인트)**: Tier 2(transport fallback)는 opaque id를 턴 사이에 흘리는 클라(ChatGPT)를 구제하려고 ADR 0036에서 추가됐는데, 바로 그런 클라가 재로그인하면 세션이 한 transport에 누적되어 그 방어장치가 전체 인증을 깨뜨린다.
+
+**수정**: (i) transport·oauth fallback 조회를 findFirst...OrderByCreatedAtDesc로 변경 → 비유니크 키여도 최신 1개만 반환(예외 불가), 기존 누적 데이터도 무해화(마이그레이션 불필요). (ii) bindTransportId가 같은 transport를 가진 다른 세션의 바인딩을 해제 → transport↔세션 1:1 유지.
+
+**핵심 파일**: McpAuthHelper.java(Tier 순서), McpSessionRepository.java(비유니크 단건 조회), McpAuthSessionStore.java(findByTransportId/findByOauthSubject/bindTransportId). 커밋: <FILL>.
+
+**포트폴리오 포인트**: 비유니크 컬럼에 대한 Spring Data 파생 단건 쿼리(Optional)의 함정 / fallback 메커니즘이 특정 사용 패턴에서 자기 자신을 깨뜨리는 설계 결함 / PK 소거법으로 원인을 좁힌 디버깅.
+
+**예상 면접 질문**:
+1. Spring Data JPA 파생 쿼리에서 Optional<T> 반환이 2행을 만나면? 비유니크 컬럼을 안전하게 단건 조회하려면?
+2. 다단계 fallback 세션 해석에서 우선순위 순서가 왜 중요한가? 가장 안정적인 키(PK)를 마지막에 둔 설계의 트레이드오프는?
+3. 이 버그를 마이그레이션 없이 기존 데이터까지 무해화한 방법(findFirst+OrderBy)과 그 한계는?
