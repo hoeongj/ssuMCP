@@ -13,6 +13,7 @@ import com.ssuai.domain.lms.dto.AssignmentsCompactResponse;
 import com.ssuai.domain.lms.dto.AssignmentsResponse;
 import com.ssuai.domain.lms.dto.LmsTermItem;
 import com.ssuai.domain.lms.service.LmsAssignmentsService;
+import com.ssuai.domain.lms.service.LmsTermResolver;
 
 /**
  * MCP tool for the authenticated student's pending LMS assignments (Task 18 Slice C).
@@ -75,7 +76,8 @@ public class LmsAssignmentsMcpTool {
     @Tool(
             name = "get_my_lms_terms",
             description = "사용자의 LMS 등록 학기 목록을 반환합니다. "
-                    + "각 학기의 id, name, 시작/종료 날짜, 현재 기본 학기 여부를 포함합니다. "
+                    + "각 학기의 id, name, 시작/종료 날짜, 현재 기본 학기 여부(defaultTerm)를 포함합니다. "
+                    + "defaultTerm=true는 현재 활성 학기 하나에만 표시됩니다(term_id 생략 시 이 학기가 사용됨). "
                     + "반환된 id를 get_my_lecture_list 또는 get_my_assignments의 term_id 파라미터에 사용하세요. "
                     + "mcp_session_id with LMS provider required."
     )
@@ -84,7 +86,8 @@ public class LmsAssignmentsMcpTool {
             String mcp_session_id) {
         return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
                 .map(studentId -> {
-                    List<LmsTermItem> terms = assignmentsService.fetchTerms(studentId);
+                    List<LmsTermItem> terms = LmsTermResolver.withResolvedDefault(
+                            assignmentsService.fetchTerms(studentId));
                     return McpPrivateToolResponse.ok(mcp_session_id, (Object) terms);
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

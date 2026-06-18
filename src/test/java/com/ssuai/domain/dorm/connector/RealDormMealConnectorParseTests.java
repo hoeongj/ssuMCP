@@ -115,6 +115,40 @@ class RealDormMealConnectorParseTests {
     }
 
     @Test
+    void parseDropsPunctuationOnlyPlaceholderMenuLines() {
+        // The dorm page fills empty meal slots with placeholder characters ("."/"-"); those
+        // must not be surfaced as menu items (external review — dummy "." menu).
+        String html = """
+                <table class="boxstyle02">
+                    <tbody>
+                        <tr>
+                            <th><a>2026-05-06 (수)</a></th>
+                            <td>.</td>
+                            <td>비빔밥<br>.<br>된장국<br>-</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+                """;
+        Document document = Jsoup.parse(html);
+
+        WeeklyMealResponse response = RealDormMealConnector.parse(document);
+
+        assertThat(response.days())
+                .singleElement()
+                .satisfies(day -> {
+                    // Breakfast "." and dinner "-" are placeholder-only → no meal, no closure.
+                    assertThat(day.meals())
+                            .singleElement()
+                            .satisfies(meal -> {
+                                assertThat(meal.type()).isEqualTo(MealType.LUNCH);
+                                assertThat(meal.menu()).containsExactly("비빔밥", "된장국");
+                            });
+                    assertThat(day.closures()).isEmpty();
+                });
+    }
+
+    @Test
     void parseThrowsWhenNoMenuTableIsPresent() {
         Document document = Jsoup.parse("<html><body><p>nothing here</p></body></html>");
 

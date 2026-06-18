@@ -201,7 +201,17 @@ class RealDormMealConnector implements DormMealConnector {
         return LINE_SPLIT_PATTERN.splitAsStream(text)
                 .map(RealDormMealConnector::normalizeWhitespace)
                 .filter(line -> !line.isBlank())
+                .filter(RealDormMealConnector::hasMenuContent)
                 .toList();
+    }
+
+    /**
+     * True only when the line carries an actual menu name. The dorm page fills empty meal
+     * slots with placeholder characters ("."/"-"/"·" etc.); those split into punctuation-only
+     * lines that must not be surfaced as menu items (external review — dummy "." menu).
+     */
+    private static boolean hasMenuContent(String line) {
+        return line.codePoints().anyMatch(Character::isLetterOrDigit);
     }
 
     private static boolean isClosureMarker(String text) {

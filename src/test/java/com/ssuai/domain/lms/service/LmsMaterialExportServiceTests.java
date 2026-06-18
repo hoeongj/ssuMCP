@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -107,6 +108,28 @@ class LmsMaterialExportServiceTests {
         assertThat(resp.excluded().get(2).reason()).isEqualTo("한도 초과");
 
         verify(actionService).createPendingAction(eq(STUDENT_ID), eq("LMS_MATERIAL_EXPORT"), any(SelectionPayload.class));
+    }
+
+    @Test
+    void prepare_withAllInvalidSelections_returnsEmptyAndCreatesNoPendingAction() {
+        // Given — every requested contentId is unknown, so nothing is whitelisted/accepted.
+        LmsCourse course = new LmsCourse(1L, "Math", "MATH101", 100L);
+        List<LmsTermItem> terms = List.of(new LmsTermItem(100L, "Term", null, null, true));
+        when(assignmentsService.fetchTerms(STUDENT_ID)).thenReturn(terms);
+        when(connector.fetchCourses(STUDENT_ID, COOKIES, 100L)).thenReturn(List.of(course));
+        LmsMaterial mat1 = new LmsMaterial("c1", 1L, "Math", "a.pdf", "pdf", 40L, "Week 1", "Lecture 1");
+        when(connector.fetchMaterials(STUDENT_ID, COOKIES, course)).thenReturn(List.of(mat1));
+
+        // When
+        LmsExportPrepareResponse resp = service.prepare(STUDENT_ID, 100L, List.of("nope1", "nope2"));
+
+        // Then — empty preview, clear message, and crucially NO pending action (so confirm()
+        // cannot mint a 0-file job + download URL).
+        assertThat(resp.fileCount()).isZero();
+        assertThat(resp.selected()).isEmpty();
+        assertThat(resp.excluded()).hasSize(2);
+        assertThat(resp.message()).contains("내보낼 수 있는 파일이 없습니다");
+        verify(actionService, never()).createPendingAction(any(), any(), any());
     }
 
     @Test

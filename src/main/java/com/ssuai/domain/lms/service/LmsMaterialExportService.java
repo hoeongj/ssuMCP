@@ -206,6 +206,20 @@ public class LmsMaterialExportService {
             }
         }
 
+        // An all-invalid / all-excluded selection must NOT create a pending action; otherwise
+        // confirm() would mint a 0-file ZIP job and a live capability download URL (external
+        // review — 0-file export). Returning here leaves nothing for confirm() to claim, so it
+        // reports "대기 중인 내보내기 요청이 없습니다" instead of a bogus download link.
+        if (acceptedSelections.isEmpty()) {
+            String message = excluded.isEmpty()
+                    ? "내보낼 수 있는 파일이 없습니다. 다운로드할 과목/파일을 선택한 뒤 다시 시도해주세요."
+                    : String.format(
+                            "내보낼 수 있는 파일이 없습니다. 선택한 항목 %d개가 모두 제외되었습니다(미지원 형식·비디오 또는 한도 초과). "
+                                    + "다른 과목/파일을 선택해주세요.",
+                            excluded.size());
+            return new LmsExportPrepareResponse(0, 0, 0L, List.of(), List.copyOf(excluded), message);
+        }
+
         // Group accepted selections by course for response structure
         Map<Long, List<LmsMaterial>> groupedByCourse = acceptedSelections.stream()
                 .collect(Collectors.groupingBy(LmsMaterial::courseId));
