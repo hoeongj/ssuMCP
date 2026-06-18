@@ -70,7 +70,7 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 
 | tool name | 설명 | 주요 인자 |
 | --- | --- | --- |
-| `get_auth_status` | 현재 MCP 세션의 provider 연결 상태 조회. `mcp_session_id`가 없어도 transport session으로 자동 탐색 | `mcp_session_id` (선택) |
+| `get_auth_status` | 현재 MCP 세션의 provider 연결 상태 조회. `mcp_session_id`가 없어도 transport session으로 자동 탐색. `status` 필드: `OK`(세션 유효) / `INVALID_SESSION`(id가 있으나 만료·미해석) / `NO_SESSION`(id 없음) — 클라이언트가 "세션 만료"와 "미로그인"을 구분 | `mcp_session_id` (선택) |
 | `start_auth` | 지정 provider 로그인 URL 생성. 없으면 새 세션 발급. 실행 시 현재 HTTP 연결의 transport session ID를 세션에 바인딩 | `provider` (SAINT/LMS/LIBRARY), `mcp_session_id` (선택) |
 | `logout_provider` | 특정 provider 연결 해제 | `provider`, `mcp_session_id` |
 | `logout_all` | MCP 세션 전체 삭제 | `mcp_session_id` |
@@ -139,9 +139,9 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록. 비어 있으면 `message`로 안내 | LMS | `mcp_session_id`, `compact` (선택) |
 | `get_my_lms_terms` | 사용자의 LMS 등록 학기 목록 조회 | LMS | `mcp_session_id` |
 | `get_lms_dashboard` | 미제출 과제·학사일정·공지사항을 모아보는 대시보드 | LMS | `mcp_session_id`, `term_id` (선택) |
-| `get_my_lms_courses` | 사용자의 LMS 수강 과목 목록 조회 | LMS | `mcp_session_id`, `term_id` (선택) |
-| `get_my_lms_materials` | 비영상 주차학습 자료(PDF, PPT 등) 목록 조회 (비디오/오디오 제외) | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
-| `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성) | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
+| `get_my_lms_courses` | 수강 과목을 **각 과목의 비영상 자료(파일 수·용량·확장자별 그룹·content_id)와 함께** 한 번에 조회 (전 과목 materials를 묶어 반환 → 로그인 직후 과목+파일을 한 번에 표시, content_id로 바로 prepare 가능). 전 과목 자료를 fetch하므로 응답이 다소 느림 | LMS | `mcp_session_id`, `term_id` (선택) |
+| `get_my_lms_materials` | 특정 과목들의 비영상 주차학습 자료 목록 조회 (course_ids 지정). `get_my_lms_courses`가 전 과목을 이미 반환하므로 보통 불필요, 특정 과목 재조회용 | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
+| `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성). content_id는 `get_my_lms_courses` 응답에 포함됨 | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
 | `confirm_lms_material_export` | 내보내기 최종 승인 및 다운로드 링크 발급 (기본 20분, `SSUAI_LMS_EXPORT_DOWNLOAD_TTL` 설정 가능) | LMS | `mcp_session_id` |
 | `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
 | `get_library_available_seats` | 전체 7개 열람실 live per-seat 가용 좌석 요약. externalSeatId 목록 포함 | LIBRARY | `mcp_session_id` |
