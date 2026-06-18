@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
-import com.ssuai.domain.lms.dto.LmsCourse;
 import com.ssuai.domain.lms.dto.LmsCourseMaterials;
 import com.ssuai.domain.lms.service.LmsMaterialsService;
 import com.ssuai.global.exception.LmsApiException;
@@ -31,8 +30,10 @@ public class LmsMaterialsMcpTool {
 
     @Tool(
             name = "get_my_lms_courses",
-            description = "인증된 사용자의 LMS 수강 과목 목록을 조회합니다. "
-                    + "사용자가 특정 과목 자료 다운로드를 원할 때 과목 목록을 요약해 보여주고 어떤 과목을 받을지 물어보는 용도로 사용하세요. "
+            description = "인증된 사용자의 LMS 수강 과목을 **각 과목의 다운로드 가능한 자료(파일)와 함께** 한 번에 조회합니다. "
+                    + "로그인 직후 이 도구 하나만 호출하면 과목별로 파일 수·총 용량·확장자별 그룹·각 파일의 content_id가 모두 반환됩니다. "
+                    + "사용자에게는 '과목 | 파일 수 | 용량' 표(파일이 있는 과목만)와 합계를 보여주고 어떤 과목을 받을지 물어보세요. "
+                    + "사용자가 과목을 고르면 이 응답에 들어있는 content_id로 바로 prepare_lms_material_export를 호출하면 됩니다(get_my_lms_materials를 다시 부를 필요 없음). "
                     + "term_id를 지정하지 않으면 현재 날짜 기준 활성 학기가 자동 선택됩니다. "
                     + "mcp_session_id with LMS provider linked required."
     )
@@ -45,7 +46,10 @@ public class LmsMaterialsMcpTool {
         return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
                 .map(studentId -> {
                     try {
-                        List<LmsCourse> courses = materialsService.listCourses(studentId, term_id);
+                        // Fetch every course WITH its filtered materials (groups, counts, sizes,
+                        // content_ids) in one shot so the user sees course + files together right
+                        // after login. courseIds=null → all courses.
+                        List<LmsCourseMaterials> courses = materialsService.listMaterials(studentId, null, term_id);
                         return McpPrivateToolResponse.<Object>ok(mcp_session_id, courses);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);

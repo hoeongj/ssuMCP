@@ -47,13 +47,13 @@ class LmsMaterialsMcpToolTests {
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(null, null);
 
         assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
-        verify(materialsService, never()).listCourses(any(), any());
+        verify(materialsService, never()).listMaterials(any(), any(), any());
     }
 
     @Test
     void returnsAuthRequiredWhenSessionExpired() {
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
-        when(materialsService.listCourses("20221528", null)).thenThrow(new LmsSessionExpiredException());
+        when(materialsService.listMaterials("20221528", null, null)).thenThrow(new LmsSessionExpiredException());
 
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LMS", "https://login.url", EXPIRES);
@@ -66,9 +66,10 @@ class LmsMaterialsMcpToolTests {
 
     @Test
     void returnsOkWithCoursesWhenLinked() {
-        List<LmsCourse> stub = List.of(new LmsCourse(1L, "Math", "MATH101", 100L));
+        List<LmsCourseMaterials> stub = List.of(
+                new LmsCourseMaterials(new LmsCourse(1L, "Math", "MATH101", 100L), List.of(), 0, 0L));
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
-        when(materialsService.listCourses("20221528", null)).thenReturn(stub);
+        when(materialsService.listMaterials("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
 
@@ -90,9 +91,10 @@ class LmsMaterialsMcpToolTests {
 
     @Test
     void toStringDoesNotLeakStudentId() {
-        List<LmsCourse> stub = List.of(new LmsCourse(1L, "Math", "MATH101", 100L));
+        List<LmsCourseMaterials> stub = List.of(
+                new LmsCourseMaterials(new LmsCourse(1L, "Math", "MATH101", 100L), List.of(), 0, 0L));
         when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
-        when(materialsService.listCourses("20221528", null)).thenReturn(stub);
+        when(materialsService.listMaterials("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
 

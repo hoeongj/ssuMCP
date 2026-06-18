@@ -50,6 +50,7 @@ class McpAuthMcpToolsTests {
 
         McpAuthStatusResponse resp = tools.getAuthStatus("unknown");
 
+        assertThat(resp.status()).isEqualTo("INVALID_SESSION");
         assertThat(resp.mcpSessionId()).isNull();
         assertThat(resp.providers()).hasSize(McpProviderType.values().length);
         assertThat(resp.providers()).allMatch(p -> !p.linked());
@@ -61,6 +62,7 @@ class McpAuthMcpToolsTests {
 
         McpAuthStatusResponse resp = tools.getAuthStatus(null);
 
+        assertThat(resp.status()).isEqualTo("NO_SESSION");
         assertThat(resp.mcpSessionId()).isNull();
         assertThat(resp.providers()).allMatch(p -> !p.linked());
     }

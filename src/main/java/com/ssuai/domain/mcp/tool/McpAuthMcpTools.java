@@ -50,10 +50,12 @@ public class McpAuthMcpTools {
 
     @Tool(
             name = "get_auth_status",
-            description = "Returns the current MCP auth session status for each provider (SAINT, LMS, LIBRARY). "
-                    + "Call this before private tools when you have an mcp_session_id and want to avoid unnecessary AUTH_REQUIRED retries. "
-                    + "If mcp_session_id is missing or invalid, all providers show as not linked. "
-                    + "Sessions are persisted in the database and survive server restarts — call start_auth again only if your session has expired."
+            description = "Returns the current MCP auth session status. The 'status' field is one of: "
+                    + "OK (session valid — check each provider's 'linked'); "
+                    + "INVALID_SESSION (an mcp_session_id was provided but is wrong/expired — call start_auth to get a new one; do NOT treat this as a login failure); "
+                    + "NO_SESSION (no mcp_session_id supplied yet). "
+                    + "Call this before private tools to avoid unnecessary AUTH_REQUIRED retries. "
+                    + "Sessions are persisted in the database and survive server restarts."
     )
     public McpAuthStatusResponse getAuthStatus(
             @ToolParam(description = "MCP session ID issued by start_auth. If absent or invalid, all providers show as not linked.", required = false)
@@ -72,10 +74,20 @@ public class McpAuthMcpTools {
                 })
                 .toList();
 
+        // Distinguish "no id supplied" from "an id was supplied but does not resolve"
+        // (expired/invalid/dropped). Otherwise a wrong mcp_session_id looks identical to
+        // "valid session, nothing linked yet", so clients (ChatGPT) treat a lost session as
+        // a login failure and loop. INVALID_SESSION ⇒ call start_auth for a fresh session.
+        String status;
         if (session != null) {
+            status = "OK";
             log.debug("get_auth_status session={}", session.id().fingerprint());
+        } else if (mcp_session_id != null && !mcp_session_id.isBlank()) {
+            status = "INVALID_SESSION";
+        } else {
+            status = "NO_SESSION";
         }
-        return new McpAuthStatusResponse(sessionIdValue, providers);
+        return new McpAuthStatusResponse(status, sessionIdValue, providers);
     }
 
     @Tool(
