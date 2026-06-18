@@ -34,9 +34,9 @@ public class LmsMaterialExportMcpTool {
     @Tool(
             name = "prepare_lms_material_export",
             description = "사용자가 선택한 특정 과목의 LMS 주차학습 자료들(PDF, PPT 등)의 내보내기를 검증하고 대기열 등록을 준비합니다. "
-                    + "특정 과목 다운로드 요청의 기본 흐름입니다. 호출 전에 반드시 get_my_lms_courses로 과목 목록(과목별 파일 수·용량)을 사용자에게 보여주고 "
-                    + "어떤 과목을 받을지 선택하게 한 뒤, get_my_lms_materials로 해당 과목의 exact content_id 목록을 확보하세요. "
-                    + "확보된 content_id들을 content_ids 파라미터로 전달해 주세요. 한도 초과 또는 미지원 파일은 자동 제외되고 안내됩니다. "
+                    + "특정 과목 다운로드 요청의 기본 흐름입니다. 호출 전에 get_my_lms_courses로 과목+파일 목록(과목별 파일 수·용량·content_id 포함)을 사용자에게 보여주고 "
+                    + "어떤 과목을 받을지 선택하게 하세요. 선택된 과목의 content_id들은 get_my_lms_courses 응답에 이미 들어있으니 그대로 content_ids 파라미터로 전달하면 됩니다(get_my_lms_materials 재호출 불필요). "
+                    + "한도 초과 또는 미지원 파일은 자동 제외되고 안내됩니다. "
                     + "mcp_session_id with LMS provider linked required."
     )
     public McpPrivateToolResponse<Object> prepareLmsMaterialExport(

@@ -122,6 +122,8 @@ public class McpLmsAuthController {
                 + "</head><body>"
                 + "<h2 class=\"" + (success ? "ok" : "err") + "\">" + title + "</h2>"
                 + "<p>" + escapeHtml(message) + "</p>"
+                + (success ? "<p style=\"color:#059669;font-weight:600;margin-top:20px\">"
+                        + "🔒 입력하신 로그인 정보는 서버에 저장되지 않습니다.</p>" : "")
                 + "</body></html>";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
