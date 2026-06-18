@@ -269,16 +269,58 @@ class McpAuthSessionStoreTests {
     }
 
     @Test
-    void bindTransportId_isIdempotent() {
+    void findByTransportId_returnsNewestWhenTransportHasMultipleSessions() {
+        McpAuthSessionStore store = store(T0.plusSeconds(2), Duration.ofHours(4));
+        McpSessionEntity older = new McpSessionEntity(
+                "old-session",
+                T0,
+                T0.plus(Duration.ofHours(4)),
+                "{}"
+        );
+        older.setTransportSessionId("transport-abc");
+        McpSessionEntity newer = new McpSessionEntity(
+                "new-session",
+                T0.plusSeconds(1),
+                T0.plus(Duration.ofHours(4)),
+                "{}"
+        );
+        newer.setTransportSessionId("transport-abc");
+        repository.save(older);
+        repository.save(newer);
+
+        Optional<McpAuthSession> found = store.findByTransportId("transport-abc");
+
+        assertThat(found).isPresent();
+        assertThat(found.get().id().value()).isEqualTo("new-session");
+    }
+
+    @Test
+    void bindTransportId_releasesExistingHolderBeforeBindingTarget() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession first = store.create();
+        McpAuthSession second = store.create();
+
+        store.bindTransportId(first.id(), "transport-abc");
+        store.bindTransportId(second.id(), "transport-abc");
+
+        assertThat(repository.findById(first.id().value()).orElseThrow().getTransportSessionId()).isNull();
+        assertThat(repository.findById(second.id().value()).orElseThrow().getTransportSessionId())
+                .isEqualTo("transport-abc");
+        assertThat(store.findByTransportId("transport-abc").orElseThrow().id()).isEqualTo(second.id());
+    }
+
+    @Test
+    void bindTransportId_rebindsSameSessionToLatestTransport() {
         McpAuthSessionStore store = store(T0, Duration.ofHours(4));
         McpAuthSession session = store.create();
 
         store.bindTransportId(session.id(), "transport-abc");
-        store.bindTransportId(session.id(), "transport-xyz"); // must not overwrite
+        store.bindTransportId(session.id(), "transport-xyz");
 
-        Optional<McpAuthSession> found = store.findByTransportId("transport-abc");
+        Optional<McpAuthSession> found = store.findByTransportId("transport-xyz");
         assertThat(found).isPresent();
-        assertThat(store.findByTransportId("transport-xyz")).isEmpty();
+        assertThat(found.get().id()).isEqualTo(session.id());
+        assertThat(store.findByTransportId("transport-abc")).isEmpty();
     }
 
     @Test
@@ -304,6 +346,32 @@ class McpAuthSessionStoreTests {
         Optional<McpAuthSession> found = store.findByOauthSubject("google-sub-12345");
         assertThat(found).isPresent();
         assertThat(found.get().id()).isEqualTo(session.id());
+    }
+
+    @Test
+    void findByOauthSubject_returnsNewestWhenSubjectHasMultipleSessions() {
+        McpAuthSessionStore store = store(T0.plusSeconds(2), Duration.ofHours(4));
+        McpSessionEntity older = new McpSessionEntity(
+                "old-oauth-session",
+                T0,
+                T0.plus(Duration.ofHours(4)),
+                "{}"
+        );
+        older.setOauthSubject("google-sub-12345");
+        McpSessionEntity newer = new McpSessionEntity(
+                "new-oauth-session",
+                T0.plusSeconds(1),
+                T0.plus(Duration.ofHours(4)),
+                "{}"
+        );
+        newer.setOauthSubject("google-sub-12345");
+        repository.save(older);
+        repository.save(newer);
+
+        Optional<McpAuthSession> found = store.findByOauthSubject("google-sub-12345");
+
+        assertThat(found).isPresent();
+        assertThat(found.get().id().value()).isEqualTo("new-oauth-session");
     }
 
     @Test
