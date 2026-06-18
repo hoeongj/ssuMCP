@@ -3,6 +3,23 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-18 — ChatGPT MCP OAuth 끝까지 연결: Auth0 DCR(third-party 앱) 5단 관문
+
+- 맥락: PRM `authorization_servers`(아래 항목)를 고친 뒤에도 ChatGPT가 OAuth로 안정 세션(`oauth_subject`)을 얻기까지, **에러를 고칠 때마다 다음 관문이 드러나는** 연쇄였다. 핵심 통찰: **Auth0 DCR(동적 등록) 클라이언트는 전부 "third-party 앱"**이라 first-party 앱엔 없는 제약이 줄줄이 걸린다. 각 단계는 Auth0 Monitoring 로그의 `description`으로 정확히 특정했다(추측 금지).
+- 단계별 증상 → 원인 → 해결:
+  1. **ChatGPT가 OAuth를 아예 발동 안 함** (DB `oauth_subject`=0, 전부 opaque). 원인: `/mcp`가 `permitAll`이라 토큰 없는 연결이 401을 안 받음 → 챌린지가 없어 OAuth 진입 안 함. 해결: 사용자가 ChatGPT 커넥터를 **OAuth 인증 방식으로 추가**(클라이언트가 PRM 보고 능동 발견). ※ `/mcp`를 강제 401로 바꾸는 건 공개 도구(학식·도서관 등)를 다 깨므로 금지.
+  2. `access_denied: Service not found: https://ssumcp.duckdns.org/mcp`. 원인: ChatGPT는 `resource=<커넥터 URL=.../mcp>`(RFC 8707)로 요청하는데 Auth0 API 식별자는 base(`.../`, `/mcp` 없음)였다. 해결: **Auth0 API 식별자 `.../mcp`로 신규 생성**(식별자는 불변 → 새로 만듦) + 서버 `SSUAI_OAUTH_AUDIENCE=.../mcp` 정렬.
+  3. `invalid_request: Client "tpc_..." is not authorized to access resource server`. 원인: third-party(DCR) 클라이언트는 **명시적 client grant** 필요. 게다가 **ChatGPT는 시도마다 새 클라이언트(tpc_…)를 생성**해 per-client grant는 무용. 해결: **모든 third-party에 대한 default client grant** (Management API `POST /api/v2/client-grants` `default_for:"third_party_clients"`, `subject_type:"user"`). ⚠️ `scope`는 resource server에 정의된 스코프의 부분집합이어야 함 → 커스텀 스코프 없는 API엔 `scope:[]`.
+  4. `no connections enabled for the client`. 원인: **DCR은 domain-level connection만** 인증에 쓸 수 있는데 google-oauth2가 domain이 아니었다. 해결: Management API `PATCH /api/v2/connections/{id}` `{"is_domain_connection":true}`.
+  5. `403 등록 엔드포인트: 이 유형의 엔티티 제한 도달`. 원인: 반복 시도로 쌓인 `tpc_` 클라이언트가 dev 테넌트 앱 한도를 채움. 해결: 쌓인 `tpc_` 클라이언트 일괄 삭제. (gotcha: `DELETE /clients/{id}`가 HTTP/2에서 `000`(연결 리셋) 반복 → `--http1.1`로 성공.)
+- 부분 성공/남은 것: OAuth가 붙어 `oauth_subject` 바인딩 확인(DB) → ChatGPT가 토큰을 보내면 세션이 턴 넘어가도 sub로 유지(2번 로그인 해소). 단 **ChatGPT가 토큰을 일관되게 안 보냄**(일부 호출 opaque) — 커넥터의 "not all permissions granted"(요청 스코프 미충족) 경고와 연관 의심. 완전 일관성은 스코프 추가 검토 필요(미결).
+- 핵심 파일/설정: `McpOAuthSecurityConfig`(PRM customizer), `values.yaml` `oauthAudience`, Auth0(신규 API `.../mcp`·default client grant·google domain connection). 서버는 Auth0 관리 자격증명 불필요(공개 JWKS로 검증) → 위 Auth0 변경은 사용자 Management API로 수행.
+- 포트폴리오 포인트: MCP 서버에 Auth0를 외부 AS로 붙여 OAuth 2.1 + DCR + PKCE 흐름을 끝까지 연결. "third-party 앱 제약(client grant/domain connection/entity limit)"과 RFC 8707 resource↔audience 정렬을, 각 단계 Auth0 로그로 특정해 해결.
+- 면접 예상 질문:
+  1. RFC 8707 `resource` 파라미터와 토큰 `aud`, RS의 audience 검증은 어떻게 맞물리나? 하나라도 어긋나면?
+  2. Auth0 DCR 클라이언트가 "third-party"라서 생기는 제약 3가지(client grant, domain connection, entity limit)를 설명하라.
+  3. `/mcp`를 401로 강제해 OAuth를 발동시키지 않은 이유는? (공개 도구 zero-auth 보존)
+
 ## 2026-06-18 — MCP OAuth PRM에 `authorization_servers` 누락: Spring Security 7이 자동 생성한 필터가 수제 컨트롤러를 가림(shadowing)
 
 - 맥락:

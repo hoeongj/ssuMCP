@@ -118,7 +118,7 @@ public class LmsExportController {
                   btnEl.hidden = false;
                   if (!countdownTimer && !downloaded) startCountdown(5);
                 } else if (status === 'QUEUED' || status === 'BUILDING') {
-                  statusEl.textContent = message || '압축 파일을 만들고 있어요…';
+                  statusEl.textContent = message || '압축 파일을 만들고 있어요. 약 5분 정도 걸릴 수 있어요…';
                   spinnerEl.style.display = 'block';
                 } else {
                   if (pollTimer) clearInterval(pollTimer);
@@ -208,7 +208,7 @@ public class LmsExportController {
         LmsExportStatus status = job.getStatus();
         if (status == LmsExportStatus.QUEUED || status == LmsExportStatus.BUILDING) {
             return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(Map.of("status", "BUILDING", "message", "압축 파일이 빌드 중입니다. 잠시만 기다려 주세요."));
+                    .body(Map.of("status", "BUILDING", "message", "압축 파일을 만들고 있어요. 약 5분 정도 걸릴 수 있어요. 이 페이지를 열어두면 완료되는 대로 자동으로 다운로드됩니다."));
         }
 
         if (status == LmsExportStatus.FAILED) {
