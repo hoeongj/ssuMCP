@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import com.ssuai.domain.academic.connector.AcademicPolicyConnector;
 import com.ssuai.domain.academic.dto.AcademicPolicyCorpusSnapshot;
 import com.ssuai.domain.academic.dto.AcademicPolicyDocument;
-import com.ssuai.domain.academic.embedding.AcademicEmbeddingClient;
+import com.ssuai.domain.academic.embedding.AcademicEmbeddingStore;
 import com.ssuai.domain.academic.embedding.AcademicTextChunker;
 import com.ssuai.domain.academic.embedding.EmbeddedChunk;
 import com.ssuai.domain.academic.embedding.EmbeddedCorpus;
@@ -27,18 +27,18 @@ public class AcademicPolicyCorpusCache {
     private static final Logger log = LoggerFactory.getLogger(AcademicPolicyCorpusCache.class);
 
     private final AcademicPolicyConnector connector;
-    private final AcademicEmbeddingClient embeddingClient;
+    private final AcademicEmbeddingStore embeddingStore;
     private final AtomicReference<EmbeddedCorpus> current = new AtomicReference<>();
     private final AtomicBoolean backgroundRefreshRunning = new AtomicBoolean(false);
     private final boolean refreshEnabled;
 
     public AcademicPolicyCorpusCache(
             AcademicPolicyConnector connector,
-            AcademicEmbeddingClient embeddingClient,
+            AcademicEmbeddingStore embeddingStore,
             @org.springframework.beans.factory.annotation.Value("${ssuai.academic-policy.refresh-enabled:true}")
             boolean refreshEnabled) {
         this.connector = connector;
-        this.embeddingClient = embeddingClient;
+        this.embeddingStore = embeddingStore;
         this.refreshEnabled = refreshEnabled;
     }
 
@@ -109,7 +109,7 @@ public class AcademicPolicyCorpusCache {
         try {
             EmbeddedCorpus refreshed = enrich(connector.loadCorpus(true));
             current.set(refreshed);
-            log.debug(
+            log.info(
                     "academic-policy corpus refreshed sources={} documents={} fallbackUsed={} embeddingActive={} chunks={}",
                     refreshed.snapshot().sources().size(),
                     refreshed.snapshot().documents().size(),
@@ -133,7 +133,7 @@ public class AcademicPolicyCorpusCache {
      * no key, upstream error) returns a lexical-only corpus so search still works.
      */
     private EmbeddedCorpus enrich(AcademicPolicyCorpusSnapshot snapshot) {
-        if (!embeddingClient.isUsable()) {
+        if (!embeddingStore.isUsable()) {
             return EmbeddedCorpus.lexicalOnly(snapshot);
         }
         // Enrichment runs inside @PostConstruct on the startup path: any escaping
@@ -153,7 +153,7 @@ public class AcademicPolicyCorpusCache {
             if (chunkTexts.isEmpty()) {
                 return EmbeddedCorpus.lexicalOnly(snapshot);
             }
-            List<float[]> vectors = embeddingClient.embed(chunkTexts);
+            List<float[]> vectors = embeddingStore.embed(chunkTexts);
             if (vectors.size() != chunkTexts.size()) {
                 log.warn("academic-policy embedding incomplete ({}/{}); using lexical-only",
                         vectors.size(), chunkTexts.size());

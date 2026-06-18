@@ -12,8 +12,7 @@ import com.ssuai.domain.academic.connector.AcademicPolicyConnector;
 import com.ssuai.domain.academic.dto.AcademicPolicyCorpusSnapshot;
 import com.ssuai.domain.academic.dto.AcademicPolicyDocument;
 import com.ssuai.domain.academic.dto.AcademicPolicySource;
-import com.ssuai.domain.academic.embedding.AcademicEmbeddingClient;
-import com.ssuai.domain.academic.embedding.AcademicEmbeddingProperties;
+import com.ssuai.domain.academic.embedding.AcademicEmbeddingStore;
 import com.ssuai.domain.academic.embedding.EmbeddedCorpus;
 
 /**
@@ -39,12 +38,14 @@ class AcademicPolicyCorpusCacheTests {
         return live -> snapshot();
     }
 
-    /** Usable-looking client whose embed call blows up with a non-RestClientException. */
-    private static AcademicEmbeddingClient throwingClient() {
-        AcademicEmbeddingProperties properties = new AcademicEmbeddingProperties();
-        properties.setEnabled(true);
-        properties.setApiKey("key");
-        return new AcademicEmbeddingClient(properties) {
+    /** Usable-looking store whose embed call blows up with a non-RestClientException. */
+    private static AcademicEmbeddingStore throwingStore() {
+        return new AcademicEmbeddingStore() {
+            @Override
+            public boolean isUsable() {
+                return true;
+            }
+
             @Override
             public List<float[]> embed(List<String> texts) {
                 throw new IllegalArgumentException("invalid header value: \"Bearer key\n\"");
@@ -55,7 +56,7 @@ class AcademicPolicyCorpusCacheTests {
     @Test
     void startupLoadSurvivesEmbeddingFailureAndDegradesToLexical() {
         AcademicPolicyCorpusCache cache =
-                new AcademicPolicyCorpusCache(connector(), throwingClient(), false);
+                new AcademicPolicyCorpusCache(connector(), throwingStore(), false);
 
         assertThatCode(cache::loadFastFallbackCorpus).doesNotThrowAnyException();
 
@@ -67,7 +68,7 @@ class AcademicPolicyCorpusCacheTests {
     @Test
     void refreshSurvivesEmbeddingFailureAndDegradesToLexical() {
         AcademicPolicyCorpusCache cache =
-                new AcademicPolicyCorpusCache(connector(), throwingClient(), true);
+                new AcademicPolicyCorpusCache(connector(), throwingStore(), true);
 
         assertThatCode(cache::refreshFromOfficialSources).doesNotThrowAnyException();
         assertThat(cache.embeddedCorpus(false).embeddingActive()).isFalse();

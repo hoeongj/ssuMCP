@@ -3,6 +3,22 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-18 — 학칙 RAG 임베딩이 prod에서 lexical로 고착: 일일 1000요청 무료 쿼터를 "재시작마다 전체 재임베딩"으로 소진
+
+- 맥락/증상: `search_academic_policy_sources` 등 학칙 RAG는 lexical+임베딩 하이브리드(ADR 0020)인데 prod에서 사실상 **항상 lexical-only**. backend pod 재시작 직후 로그: `academic-embedding: rate limited`(30/60/120s 백오프 3회) → `request failed (TooManyRequests)` → `academic-policy embedding incomplete (0/216); using lexical-only`. 216청크 중 **0개** 임베딩 성공.
+- 처음 세운 가설 (조사 중 틀린 곁가지): API에 단일 입력 1건을 프로브하니 **HTTP 200**(쿼터가 죽은 게 아님). "단일은 되는데 96개 배치는 죽는다 → 분당 토큰(TPM) 한도 초과가 즉시 원인이고 **배치 크기를 줄이면** 된다"고 의심. 이 방향이면 답이 영속화가 아니라 배치 튜닝이 된다.
+- 실제 원인: 실패를 일으킨 96개 배치를 그대로 재현하니 429 본문이 한도 종류를 **명시**했다 — `quotaId: EmbedContentRequestsPerDayPerProjectPerModel-FreeTier, limit: 1000`. 분당이 아니라 **하루 1000 요청**(per-day, per-model). corpus는 `AtomicReference<EmbeddedCorpus>`로 **in-memory 전용**(ADR 0020, pgvector 미사용)이라 **pod 재시작·6시간 스케줄 갱신마다 216청크를 통째로 재임베딩**한다. main 푸시마다 ArgoCD가 pod를 롤해 재시작이 잦고 → 하루 1000요청이 금방 소진 → 이후 전부 429 → lexical. (배치 튜닝 가설은 틀렸고 MASTERPLAN의 "재시작마다 재임베딩 낭비" 가설이 옳았다. 단일 프로브가 200이었던 건 그 순간 잔여 예산이 있었을 뿐.)
+- 왜 pgvector가 아니라 plain 영속화인가: 영속화 결정(재임베딩 제거)은 옳지만 도구로서 pgvector는 기각. ① prod Postgres(외부 stock 17.10, GitOps repo 밖, 15일 무중단 stateful)에 `pg_available_extensions`로 보니 **`vector` 확장 자체가 없음** → `CREATE EXTENSION vector` Flyway 마이그레이션은 부팅 크래시(ADR 0020 기각 사유 #1 실증). ② 코사인 유사도는 216청크를 **in-memory로 계산**(~1ms)하므로 pgvector ANN 인덱스를 안 씀 → 깔아도 "벡터 타입 캐시"일 뿐. 대신 `(chunk_hash, model)` 키 plain 캐시(`academic_embeddings`, base64(float32) TEXT)면 동일 효과·확장 의존성 0·H2 테스트 통과.
+- 해결: 갱신 시 청크별 SHA-256으로 영속 벡터를 조회해 **캐시 히트는 스킵**, 미스만 임베딩 후 upsert. 정상상태(문서 불변)에선 API 호출 0 → 1000/day 무소비. 모델/차원이 바뀌면 키·가드로 자동 재임베딩(벡터공간/길이 불일치 방지).
+- 핵심 파일: `db/migration/{h2,postgresql}/V13__create_academic_embeddings.sql`, `domain/academic/embedding/{AcademicEmbeddingEntity,AcademicEmbeddingId,AcademicEmbeddingRepository,AcademicEmbeddingStore,PersistentAcademicEmbeddingStore,AcademicVectorCodec}.java`, `AcademicPolicyCorpusCache`(client→store). 브랜치/커밋은 MASTERPLAN.
+- 검증: 단위(store 스킵/영속/degrade·코덱 왕복)+리포지토리(복합키 H2 왕복)+풀컨텍스트(V13↔엔티티 validate) green, 전체 스위트 green. **배포 후 종단 검증 필요**: 콜드 캐시는 현재 일일예산 소진 상태라 **다음 쿼터 리셋(태평양 자정) 후 첫 갱신**에서 216청크가 한 번 임베딩·영속되어야 활성화. INFO로 승격한 `academic-policy corpus refreshed ... embeddingActive=true chunks=216` 로그 + `SELECT count(*) FROM academic_embeddings`로 확인.
+- 한계(정직): 1회 임베딩 호출이 all-or-nothing이라 콜드 부트스트랩 중 일부 배치가 429나면 그 회차는 아무것도 영속 못 하고 다음 갱신이 216을 다시 시도한다(일일예산 1000이 216을 넉넉히 넘어 리셋 후 첫 완주에서 채워짐). 배치 단위 점진 영속은 후속 과제. 쿼리 임베딩은 매 요청 1건 소비(유니크라 캐시 불가) — corpus 재임베딩 드레인을 없앤 것이지 임베딩이 공짜가 된 건 아니다.
+- 포트폴리오 포인트: 외부 임베딩 API의 **일일 요청 쿼터 고갈**을 콘텐츠 해시 캐시로 구조적으로 제거. 트렌드 키워드(pgvector)를 corpus 규모·인메모리 코사인·prod 인프라 제약을 근거로 **의도적으로 배제**한 도구 선택. 429 응답 본문을 직접 파싱해 per-day vs per-minute를 특정한 진단.
+- 면접 예상 질문:
+  1. 단일 요청은 200인데 배치는 429였다. per-day 한도임을 어떻게 특정했고, per-minute였다면 해결책(배치 축소)이 왜 달라지나?
+  2. 임베딩 영속화에 pgvector를 쓰지 않은 이유는? pgvector가 정당화되는 corpus 규모/쿼리 패턴은 어떤 경우인가?
+  3. `(chunk_hash, model)`을 캐시 키로 잡은 이유는? 모델이나 차원이 바뀌면 캐시는 어떻게 동작하나?
+
 ## 2026-06-18 — ChatGPT MCP OAuth 끝까지 연결: Auth0 DCR(third-party 앱) 5단 관문
 
 - 맥락: PRM `authorization_servers`(아래 항목)를 고친 뒤에도 ChatGPT가 OAuth로 안정 세션(`oauth_subject`)을 얻기까지, **에러를 고칠 때마다 다음 관문이 드러나는** 연쇄였다. 핵심 통찰: **Auth0 DCR(동적 등록) 클라이언트는 전부 "third-party 앱"**이라 first-party 앱엔 없는 제약이 줄줄이 걸린다. 각 단계는 Auth0 Monitoring 로그의 `description`으로 정확히 특정했다(추측 금지).
