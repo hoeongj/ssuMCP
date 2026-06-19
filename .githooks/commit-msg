@@ -1,0 +1,7 @@
+#!/bin/sh
+# Strip AI attribution trailers from commit messages.
+# Enabled via: git config core.hooksPath .githooks
+sed -i -E \
+  -e '/^[Cc]o-[Aa]uthored-[Bb]y:.*[Cc]laude/d' \
+  -e '/^[Cc]o-[Aa]uthored-[Bb]y:.*[Aa]nthropic/d' \
+  "$1"
