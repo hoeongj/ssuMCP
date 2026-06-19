@@ -17,17 +17,31 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+
+import com.ssuai.global.resilience.PyxisResilience;
 import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @Lazy
+    @Autowired(required = false)
+    private PyxisResilience pyxisResilience;
+
     public GlobalExceptionHandler() {
+    }
+
+    /** Package-private setter for unit tests (avoids Spring context requirement). */
+    void setPyxisResilience(PyxisResilience pyxisResilience) {
+        this.pyxisResilience = pyxisResilience;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -143,7 +157,19 @@ public class GlobalExceptionHandler {
             CallNotPermittedException exception
     ) {
         log.warn("Circuit breaker open: name={}", exception.getCausingCircuitBreakerName());
-        return error(ErrorCode.CIRCUIT_OPEN);
+
+        CircuitBreaker.State state = (pyxisResilience != null)
+                ? pyxisResilience.circuitBreakerState()
+                : CircuitBreaker.State.OPEN;
+
+        String message = (state == CircuitBreaker.State.HALF_OPEN)
+                ? "도서관 예약 시스템이 복구 중입니다. 잠시 후 다시 시도해 주세요."
+                : ErrorCode.CIRCUIT_OPEN.getDefaultMessage();
+
+        ErrorResponse errorResponse = new ErrorResponse(ErrorCode.CIRCUIT_OPEN.name(), message);
+        return ResponseEntity
+                .status(ErrorCode.CIRCUIT_OPEN.getStatus())
+                .body(ApiResponse.error(errorResponse));
     }
 
     @ExceptionHandler(ConnectorParseException.class)
