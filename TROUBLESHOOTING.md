@@ -4242,3 +4242,44 @@ in-progress 파일)로 좁혔다.
 1. CI 명령 timeout 뒤 같은 workspace에서 즉시 재시도하면 어떤 자식 프로세스·파일 충돌이 생길 수 있나요?
 2. 테스트 assertion failure와 Gradle test-results 인프라 실패를 어떤 증거로 구분할 수 있나요?
 3. 병렬 빌드가 필요할 때 동일 저장소의 `build/` 충돌을 피하는 격리 방법은 무엇인가요?
+
+## 사건 13: B5 채플 졸업요건 — rusaint 드롭다운 미노출로 과거 학기 조회 실패 (2026-06-20)
+
+### 증상
+
+`check_graduation_requirements`의 채플 항목이 `required=6, completed=1`로 나옴. 사용자는 실제로 채플을 5학기 이수.
+
+### 틀린 가설
+
+**1차 구현(commit `5ee1526`)**: 졸업 서비스가 `chapelConnector.fetchChapelInfo(year, sem)`를 학기별로 반복 호출하면 각 학기의 "P"/"F"를 집계할 수 있다고 가정.
+
+→ **반증**: prod 로그에서 `rusaint chapel fetch failed: General Error from application: No chapel information provided` WARN 2건 확인. u-SAINT 채플 앱의 학기 선택 드롭다운이 오래된 학기(2024년)를 노출하지 않아 `app.information(year, semester)`가 드롭다운 선택 시 예외를 던짐. 현재 학기(null/null)는 성공 → `completed=1`만 카운트됨.
+
+### 실제 원인
+
+rusaint `ChapelApplication.information(year, semester)`는 내부적으로 드롭다운에서 해당 학기를 선택하는 방식으로 동작한다. u-SAINT가 드롭다운에 최근 학기만 노출하므로 오래된 학기(2024 1학기 등) 선택 시 "No chapel information provided" 예외 발생.
+
+### 수정
+
+**2차 구현(commit `f97bd2a`)**: rusaint `ChapelApplication.lookup()` 메서드를 이용한 단일 세션 역방향 탐색.
+- `lookup()`은 "이전 학기 조회 + 드롭다운 재적용" 기능(이전학기 버튼 클릭과 동일한 내부 동작)
+- 단일 세션 내에서 `lookup()` 반복 → `getSelectedSemester()`로 현재 위치 확인 → `information()` 호출 → "P" 카운트
+- 드롭다운 직접 선택 경로를 완전히 우회
+- 최대 12회 반복(6년×2학기), 진입연도 이전 stop, stuck 감지(같은 학기 반복 시 break)
+
+### 핵심 파일 / 커밋
+
+- `RusaintUniFfiClient.kt` — `countChapelPassedSemesters()` 신규 (단일 세션 lookup 순회)
+- `RusaintClient.java`, `SaintChapelConnector.java`, `RusaintChapelConnector.java` — 인터페이스 추가
+- `SaintGraduationService.java` — `countCompletedChapelSemesters()` 단순화
+- 1차 fix: `5ee1526` / 2차 fix: `f97bd2a` / PR #98, #99
+
+### 포트폴리오 포인트
+
+외부 라이브러리(rusaint)가 제공하는 API 호출 방식이 둘 이상 있을 때(드롭다운 직접 선택 vs 이전 버튼 탐색), 운영 로그로 실패 원인을 특정하고 다른 API 경로로 우회한 사례. 라이브러리 내부 동작을 FFI 바인딩 소스에서 직접 읽어 `lookup()`의 의미를 파악한 점이 핵심.
+
+### 예상 면접 질문
+
+1. rusaint 같은 웹 스크래핑 기반 FFI 라이브러리에서 "같은 데이터를 가져오는 두 가지 API 경로"가 생기는 이유는 무엇인가요?
+2. 운영 로그에서 "No chapel information provided"만 보고 드롭다운 미노출을 원인으로 좁힌 과정을 설명해주세요.
+3. 단일 세션 내에서 반복 탐색 시 무한 루프를 어떻게 방지했나요?
