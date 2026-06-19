@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-06-06. 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-06-19. 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -167,7 +167,7 @@ com.ssuai
     │   └── service     // LmsAssignmentsService
     ├── mcp
     │   ├── config      // McpServerConfig — ToolCallbackProvider 빈 + tool readOnly/destructive 어노테이션
-    │   └── tool        // 모든 @Tool 클래스 (총 45개 — §11 참조)
+    │   └── tool        // 모든 @Tool 클래스 (총 52개 — §11 참조)
     │                   // McpAuthHelper — 공유 principalKey 조회 + AUTH_REQUIRED 팩토리
     ├── meal
     │   ├── config      // MealFanOutConfig — 주간 export용 parallelStream fan-out
@@ -491,7 +491,7 @@ Flyway layout은 `classpath:db/migration/V*__*.sql,classpath:db/migration/{vendo
 |-----------|--------|-----------|
 | `SSUAI_DB_URL` | Spring Data JPA + Flyway | prod Postgres 연결. dev/test 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
 | `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA + Flyway | prod Postgres 연결 |
-| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9개 프로바이더 LLM fallback (`LlmProviderConfig`) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
+| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 10개 프로바이더 LLM fallback (`LlmProviderConfig`; `provider-order` 10개, `private-provider-order`는 gemini 제외 9개) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
 | `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | 빈 기본값 = 재시작마다 임시 랜덤. prod는 토큰 유지를 위해 반드시 설정 (32바이트 이상). |
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
@@ -596,18 +596,19 @@ Claude Desktop / IDE
    커넥터 / 저장소
 ```
 
-현재 도구 (총 42개 — 읽기 전용 35개, 쓰기/상태 변경 7개):
+현재 도구 (총 52개 — 읽기 전용 40개, 쓰기/상태 변경 12개):
 
 **공개 읽기 전용 (인증 불필요)**
 
 | 도구 | 도메인 |
 |------|--------|
 | `get_today_meal`, `get_meal_by_date` | `MealService` |
+| `get_meal_weekly` | `WeeklyMealService` |
 | `get_dorm_weekly_meal` | `DormMealService` |
 | `search_campus_facilities` | `CampusService` |
 | `get_academic_calendar`, `find_academic_calendar_events` | `AcademicCalendarService` |
 | `classify_academic_question`, `search_academic_policy_sources`, `get_academic_policy_brief`, `check_scholarship_policy`, `list_academic_policy_sources` | `AcademicPolicyService` |
-| `get_library_available_seats`, `get_room_available_seats` | `LibraryAvailableSeatsService` |
+| `get_library_seat_catalog` | `LibrarySeatRoomCatalogService` |
 | `search_library_book` | `LibraryBookService` |
 | `get_recent_notices`, `search_notices`, `list_notice_categories`, `get_notice_detail`, `get_active_notices`, `get_department_notices` | `NoticeService` |
 
@@ -619,7 +620,7 @@ Claude Desktop / IDE
 | `start_auth` | MCP 세션 생성/조회 + 상태 토큰 발급 |
 | `logout_provider`, `logout_all` | 파괴적 — 세션 무효화 |
 
-**개인 읽기 전용 (mcp_session_id 필요)**
+**개인 (mcp_session_id 필요 — 읽기 및 쓰기)**
 
 | 도구 | Provider | 위임 대상 | 비고 |
 |------|----------|-----------|------|
@@ -630,7 +631,14 @@ Claude Desktop / IDE
 | `evaluate_graduation_with_policy` | SAINT | `SaintGraduationService` + `AcademicPolicyService` | u-SAINT 상태와 공식 규정 근거 결합 |
 | `get_my_scholarships` | SAINT | `SaintScholarshipService` | |
 | `simulate_gpa` | SAINT | `SaintGpaSimulationService` | |
-| `get_my_assignments` | LMS | `LmsAssignmentsService` | |
+| `get_my_assignments` | LMS | `LmsAssignmentsService` | 미제출 과제·퀴즈 |
+| `get_my_lms_terms` | LMS | `LmsAssignmentsService` | 등록 학기 목록 |
+| `get_lms_dashboard` | LMS | `LmsDashboardService` | 과제+학사일정+공지 대시보드 |
+| `get_my_lms_courses` | LMS | `LmsMaterialsService` | 과목+비영상 자료(개수·용량·content_id) 묶음 |
+| `get_my_lms_materials` | LMS | `LmsMaterialsService` | 특정 과목 자료 재조회 (HEAD 크기 보정) |
+| `prepare_lms_material_export` | LMS | `LmsMaterialExportService` | 선택 자료 내보내기 준비 (PREPARED, 쓰기) |
+| `export_all_lms_materials` | LMS | `LmsMaterialExportService` | 전 과목 자료 일괄 내보내기 준비 (쓰기) |
+| `confirm_lms_material_export` | LMS | `LmsMaterialExportService` | 다운로드 링크 발급 (쓰기) |
 | `get_library_seat_status` | LIBRARY | `LibrarySeatService` | room-level 집계 |
 | `get_library_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 7개 열람실 순회 |
 | `get_room_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 특정 열람실 |
@@ -645,7 +653,7 @@ Claude Desktop / IDE
 | `get_my_library_seat` | LIBRARY | `LibraryReservationConnector` | GET /pyxis-api/1/api/seat-charges |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
-도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 36개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`·`cancel_library_wait`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
+도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 40개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`·`cancel_library_wait`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
 
 학칙·졸업·장학 RAG는 `AcademicPolicyCorpusCache`가 공식 URL에서 주기적으로 갱신한
 인메모리 corpus를 사용한다. URL registry는 코드/설정에 고정하지만 본문은

@@ -14,7 +14,7 @@
 
 학식 메뉴, 도서관 좌석, 성적, 시간표처럼 매일 확인하는 정보를 매번 포털에서 찾는 게 번거로웠다. 단순히 크롤러를 만드는 대신, LLM이 직접 학교 데이터를 도구로 호출할 수 있는 MCP 서버를 만들면 챗봇·IDE·자동화 파이프라인 어디서든 재사용할 수 있겠다고 판단했다.
 
-Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 알려줘"*, *"도서관 빈 자리 예약해줘"* 같은 요청에 LLM이 직접 데이터를 가져와 답하거나 행동한다.
+Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 알려줘"*, *"도서관 빈 자리 예약해줘"*, *"이번 학기 LMS 강의자료 전부 다 받아줘"* 같은 요청에 LLM이 직접 데이터를 가져와 답하거나 행동한다.
 
 ---
 
@@ -53,7 +53,7 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 
 ---
 
-## 도구 목록 (51개)
+## 도구 목록 (52개)
 
 ### 공개 도구 — 인증 불필요
 
@@ -133,6 +133,7 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `get_my_lms_courses` | 사용자의 LMS 수강 과목 목록 조회 |
 | `get_my_lms_materials` | 비영상 주차학습 자료(PDF, PPT 등) 목록 조회 (비디오/오디오 제외) |
 | `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성) |
+| `export_all_lms_materials` | 전 과목 자료 일괄 내보내기 준비 (`get_my_lms_courses` 선행 호출 불필요) |
 | `confirm_lms_material_export` | 내보내기 최종 승인 및 20분 유효 다운로드 링크 발급 |
 
 **도서관 (provider: LIBRARY)**
@@ -144,6 +145,9 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive) |
 | `recommend_library_seats` | 선호도 기반 좌석 추천 |
 | `prepare_reserve_library_seat` | 좌석 예약 준비 → `confirm_action` 필요 |
+| `wait_for_library_seat` | 조건에 맞는 좌석이 열릴 때까지 대기 등록 (등록=동의, worker 자율 예약) |
+| `get_library_wait_status` | 좌석 대기 intent 상태 조회 |
+| `cancel_library_wait` | 실행 전 활성 좌석 대기 intent 취소 |
 | `get_my_library_seat` | 현재 예약 좌석 조회 |
 | `prepare_swap_library_seat` | 이석 준비 → `confirm_action` 필요 |
 | `prepare_cancel_library_seat` | 반납 준비 → `confirm_action` 필요 |
@@ -175,7 +179,7 @@ ssuAI (웹)          Claude Desktop / Cursor / 그 외 MCP 클라이언트
 
 REST와 MCP 두 경로는 동일한 Service 레이어를 공유한다. MCP 도구가 별도 비즈니스 로직을 갖지 않는다.
 
-학칙·졸업·장학 질문은 공식 출처 추적형 검색으로 처리한다(현재 키워드 lexical 스코어링, 벡터 임베딩 하이브리드는 예정). 서버 시작 후와 주기 갱신 시
+학칙·졸업·장학 질문은 공식 출처 추적형 검색으로 처리한다(기본 lexical 스코어링 + 벡터 임베딩 하이브리드는 RRF 융합으로 구현되어 env로 활성화하며 `academic_embeddings` 테이블에 영속화된다). 서버 시작 후와 주기 갱신 시
 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 인메모리 corpus를 갱신하고, 도구 응답에는
 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`를 포함한다. 개인 졸업 판정은
 u-SAINT 데이터와 이 공식 근거를 함께 반환한다.
@@ -279,7 +283,7 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 | MCP 구현 | Spring AI 1.1 (Streamable HTTP) |
 | 크롤링 | Jsoup 1.22 |
 | u-SAINT 연동 | rusaint — JNA 5.18로 Rust 라이브러리를 JVM에 연결 |
-| 학사 정책 검색 | 공식 출처 추적형 lexical 검색 (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus; 벡터 하이브리드 예정) |
+| 학사 정책 검색 | 공식 출처 추적형 RAG (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus; lexical 기본 + 임베딩 하이브리드 RRF, env 활성·`academic_embeddings` 영속) |
 | 인증 | JJWT 0.13 (HS256), AES-256-GCM |
 | 테스트 | JUnit 5, MockWebServer, WireMock 3 |
 | 인프라 | Oracle Cloud ARM64 · k3s · Traefik · ArgoCD · Helm · GHCR · Prometheus · Grafana |
