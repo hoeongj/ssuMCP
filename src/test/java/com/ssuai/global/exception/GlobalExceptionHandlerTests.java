@@ -1,11 +1,14 @@
 package com.ssuai.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import com.ssuai.global.resilience.PyxisResilience;
 import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
@@ -69,5 +72,24 @@ class GlobalExceptionHandlerTests {
                 handler.handleIllegalArgumentException(new IllegalArgumentException("bad input"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void callNotPermittedInHalfOpenStateReturnsRecoveryMessage() {
+        PyxisResilience mockResilience = mock(PyxisResilience.class);
+        when(mockResilience.circuitBreakerState()).thenReturn(CircuitBreaker.State.HALF_OPEN);
+
+        GlobalExceptionHandler handlerWithResilience = new GlobalExceptionHandler();
+        handlerWithResilience.setPyxisResilience(mockResilience);
+
+        CircuitBreaker circuitBreaker = CircuitBreaker.ofDefaults("pyxis");
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handlerWithResilience.handleCallNotPermittedException(
+                        CallNotPermittedException.createCallNotPermittedException(circuitBreaker));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo(ErrorCode.CIRCUIT_OPEN.name());
+        assertThat(response.getBody().error().message()).contains("복구 중");
     }
 }
