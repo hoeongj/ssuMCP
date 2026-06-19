@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Configuration;
 
 import com.ssuai.domain.library.events.LibrarySeatEventBus;
 import com.ssuai.domain.library.events.RedissonLibrarySeatEventBus;
+import com.ssuai.domain.library.reservation.intent.LibraryIntentStatusBus;
+import com.ssuai.domain.library.reservation.intent.RedissonLibraryIntentStatusBus;
 
 @Configuration
 class LibraryRedisConfiguration {
@@ -41,6 +43,17 @@ class LibraryRedisConfiguration {
         return redissonClient == null
                 ? LibrarySeatEventBus.noop()
                 : new RedissonLibrarySeatEventBus(redissonClient, objectMapper(objectMapperProvider), properties);
+    }
+
+    @Bean
+    LibraryIntentStatusBus libraryIntentStatusBus(
+            ObjectProvider<RedissonClient> redissonClientProvider,
+            ObjectProvider<ObjectMapper> objectMapperProvider,
+            LibraryRedisProperties properties) {
+        RedissonClient redissonClient = properties.isEnabled() ? redissonClientProvider.getIfAvailable() : null;
+        return redissonClient == null
+                ? LibraryIntentStatusBus.noop()
+                : new RedissonLibraryIntentStatusBus(redissonClient, objectMapper(objectMapperProvider), properties);
     }
 
     @Bean

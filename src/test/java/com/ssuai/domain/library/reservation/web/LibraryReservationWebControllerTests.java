@@ -31,6 +31,7 @@ import com.ssuai.domain.library.recommendation.LibrarySeatRecommendationService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
+import com.ssuai.domain.library.reservation.intent.LibraryIntentSseRegistry;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
@@ -63,6 +64,9 @@ class LibraryReservationWebControllerTests {
 
     @MockitoBean
     private LibrarySeatRecommendationService recommendationService;
+
+    @MockitoBean
+    private LibraryIntentSseRegistry intentSseRegistry;
 
     @Autowired
     LibraryReservationWebControllerTests(MockMvc mockMvc) {

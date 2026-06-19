@@ -33,6 +33,7 @@ import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
+import com.ssuai.domain.library.reservation.intent.LibraryIntentSseRegistry;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
@@ -44,6 +45,8 @@ import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 import com.ssuai.global.response.ApiResponse;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/library/reservations")
@@ -60,6 +63,7 @@ public class LibraryReservationWebController {
     private final LibraryReservationIntentTransactions intentTransactions;
     private final LibrarySeatEventPublisher seatEventPublisher;
     private final LibrarySeatRecommendationService recommendationService;
+    private final LibraryIntentSseRegistry intentSseRegistry;
 
     public LibraryReservationWebController(
             ActionService actionService,
@@ -67,13 +71,15 @@ public class LibraryReservationWebController {
             LibraryReservationConnector reservationConnector,
             LibraryReservationIntentTransactions intentTransactions,
             LibrarySeatEventPublisher seatEventPublisher,
-            LibrarySeatRecommendationService recommendationService) {
+            LibrarySeatRecommendationService recommendationService,
+            LibraryIntentSseRegistry intentSseRegistry) {
         this.actionService = actionService;
         this.librarySessionStore = librarySessionStore;
         this.reservationConnector = reservationConnector;
         this.intentTransactions = intentTransactions;
         this.seatEventPublisher = seatEventPublisher;
         this.recommendationService = recommendationService;
+        this.intentSseRegistry = intentSseRegistry;
     }
 
     @GetMapping("/recommend")
@@ -194,6 +200,14 @@ public class LibraryReservationWebController {
         String sessionKey = requireLibrarySession(httpRequest);
         return ApiResponse.success(intentTransactions.cancelActive(sessionKey)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND)));
+    }
+
+    @GetMapping(value = "/wait/events/{intentId}", produces = "text/event-stream")
+    public SseEmitter intentEvents(
+            @PathVariable Long intentId,
+            HttpServletRequest httpRequest) {
+        requireLibrarySession(httpRequest);
+        return intentSseRegistry.createEmitter(intentId);
     }
 
     @GetMapping("/my-seat")

@@ -16,6 +16,7 @@ public class LibraryRedisProperties {
     private Duration schedulerLockWait = Duration.ZERO;
     private String seatLockPrefix = "ssuai:library:seat-lock:";
     private Duration seatLockWaitTime = Duration.ZERO;
+    private String intentStatusChannel = "ssuai.library.intent-status.v1";
 
     public boolean isEnabled() {
         return enabled;
@@ -89,6 +90,14 @@ public class LibraryRedisProperties {
 
     public String seatLockName(long seatId) {
         return seatLockPrefix + seatId;
+    }
+
+    public String getIntentStatusChannel() {
+        return intentStatusChannel;
+    }
+
+    public void setIntentStatusChannel(String intentStatusChannel) {
+        this.intentStatusChannel = requireText(intentStatusChannel, "intentStatusChannel");
     }
 
     private static String requireText(String value, String field) {
