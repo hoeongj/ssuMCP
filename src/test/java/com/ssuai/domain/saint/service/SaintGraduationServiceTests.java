@@ -3,8 +3,8 @@ package com.ssuai.domain.saint.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -21,7 +21,6 @@ import com.ssuai.domain.auth.saint.PortalCookies;
 import com.ssuai.domain.auth.saint.SaintSessionStore;
 import com.ssuai.domain.saint.connector.SaintChapelConnector;
 import com.ssuai.domain.saint.connector.SaintGraduationConnector;
-import com.ssuai.domain.saint.dto.ChapelInfo;
 import com.ssuai.domain.saint.dto.GraduationRequirementItem;
 import com.ssuai.domain.saint.dto.GraduationStatus;
 import com.ssuai.global.exception.SaintSessionExpiredException;
@@ -46,8 +45,8 @@ class SaintGraduationServiceTests {
     void delegatesWithStoredSession() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
                 .thenReturn(statusWithChapel(0f, 0f));
-        when(chapelConnector.fetchChapelInfo(any(), any(), isNull(), isNull()))
-                .thenThrow(new RuntimeException("chapel unavailable"));
+        when(chapelConnector.countChapelPassedSemesters(any(), any(), anyInt()))
+                .thenReturn(0);
 
         service.fetchGraduationRequirements(STUDENT_ID);
 
@@ -66,51 +65,42 @@ class SaintGraduationServiceTests {
     }
 
     @Test
-    void chapelGateWithZerosMergesCurrentSemesterPassResult() {
+    void chapelGateWithZerosMergesCountedSemesters() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
                 .thenReturn(statusWithChapel(0f, 0f));
-        // grade=1 → only current semester checked (2026/1학기)
-        ChapelInfo currentSem = chapelInfo(2026, "1학기", "P");
-        when(chapelConnector.fetchChapelInfo(eq(STUDENT_ID), eq(COOKIES), isNull(), isNull()))
-                .thenReturn(currentSem);
+        when(chapelConnector.countChapelPassedSemesters(eq(STUDENT_ID), eq(COOKIES), anyInt()))
+                .thenReturn(1);
 
         GraduationStatus result = service.fetchGraduationRequirements(STUDENT_ID);
 
         GraduationRequirementItem chapel = chapelItem(result);
         assertThat(chapel.required()).isEqualTo(6.0f);
         assertThat(chapel.completed()).isEqualTo(1.0f);
-        assertThat(chapel.satisfied()).isFalse(); // 1 < 6
+        assertThat(chapel.satisfied()).isFalse();
     }
 
     @Test
-    void chapelGateWithThreePassedSemestersShowsThreeCompleted() {
+    void chapelGateWithFivePassedSemestersShowsFiveCompleted() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
-                .thenReturn(statusWithChapelGrade(0f, 0f, 2)); // grade=2
-        // entry year 2025, current 2026-1학기
-        ChapelInfo current = chapelInfo(2026, "1학기", "P");
-        ChapelInfo y2025s1 = chapelInfo(2025, "1학기", "P");
-        ChapelInfo y2025s2 = chapelInfo(2025, "2학기", "P");
-        when(chapelConnector.fetchChapelInfo(eq(STUDENT_ID), eq(COOKIES), isNull(), isNull()))
-                .thenReturn(current);
-        when(chapelConnector.fetchChapelInfo(eq(STUDENT_ID), eq(COOKIES), eq(2025), eq("1학기")))
-                .thenReturn(y2025s1);
-        when(chapelConnector.fetchChapelInfo(eq(STUDENT_ID), eq(COOKIES), eq(2025), eq("2학기")))
-                .thenReturn(y2025s2);
+                .thenReturn(statusWithChapelGrade(0f, 0f, 3));
+        when(chapelConnector.countChapelPassedSemesters(eq(STUDENT_ID), eq(COOKIES), anyInt()))
+                .thenReturn(5);
 
         GraduationStatus result = service.fetchGraduationRequirements(STUDENT_ID);
 
         GraduationRequirementItem chapel = chapelItem(result);
-        assertThat(chapel.completed()).isEqualTo(3.0f);
+        assertThat(chapel.completed()).isEqualTo(5.0f);
+        assertThat(chapel.satisfied()).isFalse(); // 5 < 6
     }
 
     @Test
     void chapelGateAlreadyPopulatedByRusaintIsNotOverridden() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
-                .thenReturn(statusWithChapel(6f, 6f)); // rusaint already filled
+                .thenReturn(statusWithChapel(6f, 6f));
 
         service.fetchGraduationRequirements(STUDENT_ID);
 
-        verify(chapelConnector, never()).fetchChapelInfo(any(), any(), any(), any());
+        verify(chapelConnector, never()).countChapelPassedSemesters(any(), any(), anyInt());
     }
 
     @Test
@@ -122,14 +112,14 @@ class SaintGraduationServiceTests {
 
         service.fetchGraduationRequirements(STUDENT_ID);
 
-        verify(chapelConnector, never()).fetchChapelInfo(any(), any(), any(), any());
+        verify(chapelConnector, never()).countChapelPassedSemesters(any(), any(), anyInt());
     }
 
     @Test
     void chapelConnectorFailureKeepsZeroGateUnchanged() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
                 .thenReturn(statusWithChapel(0f, 0f));
-        when(chapelConnector.fetchChapelInfo(any(), any(), isNull(), isNull()))
+        when(chapelConnector.countChapelPassedSemesters(any(), any(), anyInt()))
                 .thenThrow(new RuntimeException("rusaint unavailable"));
 
         GraduationStatus result = service.fetchGraduationRequirements(STUDENT_ID);
@@ -147,10 +137,6 @@ class SaintGraduationServiceTests {
         return new GraduationStatus(
                 false, "테스트", "컴퓨터학부", grade, 10f, 133f,
                 List.of(new GraduationRequirementItem("채플이수", "이수", required, completed, 0f, false)));
-    }
-
-    private static ChapelInfo chapelInfo(int year, String semester, String result) {
-        return new ChapelInfo(year, semester, "09:00", "벤처관", "A1", null, 0, result, List.of(), List.of());
     }
 
     private static GraduationRequirementItem chapelItem(GraduationStatus status) {

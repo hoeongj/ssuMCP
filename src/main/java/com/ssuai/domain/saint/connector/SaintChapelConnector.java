@@ -10,4 +10,6 @@ import com.ssuai.domain.saint.dto.ChapelInfo;
 public interface SaintChapelConnector {
 
     ChapelInfo fetchChapelInfo(String studentId, PortalCookies cookies, Integer year, String semester);
+
+    int countChapelPassedSemesters(String studentId, PortalCookies cookies, int entryYear);
 }

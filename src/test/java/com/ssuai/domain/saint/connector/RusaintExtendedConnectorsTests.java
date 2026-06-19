@@ -101,6 +101,11 @@ class RusaintExtendedConnectorsTests {
         }
 
         @Override
+        public int countChapelPassedSemesters(String studentId, String sessionJson, int entryYear) {
+            return 0;
+        }
+
+        @Override
         public GraduationStatus fetchGraduationRequirements(String studentId, String sessionJson) {
             failIfNeeded();
             return new GraduationStatus(false, "학생", "컴퓨터학부", 3, 110, 133, List.of());

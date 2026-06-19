@@ -25,4 +25,13 @@ public class RusaintChapelConnector implements SaintChapelConnector {
             throw new SaintSessionExpiredException("rusaint chapel session rejected");
         }
     }
+
+    @Override
+    public int countChapelPassedSemesters(String studentId, PortalCookies cookies, int entryYear) {
+        try {
+            return rusaintClient.countChapelPassedSemesters(studentId, cookies.sessionJson(), entryYear);
+        } catch (RusaintClientException exception) {
+            throw new SaintSessionExpiredException("rusaint chapel history session rejected");
+        }
+    }
 }

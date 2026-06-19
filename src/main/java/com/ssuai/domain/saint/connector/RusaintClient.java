@@ -27,6 +27,8 @@ public interface RusaintClient {
 
     ChapelInfo fetchChapelInfo(String studentId, String sessionJson, Integer year, String semester);
 
+    int countChapelPassedSemesters(String studentId, String sessionJson, int entryYear);
+
     GraduationStatus fetchGraduationRequirements(String studentId, String sessionJson);
 
     List<ScholarshipEntry> fetchScholarships(String studentId, String sessionJson);

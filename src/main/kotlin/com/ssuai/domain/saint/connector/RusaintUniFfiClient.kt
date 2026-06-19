@@ -179,6 +179,43 @@ class RusaintUniFfiClient : RusaintClient {
             }
         }
 
+    override fun countChapelPassedSemesters(studentId: String, sessionJson: String, entryYear: Int): Int =
+        withClientError("rusaint chapel history count failed") {
+            runBlocking {
+                sessionFromJson(sessionJson).useAuto { session ->
+                    ChapelApplicationBuilder().useAuto { builder ->
+                        builder.build(session).useAuto { app ->
+                            var count = 0
+                            var current = app.getSelectedSemester()
+
+                            // navigate backwards from current semester to entry year
+                            repeat(12) { // 12 = max 6 years × 2 semesters; guards against infinite loop
+                                if (current.year.toInt() < entryYear) return@repeat
+                                try {
+                                    val info = app.information(current.year, current.semester)
+                                    if (info.generalInformation.result == "P") count++
+                                } catch (_: Exception) {
+                                    // no chapel data for this semester — skip
+                                }
+
+                                val prev = current
+                                try {
+                                    app.lookup() // navigate to previous semester
+                                    current = app.getSelectedSemester()
+                                    if (current.year == prev.year && current.semester == prev.semester) {
+                                        return@repeat // lookup didn't advance — no more history
+                                    }
+                                } catch (_: Exception) {
+                                    return@repeat
+                                }
+                            }
+                            count
+                        }
+                    }
+                }
+            }
+        }
+
     override fun fetchGraduationRequirements(studentId: String, sessionJson: String): GraduationStatus =
         withClientError("rusaint graduation requirements fetch failed") {
             runBlocking {

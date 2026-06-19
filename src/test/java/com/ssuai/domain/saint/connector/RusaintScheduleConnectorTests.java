@@ -89,6 +89,11 @@ class RusaintScheduleConnectorTests {
         }
 
         @Override
+        public int countChapelPassedSemesters(String studentId, String sessionJson, int entryYear) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public GraduationStatus fetchGraduationRequirements(String studentId, String sessionJson) {
             throw new UnsupportedOperationException();
         }

@@ -11,7 +11,6 @@ import com.ssuai.domain.auth.saint.PortalCookies;
 import com.ssuai.domain.auth.saint.SaintSessionStore;
 import com.ssuai.domain.saint.connector.SaintChapelConnector;
 import com.ssuai.domain.saint.connector.SaintGraduationConnector;
-import com.ssuai.domain.saint.dto.ChapelInfo;
 import com.ssuai.domain.saint.dto.GraduationRequirementItem;
 import com.ssuai.domain.saint.dto.GraduationStatus;
 import com.ssuai.global.exception.SaintSessionExpiredException;
@@ -81,42 +80,14 @@ public class SaintGraduationService {
     }
 
     private int countCompletedChapelSemesters(String studentId, PortalCookies cookies, int grade) {
-        ChapelInfo current;
+        int currentYear = java.time.LocalDate.now().getYear();
+        int entryYear = (grade > 0) ? currentYear - grade + 1 : currentYear;
         try {
-            current = chapelConnector.fetchChapelInfo(studentId, cookies, null, null);
+            return chapelConnector.countChapelPassedSemesters(studentId, cookies, entryYear);
         } catch (Exception exception) {
-            log.warn("chapel fetch failed for graduation merge: studentId={}", studentId, exception);
+            log.warn("chapel semester count failed for graduation merge: studentId={}", studentId, exception);
             return 0;
         }
-
-        int currentYear = current.year();
-        String currentSemester = current.semester();
-        int entryYear = (grade > 0) ? currentYear - grade + 1 : currentYear;
-
-        int completed = 0;
-        for (int year = entryYear; year <= currentYear; year++) {
-            for (String sem : List.of("1학기", "2학기")) {
-                // Stop if we've reached beyond the current semester
-                if (year == currentYear && "2학기".equals(sem) && "1학기".equals(currentSemester)) {
-                    break;
-                }
-                ChapelInfo info;
-                if (year == currentYear && sem.equals(currentSemester)) {
-                    info = current;
-                } else {
-                    try {
-                        info = chapelConnector.fetchChapelInfo(studentId, cookies, year, sem);
-                    } catch (Exception exception) {
-                        log.debug("chapel fetch skipped for graduation merge: year={} semester={}", year, sem);
-                        continue;
-                    }
-                }
-                if ("P".equals(info.result())) {
-                    completed++;
-                }
-            }
-        }
-        return completed;
     }
 
     private static int findChapelIndex(List<GraduationRequirementItem> requirements) {

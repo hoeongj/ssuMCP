@@ -33,6 +33,11 @@ class MockSaintChapelConnector implements SaintChapelConnector {
     }
 
     @Override
+    public int countChapelPassedSemesters(String studentId, PortalCookies cookies, int entryYear) {
+        return 3;
+    }
+
+    @Override
     public ChapelInfo fetchChapelInfo(String studentId, PortalCookies cookies, Integer year, String semester) {
         LocalDate today = LocalDate.now(clock.withZone(KST));
         int selectedYear = year == null ? today.getYear() : year;
