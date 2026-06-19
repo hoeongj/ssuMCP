@@ -17,6 +17,10 @@ import com.ssuai.domain.academic.dto.AcademicPolicyBriefResponse;
 import com.ssuai.domain.academic.dto.AcademicPolicySearchResponse;
 import com.ssuai.domain.academic.dto.AcademicQuestionClassificationResponse;
 import com.ssuai.domain.academic.dto.GraduationPolicyEvaluationResponse;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.Decision;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.MatchedRequirement;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.RequirementResult;
 import com.ssuai.domain.academic.service.AcademicPolicyService;
 import com.ssuai.domain.academic.service.AcademicQuestionClassifier;
 import com.ssuai.domain.auth.mcp.McpProviderType;
@@ -66,6 +70,27 @@ class AcademicPolicyMcpToolsTests {
         var response = tools.searchAcademicPolicySources("장학", "scholarship", 5, true);
 
         assertThat(response).isSameAs(expected);
+    }
+
+    @Test
+    void scholarshipPolicyToolReturnsStructuredJudgment() {
+        var expected = new ScholarshipPolicyCheckResponse(
+                "장학",
+                List.of("gpa=4.0"),
+                Decision.ELIGIBLE,
+                List.of(new MatchedRequirement("GPA/평점 기준", "GPA >= 3.5", 4.0d, RequirementResult.OK)),
+                "summary",
+                List.of(),
+                List.of());
+        when(policyService.checkScholarshipPolicy("장학", 4.0d, 15, 2025, 4, true, false, 5))
+                .thenReturn(expected);
+
+        var response = tools.checkScholarshipPolicy("장학", 4.0d, 15, 2025, 4, true, false, 5);
+
+        assertThat(response).isSameAs(expected);
+        assertThat(response.decision()).isEqualTo(Decision.ELIGIBLE);
+        assertThat(response.matchedRequirements()).hasSize(1);
+        verify(policyService).checkScholarshipPolicy("장학", 4.0d, 15, 2025, 4, true, false, 5);
     }
 
     @Test

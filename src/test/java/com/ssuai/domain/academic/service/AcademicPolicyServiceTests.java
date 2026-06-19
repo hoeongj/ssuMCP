@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 import com.ssuai.domain.academic.dto.AcademicPolicyCorpusSnapshot;
 import com.ssuai.domain.academic.dto.AcademicPolicyDocument;
 import com.ssuai.domain.academic.dto.AcademicPolicySource;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.Decision;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.MatchedRequirement;
+import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.RequirementResult;
 import com.ssuai.domain.academic.embedding.AcademicEmbeddingClient;
 import com.ssuai.domain.academic.embedding.EmbeddedChunk;
 import com.ssuai.domain.academic.embedding.EmbeddedCorpus;
@@ -41,7 +44,91 @@ class AcademicPolicyServiceTests {
     }
 
     @Test
-    void scholarshipCheckBuildsFactsIntoQuery() {
+    void scholarshipCheckReturnsEligibleWhenAllRequirementsPass() {
+        AcademicPolicySource source = source("scholarship", "외국인 유학생 장학금 안내");
+        AcademicPolicyCorpusSnapshot snapshot = snapshot(source, """
+                외국인 유학생 장학금은 외국인 유학생이어야 하며,
+                2025학년도 이후 입학자, TOPIK 4급 이상, GPA 3.0 이상,
+                취득학점 12학점 이상 기준을 충족해야 한다.
+                """);
+        when(corpusCache.embeddedCorpus(true)).thenReturn(EmbeddedCorpus.lexicalOnly(snapshot));
+
+        var response = service.checkScholarshipPolicy(
+                "외국인 유학생 장학금 TOPIK GPA 취득학점",
+                3.4d,
+                15,
+                2025,
+                4,
+                true,
+                true,
+                5);
+
+        assertThat(response.decision()).isEqualTo(Decision.ELIGIBLE);
+        assertThat(response.inputFacts()).contains(
+                "gpa=3.4", "earnedCredits=15", "admissionYear=2025", "topikLevel=4",
+                "internationalStudent=true");
+        assertThat(response.evidence()).isNotEmpty();
+        assertThat(response.matchedRequirements())
+                .extracting(MatchedRequirement::result)
+                .containsOnly(RequirementResult.OK);
+        assertThat(requirement(response, "GPA/평점 기준").required()).isEqualTo("GPA >= 3");
+        assertThat(requirement(response, "GPA/평점 기준").userValue()).isEqualTo(3.4d);
+        assertThat(requirement(response, "취득학점 기준").required()).isEqualTo("earnedCredits >= 12");
+        assertThat(requirement(response, "취득학점 기준").userValue()).isEqualTo(15);
+        assertThat(requirement(response, "입학연도 기준").required()).isEqualTo("admissionYear >= 2025");
+        assertThat(requirement(response, "TOPIK 급수 기준").required()).isEqualTo("topikLevel >= 4");
+        assertThat(requirement(response, "대상 학생 유형").required()).isEqualTo("외국인 유학생");
+    }
+
+    @Test
+    void scholarshipCheckReturnsNotEligibleWhenAnyRequirementFails() {
+        AcademicPolicySource source = source("scholarship", "교내장학금 안내");
+        AcademicPolicyCorpusSnapshot snapshot = snapshot(
+                source, "백마성적우수장학금은 GPA 3.5 이상, 취득학점 15학점 이상을 충족해야 한다.");
+        when(corpusCache.embeddedCorpus(false)).thenReturn(EmbeddedCorpus.lexicalOnly(snapshot));
+
+        var response = service.checkScholarshipPolicy(
+                "백마성적우수장학금 GPA 취득학점",
+                3.2d,
+                15,
+                null,
+                null,
+                false,
+                false,
+                5);
+
+        assertThat(response.decision()).isEqualTo(Decision.NOT_ELIGIBLE);
+        assertThat(requirement(response, "GPA/평점 기준").result()).isEqualTo(RequirementResult.FAIL);
+        assertThat(requirement(response, "GPA/평점 기준").userValue()).isEqualTo(3.2d);
+        assertThat(requirement(response, "GPA/평점 기준").required()).isEqualTo("GPA >= 3.5");
+        assertThat(requirement(response, "취득학점 기준").result()).isEqualTo(RequirementResult.OK);
+    }
+
+    @Test
+    void scholarshipCheckReturnsInsufficientEvidenceWhenRequiredInputIsMissing() {
+        AcademicPolicySource source = source("scholarship", "교내장학금 안내");
+        AcademicPolicyCorpusSnapshot snapshot = snapshot(
+                source, "백마성적우수장학금은 GPA 3.5 이상, 취득학점 15학점 이상을 충족해야 한다.");
+        when(corpusCache.embeddedCorpus(false)).thenReturn(EmbeddedCorpus.lexicalOnly(snapshot));
+
+        var response = service.checkScholarshipPolicy(
+                "백마성적우수장학금 GPA 취득학점",
+                null,
+                15,
+                null,
+                null,
+                false,
+                false,
+                5);
+
+        assertThat(response.decision()).isEqualTo(Decision.INSUFFICIENT_EVIDENCE);
+        assertThat(requirement(response, "GPA/평점 기준").result()).isEqualTo(RequirementResult.UNKNOWN);
+        assertThat(requirement(response, "GPA/평점 기준").userValue()).isNull();
+        assertThat(requirement(response, "취득학점 기준").result()).isEqualTo(RequirementResult.OK);
+    }
+
+    @Test
+    void scholarshipCheckReturnsInsufficientEvidenceWhenPolicyThresholdIsMissing() {
         AcademicPolicySource source = source("scholarship", "교내장학금 안내");
         AcademicPolicyCorpusSnapshot snapshot = snapshot(source, "백마성적우수장학금은 성적과 취득학점 기준을 확인한다.");
         when(corpusCache.embeddedCorpus(true)).thenReturn(EmbeddedCorpus.lexicalOnly(snapshot));
@@ -57,6 +144,10 @@ class AcademicPolicyServiceTests {
                 5);
 
         assertThat(response.inputFacts()).contains("gpa=4.1", "earnedCredits=15", "internationalStudent=false");
+        assertThat(response.decision()).isEqualTo(Decision.INSUFFICIENT_EVIDENCE);
+        assertThat(response.matchedRequirements())
+                .extracting(MatchedRequirement::result)
+                .contains(RequirementResult.UNKNOWN);
         assertThat(response.evidence()).isNotEmpty();
     }
 
@@ -128,5 +219,14 @@ class AcademicPolicyServiceTests {
                 true,
                 "LIVE_SOURCE",
                 title);
+    }
+
+    private static MatchedRequirement requirement(
+            com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse response,
+            String name) {
+        return response.matchedRequirements().stream()
+                .filter(requirement -> requirement.requirement().equals(name))
+                .findFirst()
+                .orElseThrow();
     }
 }

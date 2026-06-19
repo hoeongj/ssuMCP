@@ -82,7 +82,7 @@ public class AcademicPolicyMcpTools {
 
     @Tool(
             name = "check_scholarship_policy",
-            description = "장학금 질문과 선택 입력 조건(GPA, 취득학점, 입학연도, TOPIK 등)을 공식 장학 규정·안내 근거와 대조합니다. 개인 장학 수혜 내역은 get_my_scholarships를 함께 사용하세요."
+            description = "장학금 질문과 선택 입력 조건(GPA, 취득학점, 입학연도, TOPIK 등)을 공식 장학 규정·안내 근거와 대조하고 decision/matchedRequirements/evidence를 반환합니다. 개인 장학 수혜 내역은 get_my_scholarships를 함께 사용하세요."
     )
     public ScholarshipPolicyCheckResponse checkScholarshipPolicy(
             @ToolParam(required = false, description = "장학금 질문. 예: 백마성적우수장학금 기준 알려줘.")
