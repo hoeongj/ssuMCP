@@ -212,6 +212,47 @@ Task 14 기준 구현 내용:
 - **Refresh rotation** — refresh JWT는 각 `/api/auth/refresh` 호출 시 교체된다. 성공한 refresh 요청은 사용된 기존 refresh JWT의 `jti`를 denylist에 넣고, 새 refresh JWT를 HttpOnly 쿠키로 내려준다. `/api/auth/logout`도 유효한 refresh 쿠키가 있으면 해당 `jti`를 denylist에 넣는다.
 - **Refresh denylist 한계** — 현재 `RefreshTokenDenylist`는 인메모리 구현이라 단일 JVM 인스턴스와 재시작 전까지만 재사용 방지를 보장한다. Postgres 도입 후에는 만료 시각을 가진 DB-backed denylist로 바꿔 다중 인스턴스와 재시작 후에도 같은 보장을 유지한다.
 
+### MCP 개인 도구 세션 레이어
+
+ssuMCP는 학교 시스템(SAINT/LMS/도서관)별 독립 세션을 단일 `mcp_session_id`로 관리한다. 세션 계층:
+
+```
+사용자 → start_auth(provider) → loginUrl + mcp_session_id 발급
+         ↓
+  브라우저에서 학교 계정 로그인
+         ↓
+  콜백 /api/mcp/auth/{provider}/callback
+         ↓
+  McpAuthSession (Postgres 영속, 7d TTL)
+    ├── mcp_session_id (opaque, UUID 기반)
+    ├── userId (ssuAI 계정 외래키)
+    └── 프로바이더별 링크
+          ├── SAINT → sToken → McpAuthSession sub-row
+          ├── LMS → LMS 쿠키 (AES-256-GCM 암호화)
+          └── LIBRARY → Pyxis-Auth-Token (AES-256-GCM 암호화)
+```
+
+**개인 도구 호출 흐름:**
+
+```
+MCP tools/call { params: { mcp_session_id: "xxx" } }
+    │
+    ▼
+McpAuthHelper.principalKey(mcp_session_id)
+    └── McpAuthSessionStore.findBySessionId(mcp_session_id)
+          → 없거나 만료 → AUTH_REQUIRED + loginUrl 반환 (에러 아님)
+          → 있음 → sessionKey 추출 → 복호화 → upstream 호출
+```
+
+**보안 속성:**
+
+- `mcp_session_id`는 로그에 기록하지 않는다. 로그에는 `McpAuthSessionId.fingerprint()` (SHA-256 앞 8자리 hex)만 사용.
+- transport 비결속: 같은 `mcp_session_id`로 새 HTTP 연결을 맺어도 세션이 유지됨. SSE 재연결 시 세션 ID 재사용.
+- `mcp_session_id`는 HTTP 헤더가 아닌 MCP 도구 파라미터로 전달. 도구 레이어에서만 유효.
+- 세션 만료(`expires_at` 경과) → "session expired" 에러. 재인증 loginUrl 포함.
+
+**ADR 참조:** ADR 0031 (McpWebSession), ADR 0036 (MCP auth opt-in two-mode), ADR 0037 (PRM authorization servers)
+
 ---
 
 ## 8. 전송 및 네트워크

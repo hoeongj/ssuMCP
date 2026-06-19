@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-06-06. 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-06-19 (ssuAgent + Redis 계획 포함). 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -15,12 +15,89 @@ ssuMCP가 어떻게 구성되어 있는지 한눈에 파악할 수 있는 단일
 
 ## 1. 시스템 컨텍스트
 
+### 1-1. 전체 시스템 (ssuAI + ssuAgent + ssuMCP)
+
+```mermaid
+flowchart TD
+    subgraph User["사용자"]
+        STU[학생 브라우저]
+        CD[Claude Desktop / IDE]
+    end
+
+    subgraph ssuAI["ssuAI (Next.js · Vercel)"]
+        UI[챗봇·대시보드 UI]
+        BRIDGE[MCP Web Session Bridge]
+    end
+
+    subgraph ssuAgent["ssuAgent (Python · LangGraph · k3s)"]
+        SUP[Supervisor Graph]
+        subgraph Agents
+            LIB_A[Library Agent]
+            ACA_A[Academic Agent]
+            LMS_A[LMS Agent]
+        end
+        CKPT[(Postgres Checkpointer)]
+    end
+
+    subgraph ssuMCP["ssuMCP (Spring Boot · k3s)"]
+        REST[REST API]
+        MCP_S[MCP 서버 /mcp]
+        SVC[Service Layer]
+        CONN[Connectors]
+        subgraph Resilience["Fault Tolerance"]
+            CB[CircuitBreaker]
+            RETRY[Retry]
+            RL[RateLimiter]
+            BH[Bulkhead]
+        end
+        subgraph Storage["저장소"]
+            PG[(Postgres + Flyway)]
+            REDIS[(Redis · EPIC 4 계획)]
+        end
+    end
+
+    subgraph School["숭실대 시스템"]
+        PYXIS[Pyxis 도서관 oasis.ssu.ac.kr]
+        SAINT[u-SAINT rusaint FFI]
+        LMS_SYS[LMS learningx.ssu.ac.kr]
+        MEAL_S[학식 scatch]
+    end
+
+    subgraph Observability["관측성"]
+        PROM[Prometheus]
+        GRAF[Grafana]
+    end
+
+    STU -->|HTTPS| ssuAI
+    CD -->|MCP 프로토콜| MCP_S
+    UI --> BRIDGE
+    BRIDGE -->|JWT + mcp_session_id| REST
+    UI -->|SSE 스트림| ssuAgent
+    SUP --> LIB_A & ACA_A & LMS_A
+    ssuAgent -->|MCP tools/call| MCP_S
+    REST --> SVC
+    MCP_S --> SVC
+    SVC --> CONN
+    SVC --> PG
+    SVC -.->|EPIC 4| REDIS
+    CONN --> Resilience
+    Resilience --> PYXIS
+    CONN --> SAINT
+    CONN --> LMS_SYS
+    CONN --> MEAL_S
+    ssuMCP -->|metrics| PROM
+    PROM --> GRAF
+    ssuAgent --> CKPT
+```
+
+### 1-2. ssuMCP 단독 컨텍스트
+
 ```mermaid
 flowchart LR
     subgraph Clients
-        U1[웹을 통한 학생]
-        U2[챗봇 UI를 통한 학생]
-        U3[Claude Desktop / IDE MCP 클라이언트]
+        U1[웹 클라이언트 ssuAI]
+        U2[ssuAgent LangGraph]
+        U3[Claude Desktop / IDE MCP]
     end
 
     subgraph ssuMCP["ssuMCP (Spring Boot MCP 서버)"]
@@ -31,20 +108,20 @@ flowchart LR
         CONN[커넥터]
     end
 
-    subgraph LocalState["현재 상태 저장소"]
-        DB[(JPA / H2 기본값)]
-        MEM[(인프로세스 캐시 및 세션 스토어)]
+    subgraph LocalState["상태 저장소"]
+        DB[(Postgres + Flyway)]
+        MEM[(인프로세스 캐시·세션)]
     end
 
     subgraph School["숭실대 시스템"]
         MEAL[학식 사이트]
-        LIB[도서관 사이트]
+        LIB[Pyxis 도서관]
         LMS[LMS]
-        USAINT[u-SAINT]
+        USAINT[u-SAINT / rusaint]
     end
 
     U1 -->|HTTP/JSON| REST
-    U2 -->|HTTP/JSON| REST
+    U2 -->|MCP 프로토콜| MCP
     U3 -->|MCP 프로토콜| MCP
     REST --> SVC
     MCP --> SVC
@@ -58,7 +135,12 @@ flowchart LR
     CONN --> USAINT
 ```
 
-그림의 모든 upstream 연동은 구현된 서비스와 커넥터 모드로 표현되어 있다. 프로덕션은 real 또는 `rusaint` 커넥터를 선택하고, 로컬과 테스트 프로파일은 결정적인 mock을 선택한다.
+모든 upstream 연동은 Connector 패턴으로 캡슐화된다. 프로덕션은 real 또는 `rusaint` 커넥터, 로컬·테스트는 결정적인 mock 커넥터를 선택한다.
+
+**서비스 엔드포인트:**
+- ssuMCP: `https://ssumcp.duckdns.org/mcp` (MCP) · `https://ssumcp.duckdns.org/grafana` (Grafana)
+- ssuAgent: `https://ssuagent.duckdns.org` (SSE 스트림)
+- ssuAI: `https://ssuai.vercel.app` (Next.js 프론트엔드)
 
 ---
 

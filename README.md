@@ -154,24 +154,29 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 
 ## 아키텍처
 
-하나의 Spring Boot 프로세스가 REST API와 MCP 서버를 동시에 제공한다.
+전체 시스템은 3개의 서비스로 구성된다:
 
 ```
-ssuAI (웹)          Claude Desktop / Cursor / 그 외 MCP 클라이언트
-    │  REST /api/*         │  MCP Streamable HTTP
-    ▼                      ▼
-┌──────────────────────────────────────┐
-│   ssuMCP (Spring Boot 4, 단일 JVM)   │
-│                                      │
-│   REST Controllers   MCP Server      │
-│          └──────────────┘            │
-│             Service Layer            │
-│         Connectors   Repositories    │
-└──────────────────────────────────────┘
-       │         │         │        │
-    학식 사이트  도서관    LMS    u-SAINT
-               (Pyxis)  (Canvas) (rusaint)
+사용자 브라우저
+    │ HTTPS
+    ▼
+ssuAI (Next.js · Vercel)               Claude Desktop / Cursor / IDE
+    │ SSE 스트림 (챗봇)                        │ MCP 프로토콜
+    │ REST /api/* (대시보드)                    │
+    ▼                                          ▼
+ssuAgent (Python · LangGraph · k3s)      ssuMCP (Spring Boot 4 · k3s)
+    │ 자연어 파악, 도구 선택                MCP 서버 /mcp
+    │ HITL 인터럽트 관리                    REST API /api/*
+    └──────── MCP tools/call ──────────►  Service Layer
+                                          Connectors (fault-tolerant)
+                                              │
+                                  ┌───────────┼───────────┐
+                                  ▼           ▼           ▼
+                               Pyxis        LMS        u-SAINT
+                             (도서관)    (learningx)  (rusaint FFI)
 ```
+
+`ssuMCP`는 MCP tool server다 — 원자적 도메인 도구, 학교 시스템 직접 연동, fault tolerance, action 감사를 담당한다. `ssuAgent`는 LangGraph orchestrator로 자연어 의도 파악, 도구 조합, HITL 인터럽트를 담당한다. 두 서비스는 MCP 프로토콜로만 연결되어 독립 배포가 가능하다.
 
 REST와 MCP 두 경로는 동일한 Service 레이어를 공유한다. MCP 도구가 별도 비즈니스 로직을 갖지 않는다.
 
@@ -332,20 +337,85 @@ SSUAI_CONNECTOR_MEAL=real ./gradlew bootRun
 
 ---
 
+## Backend / AI 포트폴리오 하이라이트
+
+단순 CRUD를 넘어 실제 엔지니어링 문제를 다룬 핵심 결정들:
+
+### 1. Pyxis 외부 API Fault Tolerance (EPIC 2)
+
+학교 도서관 API(`oasis.ssu.ac.kr`)가 시험 기간에 불안정해지는 상황을 위해 Resilience4j로 4-layer 보호를 구현했다.
+
+- **핵심 결정**: read/write 비대칭. read만 retry(3회 지수 백오프) — write는 멱등하지 않아 재시도 시 이중 예약 위험.
+- **측정**: 공유 CircuitBreaker "pyxis" — slidingWindow 20, failureThreshold 50%, 30s wait, 3 probe half-open.
+- **Grafana**: `resilience4j_circuitbreaker_state{name="pyxis"}` · failure rate · slow call rate 패널.
+
+### 2. Write 도구 안전 설계 — action 감사 상태 머신 (EPIC 3)
+
+`prepare_* → confirm_action` 2단계 확인 패턴. 사용자가 명시적으로 확인하지 않으면 실제 Pyxis 호출이 발생하지 않는다.
+
+- **Duplicate confirm 방지**: `action_audit` 행의 PREPARED 상태를 `SELECT FOR UPDATE`로 원자적 전환. 두 번째 confirm은 행을 찾지 못해 에러 반환.
+- **Write timeout 복구**: timeout 후 `getCurrentCharge`(GET, idempotent)로 Pyxis 실제 상태 확인 → action_audit 업데이트.
+- **k6 실험 결과**: 같은 좌석 100 동시 burst → SUCCESS 2 · FAILURE_RACE 98 · ghost reservation 0.
+
+### 3. k6 부하 실험 (EPIC 1)
+
+실측 수치를 먼저 박제한 후 EPIC 2·3·4 개선 작업을 시작했다.
+
+| 시나리오 | 결과 |
+|----------|------|
+| `get_library_seat_status` 50 RPS · 5분 | p95 **19.7ms** · 에러 0% · 캐시 히트율 ~99% |
+| write burst 100 동시 (같은 좌석) | SUCCESS 2 · RACE 98 · ghost 0 |
+| write burst 100 동시 (다른 좌석) | SUCCESS **100** · 처리율 100% |
+
+> 전체 실험 설계·결과·해석: [`docs/performance/library-agent-load-test.md`](docs/performance/library-agent-load-test.md)
+
+### 4. rusaint JNA FFI — u-SAINT SAP WebDynpro 연동
+
+u-SAINT가 SAP NetWeaver WebDynpro 기반이라 표준 HTTP 역공학이 8일 만에 실패했다. 검증된 Rust 구현체 rusaint를 JNA로 JVM에 연결하는 방향으로 전환했다.
+
+- SmartID SSO 콜백 `sToken`·`sIdno`만 수신 → `RusaintUniFfiClient`에 전달 → 성적/시간표/졸업/장학 조회.
+- 비밀번호는 절대 서버에 닿지 않음 (SmartID가 처리).
+
+### 5. LangGraph 멀티에이전트 시스템 — ssuAgent (EPIC 6)
+
+ssuMCP와 별도 Python 서비스로 분리. MCP 프로토콜로만 연결.
+
+- **Supervisor → Library·Academic·LMS 에이전트** 3-way 라우팅.
+- **HITL 인터럽트**: `prepare_reserve_library_seat` 결과에 `actionId` 포함 시 graph interrupt → 사용자 확인 → `confirm_action` 재개.
+- **LLM 다중 fallback**: Gemini 2.5 Flash → Groq llama-3.3-70b → OpenRouter llama-3.3-70b.
+
+### 6. MCP 세션 3-tier 인증 (ADR 0036, 0037)
+
+학교 시스템별 독립 세션(SAINT·LMS·도서관)을 단일 `mcp_session_id` 로 관리하는 3-tier 분해:
+
+```
+OAuth sub → McpAuthSession (7d Postgres 영속)
+                │
+                ├─ 프로바이더별 링크 (SAINT / LMS / LIBRARY)
+                └─ transport 비결속 → 세션 재접속 시 세션 ID 재사용
+```
+
+sToken·LMS 쿠키·Pyxis-Auth-Token은 AES-256-GCM으로 암호화 저장.
+
+---
+
 ## 문서
 
 - [아키텍처](docs/architecture.md)
+- [장애 시나리오](docs/failure-scenarios.md)
+- [면접 Q&A](docs/interview-qa.md)
 - [MCP 도구와 인증 흐름](docs/mcp-tools.md)
 - [보안 정책](docs/security.md)
+- [성능 리포트 (EPIC 1 k6)](docs/performance/library-agent-load-test.md)
 - [트러블슈팅 로그](TROUBLESHOOTING.md)
 - [배포 runbook](deploy/README.md)
-- [도서관 에이전트 구현 계획](docs/library-seat-agent-completion-plan.md)
 
 ---
 
 ## 관련 프로젝트
 
-**[ssuAI](https://github.com/hoeongj/ssuAI)** — 이 서버를 소비하는 Next.js 웹 클라이언트
+**[ssuAI](https://github.com/hoeongj/ssuAI)** — Next.js 웹 클라이언트 (챗봇 UI + 대시보드)  
+**[ssuAgent](https://github.com/hoeongj/ssuAgent)** — Python LangGraph 멀티에이전트 오케스트레이터
 
 ---
 
