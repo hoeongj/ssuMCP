@@ -4150,3 +4150,95 @@ stateless 애플리케이션 설계 원칙 위반(로컬 파일 시스템 의존
 1. Spring Data JPA 파생 쿼리에서 Optional<T> 반환이 2행을 만나면? 비유니크 컬럼을 안전하게 단건 조회하려면?
 2. 다단계 fallback 세션 해석에서 우선순위 순서가 왜 중요한가? 가장 안정적인 키(PK)를 마지막에 둔 설계의 트레이드오프는?
 3. 이 버그를 마이그레이션 없이 기존 데이터까지 무해화한 방법(findFirst+OrderBy)과 그 한계는?
+
+---
+
+## 사건 11: LMS 비영상 파일 크기 상수값·0 반환 (2026-06-19)
+
+### 증상
+
+운영 `get_my_lms_courses`에서 네트워크프로그래밍 과목의 PDF 크기는 대부분 서로 다른 실제값으로
+보였지만, 서로 다른 ZIP 4개가 모두 정확히 `64,238` bytes로 표시됐다. 별도의 PDF 1개는
+`0` bytes로 표시됐다. 이 값으로 계산한 과목별 `totalBytes`와 내보내기 예상 용량도 실제 파일
+크기와 달라질 수 있었다.
+
+### 틀린 가설
+
+초기에는 `total_file_size`가 모듈 전체 크기이거나 코드가 상위 노드의 값을 잘못 읽는다고
+추정했다. 실제 운영 응답을 비교한 결과 필드는 각 `item_content_data`에 있었고, PDF는 대부분
+정상적인 개별 크기를 반환했다. 파싱 위치가 아니라 LMS가 비영상 `file` 콘텐츠에 같은 센티널
+값을 채우고 일부 항목에는 `0`을 주는 외부 API 데이터 품질 문제였다.
+
+### 실제 원인과 수정
+
+`RealLmsMaterialsConnector`가 LearningX `total_file_size`를 신뢰하고 그대로 `sizeBytes`에 넣었다.
+비영상 `file`은 값이 양수여도 신뢰할 수 없고, PDF도 `0`이면 신뢰할 수 없다. 따라서 양수 PDF만
+API 값을 유지하고 나머지는 기존 `contentId -> Commons download URL` 해석 경로를 거친 뒤 같은
+LMS 쿠키로 HEAD를 보내 `Content-Length`를 읽는다. HEAD 실패, 비정상 상태, 헤더 누락 시에는
+센티널이나 `0`을 노출하지 않고 `null`로 둔다. 자료 목록이 보정된 뒤 기존 서비스 집계가 그룹 및
+과목 `totalBytes`를 다시 계산한다.
+
+### 핵심 파일 및 커밋
+
+- `domain/lms/connector/RealLmsMaterialsConnector.java` — 비신뢰 항목 선별, 다운로드 URL 해석, 보정 개수 로그
+- `domain/lms/connector/HeadLmsMaterialSizeResolver.java` — 인증 쿠키를 재사용하는 HEAD/Content-Length 해석
+- `domain/lms/connector/LmsMaterialSizeResolver.java` — 네트워크 없는 단위 테스트를 위한 경계
+- `RealLmsMaterialsConnectorTests.java`, `HeadLmsMaterialSizeResolverTests.java` — 성공·실패·비대상 회귀 검증
+- ADR 0044, 커밋 `fix(lms): correct unreliable material sizes via HEAD content-length`
+
+### 포트폴리오 포인트
+
+외부 API가 형식상 유효한 양수값을 주더라도 여러 독립 파일의 동일값이라는 운영 증거로 센티널을
+식별했다. 전체 파일 다운로드 없이 표준 HTTP 메타데이터 요청으로 실제 크기를 복구하고, 복구가
+불가능할 때 거짓 정밀도 대신 unknown을 반환했다. 비용도 양수 PDF를 제외한 비신뢰 항목으로
+한정하고 보정 건수를 운영 로그로 관측 가능하게 만들었다.
+
+### 예상 면접 질문
+
+1. 외부 API가 `0`이 아닌 잘못된 센티널 값을 반환할 때 어떤 운영 증거와 규칙으로 비신뢰값을 식별할 수 있나요?
+2. 파일 크기 확인에 GET 전체 다운로드 대신 HEAD를 선택한 이유와, HEAD 응답에 `Content-Length`가 없을 때의 처리 원칙은 무엇인가요?
+3. 보정 요청 수를 제한하면서도 `totalBytes` 집계의 정합성을 유지한 데이터 흐름을 설명해 주세요.
+
+---
+
+## 사건 12: Gradle 전체 테스트 재실행 중 test-results 파일 충돌 (2026-06-19)
+
+### 증상
+
+첫 `gradlew test` 실행이 셸의 3분 제한을 넘겨 exit 124로 끝난 뒤 `--no-daemon`으로 즉시
+재실행했다. 두 번째 실행은 테스트 assertion failure 없이 마지막에
+`build/test-results/test/binary/in-progress-results-generic.bin`이 없다는
+`NoSuchFileException`으로 실패했다.
+
+### 틀린 가설
+
+셸 timeout이 Gradle과 자식 JVM까지 종료했으므로 새 실행을 바로 시작해도 안전하다고 판단했다.
+또한 첫 출력에 테스트 실패가 없었으므로 단순히 timeout만 늘리면 된다고 봤다.
+
+### 실제 원인과 해결
+
+Windows에서 셸 프로세스가 timeout으로 종료돼도 이미 분리된 Gradle daemon/test worker가 잠시
+계속 실행될 수 있다. 첫 실행의 자식과 두 번째 실행이 같은 `build/test-results/test/binary`
+디렉터리를 동시에 사용해 한쪽이 다른 쪽의 in-progress 파일을 정리했다. XML 결과에는
+`<failure>`/`<error>`가 없었고, 남은 Gradle daemon을 확인한 뒤 `gradlew --stop`으로 단일 실행
+상태를 복구하고 전체 스위트를 다시 실행한다.
+
+### 핵심 파일 및 커밋
+
+- transient 경로: `build/test-results/test/binary/` (커밋 대상 아님)
+- 실행기: `gradlew.bat`, Gradle 9.5.1
+- 관련 규칙: 상위 `AGENTS.md` Concurrency Guard
+- 기능 커밋: `fix(lms): correct unreliable material sizes via HEAD content-length`
+
+### 포트폴리오 포인트
+
+CI/로컬 테스트 실패를 제품 코드 assertion과 빌드 인프라의 동시 쓰기 오류로 구분했다. 부모 셸
+timeout이 자식 프로세스 종료를 보장하지 않는 Windows 프로세스 트리 특성과, 동일 build
+디렉터리를 공유하는 Gradle 실행의 경쟁 조건을 증거(XML failure 부재, daemon 잔존, 누락된
+in-progress 파일)로 좁혔다.
+
+### 예상 면접 질문
+
+1. CI 명령 timeout 뒤 같은 workspace에서 즉시 재시도하면 어떤 자식 프로세스·파일 충돌이 생길 수 있나요?
+2. 테스트 assertion failure와 Gradle test-results 인프라 실패를 어떤 증거로 구분할 수 있나요?
+3. 병렬 빌드가 필요할 때 동일 저장소의 `build/` 충돌을 피하는 격리 방법은 무엇인가요?

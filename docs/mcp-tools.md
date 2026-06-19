@@ -195,8 +195,8 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록. 비어 있으면 `message`로 안내 | LMS | `mcp_session_id`, `compact` (선택) |
 | `get_my_lms_terms` | 사용자의 LMS 등록 학기 목록 조회 | LMS | `mcp_session_id` |
 | `get_lms_dashboard` | 미제출 과제·학사일정·공지사항을 모아보는 대시보드 | LMS | `mcp_session_id`, `term_id` (선택) |
-| `get_my_lms_courses` | 수강 과목을 **각 과목의 비영상 자료(파일 수·용량·확장자별 그룹·content_id)와 함께** 한 번에 조회 (전 과목 materials를 묶어 반환 → 로그인 직후 과목+파일을 한 번에 표시, content_id로 바로 prepare 가능). 전 과목 자료를 fetch하므로 응답이 다소 느림 | LMS | `mcp_session_id`, `term_id` (선택) |
-| `get_my_lms_materials` | 특정 과목들의 비영상 주차학습 자료 목록 조회 (course_ids 지정). `get_my_lms_courses`가 전 과목을 이미 반환하므로 보통 불필요, 특정 과목 재조회용 | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
+| `get_my_lms_courses` | 수강 과목을 **각 과목의 비영상 자료(파일 수·용량·확장자별 그룹·content_id)와 함께** 한 번에 조회 (전 과목 materials를 묶어 반환 → 로그인 직후 과목+파일을 한 번에 표시, content_id로 바로 prepare 가능). 전 과목 자료 fetch와 비신뢰 크기의 HEAD 보정 때문에 응답이 다소 느림 | LMS | `mcp_session_id`, `term_id` (선택) |
+| `get_my_lms_materials` | 특정 과목들의 비영상 주차학습 자료 목록 조회 (course_ids 지정). `get_my_lms_courses`가 전 과목을 이미 반환하므로 보통 불필요, 특정 과목 재조회용. 비신뢰 크기는 HEAD로 보정 | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
 | `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성). content_id는 `get_my_lms_courses` 응답에 포함됨 | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
 | `confirm_lms_material_export` | 내보내기 최종 승인 및 다운로드 링크 발급 (기본 20분, `SSUAI_LMS_EXPORT_DOWNLOAD_TTL` 설정 가능) | LMS | `mcp_session_id` |
 | `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
@@ -211,6 +211,13 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `prepare_swap_library_seat` | 기존 예약에서 새 좌석으로 이석 준비. 실제 이석은 `confirm_action` 필요 | LIBRARY | `mcp_session_id`, `seat_id` |
 | `prepare_cancel_library_seat` | 현재 예약 반납 준비. 실제 반납은 `confirm_action` 필요 | LIBRARY | `mcp_session_id` |
 | `get_my_library_loans` | 도서관 대출 현황 (반납 기한 포함). 대출이 없으면 `message`로 안내 | LIBRARY | `mcp_session_id` |
+
+### LMS 자료 크기 의미
+
+- `sizeBytes`: 양수 PDF는 LearningX 값을 사용하고, 비-PDF 또는 null/0 값은 인증된 다운로드 URL의 HEAD `Content-Length`로 보정한다.
+- HEAD 실패·비-2xx·`Content-Length` 부재 시 `sizeBytes`는 `null`이다. 원래 API의 `0` 또는 센티널 값을 노출하지 않는다.
+- 과목 `totalBytes`와 내보내기 예상 용량은 보정 후 알려진(non-null) 크기만 합산한다. 따라서 unknown 파일이 있으면 실제 총량보다 작을 수 있다.
+- 상세 결정과 운영 증거(ZIP 4개가 모두 `64238`)는 [ADR 0044](adr/0044-lms-file-size-head-correction.md)를 참고한다.
 
 **보안 참고:** `mcp_session_id` 는 secret 취급. 로그에 남기지 말고 공유하지 말 것. 응답 JSON 에 studentId/loginId/principalKey 가 포함되지 않는다.
 

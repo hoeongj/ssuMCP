@@ -2,14 +2,23 @@ package com.ssuai.domain.lms.connector;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.mockwebserver.MockResponse;
@@ -28,6 +37,7 @@ class RealLmsMaterialsConnectorTests {
 
     private MockWebServer server;
     private LmsSsoProperties properties;
+    private LmsMaterialSizeResolver sizeResolver;
     private RealLmsMaterialsConnector connector;
 
     @BeforeEach
@@ -42,7 +52,8 @@ class RealLmsMaterialsConnectorTests {
         properties.setCommonsBaseUrl(baseWithoutSlash);
         properties.setTimeout(Duration.ofSeconds(2));
 
-        connector = new RealLmsMaterialsConnector(properties, new ObjectMapper());
+        sizeResolver = mock(LmsMaterialSizeResolver.class);
+        connector = new RealLmsMaterialsConnector(properties, new ObjectMapper(), sizeResolver);
     }
 
     @AfterEach
@@ -105,6 +116,85 @@ class RealLmsMaterialsConnectorTests {
         assertThat(materials.get(0).contentId()).isEqualTo("c123");
         assertThat(materials.get(0).fileName()).isEqualTo("note.pdf");
         assertThat(materials.get(0).extension()).isEqualTo("pdf");
+        assertThat(materials.get(0).sizeBytes()).isEqualTo(500L);
+        verifyNoInteractions(sizeResolver);
+    }
+
+    @Test
+    void fetchMaterialsCorrectsZeroFileSizeThroughHeadResolver() throws Exception {
+        server.enqueue(materialsResponse("file", "archive.zip", 0));
+        server.enqueue(downloadInfoResponse("c-zero"));
+        LmsCookies cookies = new LmsCookies("xn_api_token=tok;");
+        String downloadUrl = properties.getCommonsBaseUrl() + "/download?content_id=c-zero";
+        when(sizeResolver.resolve(any(HttpClient.class), same(cookies), eq(downloadUrl), eq(properties.getTimeout())))
+                .thenReturn(OptionalLong.of(9_876_543L));
+
+        List<LmsMaterial> materials = connector.fetchMaterials(
+                "student1", cookies, new LmsCourse(1L, "Course 1", "C1", 10L));
+
+        assertThat(materials).singleElement()
+                .extracting(LmsMaterial::sizeBytes)
+                .isEqualTo(9_876_543L);
+        verify(sizeResolver).resolve(
+                any(HttpClient.class), same(cookies), eq(downloadUrl), eq(properties.getTimeout()));
+        assertThat(server.takeRequest().getPath()).startsWith("/learningx/api/v1/courses/1/modules");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/viewer/ssplayer/uniplayer_support/content.php?content_id=c-zero");
+    }
+
+    @Test
+    void fetchMaterialsDiscardsSentinelWhenHeadResolutionFails() {
+        server.enqueue(materialsResponse("file", "archive.zip", 64_238));
+        server.enqueue(downloadInfoResponse("c-zero"));
+        LmsCookies cookies = new LmsCookies("xn_api_token=tok;");
+        String downloadUrl = properties.getCommonsBaseUrl() + "/download?content_id=c-zero";
+        when(sizeResolver.resolve(any(HttpClient.class), same(cookies), eq(downloadUrl), eq(properties.getTimeout())))
+                .thenReturn(OptionalLong.empty());
+
+        List<LmsMaterial> materials = connector.fetchMaterials(
+                "student1", cookies, new LmsCourse(1L, "Course 1", "C1", 10L));
+
+        assertThat(materials).singleElement()
+                .extracting(LmsMaterial::sizeBytes)
+                .isNull();
+    }
+
+    private MockResponse materialsResponse(String contentType, String fileName, long sizeBytes) {
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                        [{
+                          "title": "Week 1",
+                          "module_items": [{
+                            "title": "Archive",
+                            "content_data": {
+                              "item_content_data": {
+                                "content_id": "c-zero",
+                                "content_type": "%s",
+                                "file_name": "%s",
+                                "title": "Archive",
+                                "total_file_size": %d
+                              }
+                            }
+                          }]
+                        }]
+                        """.formatted(contentType, fileName, sizeBytes));
+    }
+
+    private MockResponse downloadInfoResponse(String contentId) {
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""
+                        <content version="1.0">
+                          <content_playing_info version="1.0">
+                            <content_id>%s</content_id>
+                            <content_download_uri>/download?content_id=%s</content_download_uri>
+                          </content_playing_info>
+                          <content_metadata version="1.0"><title>Archive</title></content_metadata>
+                        </content>
+                        """.formatted(contentId, contentId));
     }
 
     @Test

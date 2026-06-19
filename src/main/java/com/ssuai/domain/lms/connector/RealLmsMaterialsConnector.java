@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,10 +40,15 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
 
     private final LmsSsoProperties properties;
     private final ObjectMapper objectMapper;
+    private final LmsMaterialSizeResolver sizeResolver;
 
-    public RealLmsMaterialsConnector(LmsSsoProperties properties, ObjectMapper objectMapper) {
+    public RealLmsMaterialsConnector(
+            LmsSsoProperties properties,
+            ObjectMapper objectMapper,
+            LmsMaterialSizeResolver sizeResolver) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.sizeResolver = sizeResolver;
     }
 
     private CookieManager createCookieManager(String rawCookieHeader, String targetUrl) {
@@ -212,7 +218,8 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
                             String contentType = itemContentData.path("content_type").asText(null);
                             String fileName = itemContentData.path("file_name").isTextual() ? itemContentData.path("file_name").asText() : null;
                             String itemTitle = itemContentData.path("title").asText(itemNode.path("title").asText(""));
-                            Long sizeBytes = itemContentData.path("total_file_size").isNull() ? null : itemContentData.path("total_file_size").asLong();
+                            JsonNode sizeNode = itemContentData.path("total_file_size");
+                            Long sizeBytes = sizeNode.isNumber() ? sizeNode.asLong() : null;
 
                             String extension = null;
                             if (fileName != null) {
@@ -227,7 +234,7 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
                     }
                 }
             }
-            return list;
+            return correctUnreliableSizes(cookies, client, list);
         } catch (IOException exception) {
             throw new LmsSessionExpiredException("Canvas API IO error: " + exception.getMessage());
         } catch (InterruptedException exception) {
@@ -247,6 +254,15 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
+        return resolveDownload(cookies, contentId, client);
+    }
+
+    private Optional<ContentDownloadInfo> resolveDownload(
+            LmsCookies cookies,
+            String contentId,
+            HttpClient authenticatedClient) {
+        String url = properties.getCommonsBaseUrl() + "/viewer/ssplayer/uniplayer_support/content.php?content_id=" + URLEncoder.encode(contentId, StandardCharsets.UTF_8);
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Cookie", cookies.rawCookieHeader())
@@ -255,7 +271,7 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
                 .build();
 
         try {
-            HttpResponse<String> response = client.send(
+            HttpResponse<String> response = authenticatedClient.send(
                     request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return Optional.empty();
@@ -274,6 +290,61 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
             Thread.currentThread().interrupt();
             return Optional.empty();
         }
+    }
+
+    private List<LmsMaterial> correctUnreliableSizes(
+            LmsCookies cookies,
+            HttpClient authenticatedClient,
+            List<LmsMaterial> materials) {
+        List<LmsMaterial> correctedMaterials = new ArrayList<>(materials.size());
+        int attempted = 0;
+        int corrected = 0;
+
+        for (LmsMaterial material : materials) {
+            if (hasReliableReportedSize(material)) {
+                correctedMaterials.add(material);
+                continue;
+            }
+
+            attempted++;
+            Long resolvedSize = null;
+            Optional<ContentDownloadInfo> download = resolveDownload(
+                    cookies, material.contentId(), authenticatedClient);
+            if (download.isPresent()) {
+                OptionalLong contentLength = sizeResolver.resolve(
+                        authenticatedClient,
+                        cookies,
+                        download.get().absoluteDownloadUrl(),
+                        properties.getTimeout());
+                if (contentLength.isPresent()) {
+                    resolvedSize = contentLength.getAsLong();
+                    corrected++;
+                }
+            }
+
+            correctedMaterials.add(new LmsMaterial(
+                    material.contentId(),
+                    material.courseId(),
+                    material.courseName(),
+                    material.fileName(),
+                    material.extension(),
+                    resolvedSize,
+                    material.weekTitle(),
+                    material.title(),
+                    material.contentType()));
+        }
+
+        if (attempted > 0) {
+            log.info("LMS material size HEAD correction completed: attempted={}, corrected={}, unknown={}",
+                    attempted, corrected, attempted - corrected);
+        }
+        return correctedMaterials;
+    }
+
+    private static boolean hasReliableReportedSize(LmsMaterial material) {
+        return "pdf".equalsIgnoreCase(material.contentType())
+                && material.sizeBytes() != null
+                && material.sizeBytes() > 0;
     }
 
     @Override
