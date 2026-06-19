@@ -4142,7 +4142,7 @@ stateless 애플리케이션 설계 원칙 위반(로컬 파일 시스템 의존
 
 **수정**: (i) transport·oauth fallback 조회를 findFirst...OrderByCreatedAtDesc로 변경 → 비유니크 키여도 최신 1개만 반환(예외 불가), 기존 누적 데이터도 무해화(마이그레이션 불필요). (ii) bindTransportId가 같은 transport를 가진 다른 세션의 바인딩을 해제 → transport↔세션 1:1 유지.
 
-**핵심 파일**: McpAuthHelper.java(Tier 순서), McpSessionRepository.java(비유니크 단건 조회), McpAuthSessionStore.java(findByTransportId/findByOauthSubject/bindTransportId). 커밋: <FILL>.
+**핵심 파일**: McpAuthHelper.java(Tier 순서), McpSessionRepository.java(비유니크 단건 조회), McpAuthSessionStore.java(findByTransportId/findByOauthSubject/bindTransportId). 커밋: `3dd12eb` (PR #87).
 
 **포트폴리오 포인트**: 비유니크 컬럼에 대한 Spring Data 파생 단건 쿼리(Optional)의 함정 / fallback 메커니즘이 특정 사용 패턴에서 자기 자신을 깨뜨리는 설계 결함 / PK 소거법으로 원인을 좁힌 디버깅.
 

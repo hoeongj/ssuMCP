@@ -183,6 +183,11 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 }
 ```
 
+> **메시지 필드 (ADR 0045)** — 모든 private tool 응답은 두 청중용 메시지를 함께 제공한다.
+> - `userMessage` — 사용자 노출용 짧은 한국어 (예: AUTH_REQUIRED 시 "로그인이 필요해요. 아래 링크를 브라우저에서 열어 …: {loginUrl}").
+> - `developerMessage` — 에이전트/LLM용 verbose 절차·코드.
+> - `message` — `developerMessage`의 하위호환 별칭(바이트 불변, 기존 ChatGPT/Claude Desktop 클라이언트용). 신규 UI는 `userMessage` 표시 권장.
+
 | tool name | 설명 | 필요 provider | 인자 |
 | --- | --- | --- | --- |
 | `get_my_schedule` | 시간표 조회. 과목별 meeting 슬롯(요일·교시·강의실) 그룹핑. year·term 파라미터로 특정 학기 지정 가능 | SAINT | `year` (선택), `term` 1=봄·2=여름·3=가을·4=겨울 (선택), `mcp_session_id` |
