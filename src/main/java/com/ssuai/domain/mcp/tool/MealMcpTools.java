@@ -24,6 +24,7 @@ import com.ssuai.global.exception.ConnectorException;
 public class MealMcpTools {
 
     private static final int MAX_ERROR_VALUE_LENGTH = 64;
+    private static final int MAX_WEEK_OFFSET = 8;
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
     private static final String RESTAURANT_PARAM_DESCRIPTION =
             "선택사항. 특정 식당만 조회하고 싶을 때 식당 이름을 한국어로 전달합니다. "
@@ -111,7 +112,7 @@ public class MealMcpTools {
     ) {
         LocalDate monday = LocalDate.now(SEOUL_ZONE)
                 .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                .plusWeeks(weekOffset == null ? 0 : weekOffset);
+                .plusWeeks(clampWeekOffset(weekOffset));
         try {
             return weeklyMealService.fetchWeeklyMeals(monday);
         } catch (ConnectorException exception) {
@@ -158,5 +159,17 @@ public class MealMcpTools {
             return value;
         }
         return value.substring(0, MAX_ERROR_VALUE_LENGTH) + "...";
+    }
+
+    /**
+     * Clamps the weekly-menu offset to a sane range so an absurd value
+     * (e.g. 999999) cannot produce a nonsensical date or numeric overflow.
+     * null → 0 (current week).
+     */
+    static int clampWeekOffset(Integer weekOffset) {
+        if (weekOffset == null) {
+            return 0;
+        }
+        return Math.max(-MAX_WEEK_OFFSET, Math.min(MAX_WEEK_OFFSET, weekOffset));
     }
 }

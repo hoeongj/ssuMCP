@@ -150,15 +150,20 @@ public class LibraryWaitMcpTool {
         return "Library wait updated. " + statusMessage(view);
     }
 
-    private static Long parseSeatId(String targetSeatId) {
+    static Long parseSeatId(String targetSeatId) {
         if (targetSeatId == null || targetSeatId.isBlank()) {
             return null;
         }
+        long seatId;
         try {
-            return Long.parseLong(targetSeatId.trim());
+            seatId = Long.parseLong(targetSeatId.trim());
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("target_seat_id must be a number.");
         }
+        if (seatId <= 0) {
+            throw new IllegalArgumentException("target_seat_id must be a positive number.");
+        }
+        return seatId;
     }
 
     private static Duration parseExpiry(Integer expiresInMinutes) {

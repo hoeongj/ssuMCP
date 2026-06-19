@@ -128,7 +128,7 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
         String author = textOrNull(entry.path("author"));
         String publication = textOrNull(entry.path("publication"));
         String isbn = textOrNull(entry.path("isbn"));
-        String thumbnailUrl = textOrNull(entry.path("thumbnailUrl"));
+        String thumbnailUrl = absoluteUrl(textOrNull(entry.path("thumbnailUrl")), properties.getBaseUrl());
 
         JsonNode firstVolume = entry.path("branchVolumes").path(0);
         String callNumber = textOrNull(firstVolume.path("volume"));
@@ -137,6 +137,22 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
 
         return new LibraryBook(id, title, author, publication, isbn,
                 thumbnailUrl, callNumber, location, status);
+    }
+
+    /**
+     * Pyxis sometimes returns a relative thumbnail path (e.g. "/thumbnails/x.jpg").
+     * Prefix it with the library base URL so clients get a usable absolute URL.
+     * Already-absolute (http/https) or blank values are returned unchanged.
+     */
+    static String absoluteUrl(String url, String baseUrl) {
+        if (url == null || url.isBlank() || url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return url;
+        }
+        String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        return url.startsWith("/") ? normalizedBase + url : normalizedBase + "/" + url;
     }
 
     private URI buildUri(String query, int page, int size) {
