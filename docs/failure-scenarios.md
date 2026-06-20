@@ -114,7 +114,7 @@ confirm_action ×100 동시 요청
         실패(좌석 이미 예약됨) → action_audit FAILURE_RACE
 ```
 
-**의도적 설계:** Pyxis 서버를 source of truth로 사용. 우리 쪽에서 "선착순 1명"을 직접 정하려면 Redis 분산 락이 필요 (EPIC 4 계획). 현재는 단일 JVM에서만 안전.
+**의도적 설계:** Pyxis 서버를 최종 serializer로 두고, 정합성의 source of truth는 Postgres `SELECT … FOR UPDATE`가 잡는다. 좌석 단위 직렬화는 EPIC 4에서 출시한 Redisson 분산 락(`LibraryDistributedLockClient`)이 효율용으로 더한다 — 락이 죽어도 DB가 중복 예약을 막으므로 멀티 포드에서도 안전하다 (ADR 0047).
 
 ---
 
