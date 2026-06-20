@@ -249,7 +249,7 @@ com.ssuai
     │   └── service     // LmsAssignmentsService
     ├── mcp
     │   ├── config      // McpServerConfig — ToolCallbackProvider 빈 + tool readOnly/destructive 어노테이션
-    │   └── tool        // 모든 @Tool 클래스 (총 45개 — §11 참조)
+    │   └── tool        // 모든 @Tool 클래스 (총 52개 — §11 참조)
     │                   // McpAuthHelper — 공유 principalKey 조회 + AUTH_REQUIRED 팩토리
     ├── meal
     │   ├── config      // MealFanOutConfig — 주간 export용 parallelStream fan-out
@@ -678,7 +678,7 @@ Claude Desktop / IDE
    커넥터 / 저장소
 ```
 
-현재 도구 (총 42개 — 읽기 전용 35개, 쓰기/상태 변경 7개):
+현재 도구 (총 52개 — 읽기 전용 40개, 쓰기/상태 변경 12개):
 
 **공개 읽기 전용 (인증 불필요)**
 
@@ -713,6 +713,13 @@ Claude Desktop / IDE
 | `get_my_scholarships` | SAINT | `SaintScholarshipService` | |
 | `simulate_gpa` | SAINT | `SaintGpaSimulationService` | |
 | `get_my_assignments` | LMS | `LmsAssignmentsService` | |
+| `get_my_lms_terms` | LMS | `LmsAssignmentsService` | |
+| `get_lms_dashboard` | LMS | `LmsDashboardService` | |
+| `get_my_lms_courses` | LMS | `LmsMaterialsService` | |
+| `get_my_lms_materials` | LMS | `LmsMaterialsService` | |
+| `prepare_lms_material_export` | LMS | `LmsMaterialExportService` | |
+| `confirm_lms_material_export` | LMS | `LmsMaterialExportService` | |
+| `export_all_lms_materials` | LMS | `LmsMaterialExportService` | |
 | `get_library_seat_status` | LIBRARY | `LibrarySeatService` | room-level 집계 |
 | `get_library_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 7개 열람실 순회 |
 | `get_room_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 특정 열람실 |
@@ -727,7 +734,7 @@ Claude Desktop / IDE
 | `get_my_library_seat` | LIBRARY | `LibraryReservationConnector` | GET /pyxis-api/1/api/seat-charges |
 | `get_my_library_loans` | LIBRARY | `LibraryLoansService` | |
 
-도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 36개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`·`cancel_library_wait`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
+도구 어노테이션 (`McpSchema.ToolAnnotations`)은 시작 시 `McpServerConfig`에 의해 적용된다: 읽기 전용 40개 도구에 `readOnlyHint=true`, `logout_provider`·`logout_all`·`cancel_library_wait`에 `destructiveHint=true`. 이를 통해 Claude Desktop이 도구를 "읽기 전용 도구"와 "쓰기/삭제 도구"로 시각적으로 구분할 수 있다.
 
 학칙·졸업·장학 RAG는 `AcademicPolicyCorpusCache`가 공식 URL에서 주기적으로 갱신한
 인메모리 corpus를 사용한다. URL registry는 코드/설정에 고정하지만 본문은
