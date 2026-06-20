@@ -4381,3 +4381,47 @@ internal fun isChapelCourse(code: String, className: String): Boolean =
 1. 과목을 이름(courseName)이 아니라 코드(courseCode)로 매칭한 이유가 무엇인가요? 어떤 상황에서 이름 매칭이 실패하나요?
 2. 배포 전 검증 스파이크를 도입하게 된 계기가 무엇이었나요? (3번의 실패에서 뭘 배웠나요?)
 3. RusaintUniFfiClient가 라이브 rusaint 세션을 필요로 하는데, 그 내부 로직(매칭 술어)에 어떻게 세션 없이 단위 테스트를 붙였나요?
+
+---
+
+## Gradle 전체 테스트 중첩 실행으로 binary result 파일 유실 (2026-06-20)
+
+### 잘못된 가설
+
+첫 번째 `gradlew.bat test`는 명령 실행 래퍼의 120초 제한으로 종료되었으므로 Gradle 테스트 프로세스도 함께 종료되었고, 같은 명령을 즉시 다시 실행해도 안전하다고 판단했다.
+
+### 실제 원인
+
+명령 래퍼가 timeout을 반환한 뒤에도 Gradle daemon/test 작업이 완전히 정리되지 않은 상태에서 두 번째 전체 테스트가 시작되었다. 두 실행이 같은 `build/test-results/test/binary` 출력 경로를 사용하면서 두 번째 실행의 `:test` task가 `in-progress-results-generic.bin`을 읽는 시점에 파일이 사라졌다.
+
+따라서 다음 오류는 테스트 assertion 실패나 R2 리팩터링의 동작 변경이 아니라 동일 workspace의 Gradle test output을 두 프로세스가 경쟁한 로컬 검증 인프라 오류였다.
+
+```text
+java.nio.file.NoSuchFileException:
+build/test-results/test/binary/in-progress-results-generic.bin
+```
+
+### 해결
+
+1. 실행 중인 Gradle 관련 프로세스를 확인하여 test worker가 남아 있지 않고 daemon만 남은 상태를 확인한다.
+2. `gradlew.bat --stop`으로 daemon을 정상 종료한다.
+3. 충분한 명령 timeout을 설정하고 전체 테스트를 단일 프로세스로 다시 실행한다.
+4. 중첩 실행의 결과는 코드 품질 판정에 사용하지 않고, 단독 재실행의 `BUILD SUCCESSFUL`만 최종 gate로 사용한다.
+
+### 핵심 파일 / 커밋
+
+- 충돌 경로: `build/test-results/test/binary/in-progress-results-generic.bin`
+- 애플리케이션 및 테스트 소스 변경: 없음
+- 관련 커밋: 없음(로컬 검증 프로세스 문제)
+
+### 포트폴리오 포인트
+
+- 테스트 실패를 assertion/compile 실패와 test runner 인프라 실패로 구분하고, 코드 수정 없이 실행 격리를 복구했다.
+- 동일 build directory를 공유하는 Gradle 테스트의 동시 실행 위험을 확인하고, 재현 가능한 단일 실행을 최종 품질 gate로 삼았다.
+- timeout은 자식 프로세스 종료를 보장한다는 가정을 버리고 실제 프로세스와 출력 경로 상태를 확인했다.
+
+### 예상 면접 질문
+
+1. 테스트 command가 timeout된 뒤 같은 테스트를 바로 재실행하면 어떤 race condition이 발생할 수 있나요?
+2. assertion 실패와 Gradle test result infrastructure 실패를 어떤 로그와 경로로 구분했나요?
+3. CI에서 동일 workspace의 테스트 중첩 실행을 방지하려면 어떤 격리 전략을 사용할 수 있나요?
