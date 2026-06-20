@@ -303,7 +303,7 @@ npx @modelcontextprotocol/inspector
 2. URL 에 `http://localhost:8080/mcp` 를 입력한다.
 3. Connect 를 누른다.
 4. `Tools` 탭에서 `List Tools` 를 누른다.
-5. tool 51개가 보이는지 확인한다. (공개 20개 + 인증 관리 4개 + 개인 27개)
+5. tool 52개가 보이는지 확인한다. (공개 20개 + 인증 관리 4개 + 개인 28개)
 
 보여야 하는 tool 이름:
 ```
@@ -334,7 +334,8 @@ npx @modelcontextprotocol/inspector
 개인(LMS):
   get_my_assignments, get_my_lms_terms, get_lms_dashboard,
   get_my_lms_courses, get_my_lms_materials,
-  prepare_lms_material_export, confirm_lms_material_export
+  prepare_lms_material_export, confirm_lms_material_export,
+  export_all_lms_materials
 개인(LIBRARY):
   get_library_seat_status, get_library_available_seats, get_room_available_seats,
   recommend_library_seats, get_my_library_loans,
@@ -432,8 +433,7 @@ MCP login URL의 외부 origin을 별도로 지정하려면
 `http://localhost:8080`)을 사용한다.
 
 ## 8. 위험·write tool 정책
-현재 노출된 46개 MCP tool 중 대부분은 read-only다. 세션 상태를 변경하는 도구는
-`start_auth`, `logout_provider`, `logout_all`이고, 학교 시스템 상태를 바꾸는 도서관
+현재 노출된 52개 MCP tool 중 읽기 전용 40개, 쓰기/상태 변경 12개(그중 destructiveHint 3개: `logout_provider`, `logout_all`, `cancel_library_wait`)다. 세션 상태를 변경하는 도구는 `start_auth`, `logout_provider`, `logout_all`이고, 학교 시스템 상태를 바꾸는 도서관
 좌석 즉시 action은 반드시 `prepare_*` + `confirm_action` 2단계로만 실행된다.
 장기 대기형 `wait_for_library_seat`는 예외적으로 등록 호출 자체가 동의이며,
 응답과 tool description에 "좌석이 열리면 worker가 자율 예약할 수 있음"을 명시한다.
