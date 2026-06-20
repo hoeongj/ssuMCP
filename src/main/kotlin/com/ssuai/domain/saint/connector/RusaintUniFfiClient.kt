@@ -193,9 +193,13 @@ class RusaintUniFfiClient : RusaintClient {
                                 if (current.year.toInt() < entryYear) return@repeat
                                 try {
                                     val info = app.information(current.year, current.semester)
-                                    if (info.generalInformation.result == "P") count++
-                                } catch (_: Exception) {
-                                    // no chapel data for this semester — skip
+                                    val result = info.generalInformation.result
+                                    log.debug("chapel history: year={} semester={} result='{}'",
+                                        current.year, current.semester, result)
+                                    if (result == "P" || result == "이수") count++
+                                } catch (e: Exception) {
+                                    log.debug("chapel history skip: year={} semester={} error={}",
+                                        current.year, current.semester, e.message)
                                 }
 
                                 val prev = current
