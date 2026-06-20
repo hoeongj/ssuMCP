@@ -58,10 +58,14 @@ public class SaintGraduationService {
             return status; // rusaint already populated chapel data
         }
 
-        int completedSemesters = countCompletedChapelSemesters(studentId, cookies, status.grade());
-        if (completedSemesters == 0) {
-            return status; // nothing to merge (chapel fetch failed or all semesters failed)
+        int completedSemesters;
+        try {
+            completedSemesters = countCompletedChapelSemesters(studentId, cookies, status.grade());
+        } catch (Exception exception) {
+            log.warn("chapel semester count failed for graduation merge: studentId={}", studentId, exception);
+            return status; // connector threw — leave 0/0 unchanged
         }
+        // completedSemesters is authoritative: 0 means genuinely zero passed, not a fetch failure
 
         boolean satisfied = completedSemesters >= CHAPEL_REQUIRED_SEMESTERS;
         GraduationRequirementItem merged = new GraduationRequirementItem(
@@ -82,12 +86,8 @@ public class SaintGraduationService {
     private int countCompletedChapelSemesters(String studentId, PortalCookies cookies, int grade) {
         int currentYear = java.time.LocalDate.now().getYear();
         int entryYear = (grade > 0) ? currentYear - grade + 1 : currentYear;
-        try {
-            return chapelConnector.countChapelPassedSemesters(studentId, cookies, entryYear);
-        } catch (Exception exception) {
-            log.warn("chapel semester count failed for graduation merge: studentId={}", studentId, exception);
-            return 0;
-        }
+        // Let exceptions propagate — caller (mergeChapelHistory) handles them.
+        return chapelConnector.countChapelPassedSemesters(studentId, cookies, entryYear);
     }
 
     private static int findChapelIndex(List<GraduationRequirementItem> requirements) {

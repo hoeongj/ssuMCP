@@ -116,6 +116,23 @@ class SaintGraduationServiceTests {
     }
 
     @Test
+    void chapelGateWithZeroPassedSemestersShowsSixRequired() {
+        // countChapelPassedSemesters returns 0 successfully (e.g. first-semester student).
+        // Unlike a connector failure, 0 is an authoritative count → required=6, completed=0.
+        when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
+                .thenReturn(statusWithChapel(0f, 0f));
+        when(chapelConnector.countChapelPassedSemesters(eq(STUDENT_ID), eq(COOKIES), anyInt()))
+                .thenReturn(0);
+
+        GraduationStatus result = service.fetchGraduationRequirements(STUDENT_ID);
+
+        GraduationRequirementItem chapel = chapelItem(result);
+        assertThat(chapel.required()).isEqualTo(6.0f);
+        assertThat(chapel.completed()).isEqualTo(0.0f);
+        assertThat(chapel.satisfied()).isFalse();
+    }
+
+    @Test
     void chapelConnectorFailureKeepsZeroGateUnchanged() {
         when(connector.fetchGraduationRequirements(STUDENT_ID, COOKIES))
                 .thenReturn(statusWithChapel(0f, 0f));

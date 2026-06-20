@@ -183,37 +183,20 @@ class RusaintUniFfiClient : RusaintClient {
         withClientError("rusaint chapel history count failed") {
             runBlocking {
                 sessionFromJson(sessionJson).useAuto { session ->
-                    ChapelApplicationBuilder().useAuto { builder ->
+                    // Use the grades application (ZCMB3W0017) instead of the per-semester chapel
+                    // page (ZCMW3681). ChapelApplication.lookup() is a same-semester refresh,
+                    // not a previous-semester navigator, so the old approach never iterated.
+                    // CourseGradesApplication.semesters() returns the full cumulative history in
+                    // one call — no navigation required. Chapel appears as a 0.5-credit P/F course
+                    // in the regular transcript. Match by course code (isChapelCourse) because
+                    // the course name varies by year: "CHAPEL" (2022) vs "비전채플" (2025).
+                    CourseGradesApplicationBuilder().useAuto { builder ->
                         builder.build(session).useAuto { app ->
-                            var count = 0
-                            var current = app.getSelectedSemester()
-
-                            // navigate backwards from current semester to entry year
-                            repeat(12) { // 12 = max 6 years × 2 semesters; guards against infinite loop
-                                if (current.year.toInt() < entryYear) return@repeat
-                                try {
-                                    val info = app.information(current.year, current.semester)
-                                    val result = info.generalInformation.result
-                                    log.debug("chapel history: year={} semester={} result='{}'",
-                                        current.year, current.semester, result)
-                                    if (result == "P" || result == "이수") count++
-                                } catch (e: Exception) {
-                                    log.debug("chapel history skip: year={} semester={} error={}",
-                                        current.year, current.semester, e.message)
-                                }
-
-                                val prev = current
-                                try {
-                                    app.lookup() // navigate to previous semester
-                                    current = app.getSelectedSemester()
-                                    if (current.year == prev.year && current.semester == prev.semester) {
-                                        return@repeat // lookup didn't advance — no more history
-                                    }
-                                } catch (_: Exception) {
-                                    return@repeat
-                                }
+                            val courseType = CourseType.BACHELOR
+                            app.semesters(courseType).sumOf { term ->
+                                app.classes(courseType, term.year, term.semester, false)
+                                    .count { c -> isChapelCourse(c.code, c.className) && c.score == ClassScore.Pass }
                             }
-                            count
                         }
                     }
                 }
@@ -523,8 +506,26 @@ class RusaintUniFfiClient : RusaintClient {
             close()
         }
 
-    private companion object {
+    companion object {
         private val log = LoggerFactory.getLogger(RusaintUniFfiClient::class.java)
         private val TIME_START_PATTERN = Regex("""\d{2}:\d{2}""")
+
+        // SSU chapel course code (학수번호). Stable across naming changes:
+        // "CHAPEL" (2022 cohort) → "비전채플" (2025 cohort) — verified via get_my_grades 2026-06-20.
+        internal const val CHAPEL_COURSE_CODE = "21501015"
+
+        /**
+         * Returns true if the given transcript row is a chapel course.
+         *
+         * Matches by course code first (catalog-level, stable across renames),
+         * then falls back to Korean/English name patterns as insurance.
+         * Extracted as a pure function so it can be unit-tested without a live
+         * rusaint session — the matching logic that silently failed three times
+         * previously now has direct CI coverage.
+         */
+        internal fun isChapelCourse(code: String, className: String): Boolean =
+            code == CHAPEL_COURSE_CODE ||
+                className.contains("채플") ||
+                className.uppercase().contains("CHAPEL")
     }
 }
