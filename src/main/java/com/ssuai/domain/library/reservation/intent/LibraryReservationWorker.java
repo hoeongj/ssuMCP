@@ -105,6 +105,27 @@ public class LibraryReservationWorker {
             if (intent.isImmediateReservation()) {
                 return Optional.of(new ReadyIntent(intent.getId(), token, intent.getTargetSeatId()));
             }
+            Optional<LibraryReservationResult> current;
+            try {
+                current = reservationConnector.getCurrentCharge(token);
+            } catch (LibraryAuthRequiredException exception) {
+                transactions.failAuth(intent.getId(), "Library session token is missing or expired.");
+                return Optional.empty();
+            } catch (RuntimeException exception) {
+                log.warn("library reservation intent current charge check failed; proceeding with seat scan: intentId={}",
+                        intent.getId(), exception);
+                current = Optional.empty();
+            }
+            if (current.isPresent()) {
+                LibraryReservationResult result = current.get();
+                Long existingSeatId = result.seatId() == null ? intent.getTargetSeatId() : result.seatId();
+                transactions.succeed(
+                        intent.getId(),
+                        existingSeatId,
+                        "User already holds a library seat; skipping auto-reserve to avoid double-booking. "
+                                + successMessage(result));
+                return Optional.empty();
+            }
             Optional<Long> seatId = seatSelector.findAvailableSeat(intent);
             if (seatId.isEmpty()) {
                 transactions.returnToWaiting(intent.getId());
