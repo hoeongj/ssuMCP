@@ -116,15 +116,57 @@ class LibraryReservationWorkerTests {
     }
 
     @Test
-    void immediateReservationSkipsSeatScanAndUsesTargetSeat() {
-        LibraryReservationIntent intent = claimedImmediateIntent(1L, "session-1");
+    void existingChargeSatisfiesNonImmediateWaitWithoutSeatScanOrReserve() {
+        LibraryReservationIntent intent = claimedIntent(1L, "session-1");
+        LibraryReservationResult current =
+                new LibraryReservationResult(101L, "room", "91", "10:00", "14:00", 58, 9001L);
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
+
+        worker.poll();
+
+        verify(transactions).succeed(
+                1L,
+                9001L,
+                "User already holds a library seat; skipping auto-reserve to avoid double-booking. "
+                        + "room 91 reserved, chargeId=101, time=10:00~14:00");
+        verify(seatSelector, never()).findAvailableSeat(intent);
+        verify(connector, never()).reserve(any(), any());
+    }
+
+    @Test
+    void emptyCurrentChargeContinuesNonImmediateWaitReservation() {
+        LibraryReservationIntent intent = claimedIntent(1L, "session-1");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
         when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
                 .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
 
         worker.poll();
 
+        verify(connector).getCurrentCharge(TOKEN);
+        verify(seatSelector).findAvailableSeat(intent);
+        verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
+        verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+    }
+
+    @Test
+    void immediateReservationSkipsSeatScanAndUsesTargetSeat() {
+        LibraryReservationIntent intent = claimedImmediateIntent(1L, "session-1");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN))
+                .thenReturn(Optional.of(new LibraryReservationResult(
+                        101L, "other room", "91", "10:00", "14:00", 58, 9001L)));
+        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
+                .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
+
+        worker.poll();
+
+        verify(connector, never()).getCurrentCharge(any());
         verify(seatSelector, never()).findAvailableSeat(intent);
         verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
         verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
