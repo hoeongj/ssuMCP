@@ -32,6 +32,9 @@ ssuai:
     saint-scholarship: ${SSUAI_CONNECTOR_SAINT_SCHOLARSHIP:rusaint}
     lms-assignments: ${SSUAI_CONNECTOR_LMS_ASSIGNMENTS:real}
     academic-policy: ${SSUAI_CONNECTOR_ACADEMIC_POLICY:real}
+    # Scrapes the real academic calendar from ssu.ac.kr (see ADR 0054). Env-overridable so
+    # it can be rolled back to mock via the ConfigMap without a redeploy if the page changes.
+    academic-calendar: ${SSUAI_CONNECTOR_ACADEMIC_CALENDAR:real}
     chat: ${SSUAI_CONNECTOR_CHAT:mock}
     notice: ${SSUAI_CONNECTOR_NOTICE:real}
   # Production CORS allowlist — exactly one origin (the deployed Vercel

@@ -3,6 +3,21 @@
 이 파일은 포트폴리오에 넣기 좋은 장애 대응, 디버깅, 배포 문제 해결 기록을
 모으는 최상위 로그입니다.
 
+## 2026-06-21 — prod 학사일정이 가짜(mock): 커넥터가 틀린 포털(scatch)을 가리켰고, 진짜 소스 조사 중 "데이터 없음" 오결론을 정규식 버그가 만들 뻔
+
+- 맥락/증상: 공개 도구 `get_academic_calendar`가 prod에서 **하드코딩 가짜 2026 일정**을 내보내는 중(`application.yml` 기본 `mock`, prod 미오버라이드). 크래시는 없지만 "조용히 틀린" 데이터. real로 켜려고 검증을 시작했더니 기존 `RealAcademicCalendarConnector`가 긁는 `scatch.ssu.ac.kr/학사일정`이 정상 UA로도 **HTTP 404**.
+- 틀린 가설 2개:
+  - (기존 코드의 암묵 가정) "학사일정은 scatch에 있다" → scatch(SSU:catch)는 **뉴스·홍보 포털**이라 학사일정 페이지 자체가 없다(메뉴가 공지·뉴스·홍보물뿐). 커넥터 주석의 "2026 셀렉터 확인함"은 404 페이지엔 셀렉터를 확인할 수 없으니 **거짓**이었다(한 번도 라이브 검증된 적 없음).
+  - (조사 중 내 1차 결론) "진짜 페이지 `ssu.ac.kr/학사/학사일정/`은 `admin-ajax`/JS로 렌더링되고 정적 HTML엔 일정이 **0건** → 정적 스크래핑 불가, 헤드리스 브라우저 필요하거나 mock 유지" → **반증**: 그 "0건"은 내가 돌린 날짜 grep이 `grep: Invalid range end`(문자클래스 `[.\-/]`의 `-`가 범위로 해석)로 **실행조차 안 된** 가짜 신호였다. 정규식을 고치자 `<ul class="tb"><li>` 안에 실제 일정 **63건**이 정적 HTML에 그대로 있었다. `admin-ajax`는 `search_number`(전화번호 검색) 플러그인용 레드헤링이었다.
+- 실제 원인: 기존 커넥터가 **세 군데 동시 오류** — ① 도메인(scatch ≠ ssu.ac.kr) ② 파라미터(`?syear=` ≠ `?years=`) ③ 실재하지 않는 셀렉터(`table.academic-calendar`). 진짜 소스는 메인 사이트 `ssu.ac.kr/학사/학사일정/?years={year}`의 **서버 렌더링 월 블록**(`id="calendarYYYYMM"` → 연·월 앵커, `ul.tb > li > div.row` → 날짜셀 `.text-primary`(`MM.DD (요일)` 단일/`~` 범위) + 제목셀). 게시 범위 2019-01 .. 2027-02.
+- 해결: 커넥터를 진짜 소스로 재작성(연도=블록 id, 월·일=날짜 토큰, 요청연도 필터, category="", 0건 시 mock 폴백 금지). 동결 픽스처 기반 단위테스트 6건(정확 63건+핀+연도필터+토큰우선). 검증 중 `ssu.ac.kr`이 `?syear=`를 **조용히 무시**(현재연도 반환)하는 것을 보고 `?years=`에도 같은 방어(파싱 블록을 요청연도로 필터)를 넣음. prod `real` 플립은 사용자 확인 + 배포 후 prod 검증 게이트(로컬 curl로는 pod→ssu.ac.kr egress 미증명). 범위형 startDate/endDate(보류 ⑦)는 소스에 `~`가 있어 가능하지만 DTO 계약 변경이라 별도 결정으로 분리.
+- 핵심 파일: `domain/campus/connector/RealAcademicCalendarConnector.java`(재작성), `RealAcademicCalendarConnectorParseTests.java`(신규), `src/test/resources/fixtures/campus/academic_calendar_2026.html`(신규 픽스처), `application.yml`(`ssuai.academic-calendar.base-url` 신설). 근거·대안 전문 = **ADR 0054**.
+- 포트폴리오 포인트: **"검증 도구 자신의 침묵 실패(정규식 미실행)가 만든 거짓 음성"**을 잡아내, "도구가 실행돼 빈 결과"와 "도구가 실행조차 안 됨"을 구분한 사례. 더해 기존 커넥터의 거짓 "확인함" 주석을 404로 증명하고, AJAX·헤드리스·OCR 가능성을 라이브 페이지 조사로 하나씩 배제했다.
+- 면접 예상 질문:
+  1. "정적 HTML에 일정이 0건"이라는 1차 결론을 어떻게 뒤집었나? "도구가 빈 결과"와 "도구가 실행 실패"를 어떻게 구분하나?
+  2. 기존 커넥터의 "셀렉터 확인함" 주석이 거짓임을 어떻게 증명했고, 그게 단순 버그보다 위험한 이유는?
+  3. `?syear=`가 무시되는 걸 보고 파싱에 요청연도 필터를 넣었다. 이 방어가 막는 구체적 실패는 무엇인가?
+
 ## 2026-06-18 — `get_academic_policy_brief` live=true "크래시" 신고: 실은 동기 재임베딩 지연(타임아웃), 미가드 예외 아님
 
 - 맥락/증상: 외부 리뷰 둘 다 `get_academic_policy_brief`를 `live=true`로 부르면 `Error occurred during tool execution`로 죽는다고 신고. `live=false`는 정상, 자매 도구 `search_academic_policy_sources` live도 정상이라 **"brief의 live 결과 가공 단계 단독 버그"**로 결론지음.

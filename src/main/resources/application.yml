@@ -300,6 +300,13 @@ ssuai:
       detail-date: "div.bg-white.p-4.mb-5 div.clearfix > div.float-left:has(i.ion-ios-calendar)"
       detail-category: "div.bg-white.p-4.mb-5 > span.label"
       detail-department: ""
+  academic-calendar:
+    # The official academic calendar lives on the MAIN ssu.ac.kr site, NOT scatch (which is
+    # the news/PR portal and has no calendar). RealAcademicCalendarConnector scrapes the
+    # server-rendered month blocks, selecting the year via ?years={year}. Published range is
+    # 2019-01 .. 2027-02. The connector itself is enabled per profile via
+    # ssuai.connector.academic-calendar=real.
+    base-url: ${SSUAI_ACADEMIC_CALENDAR_BASE_URL:https://ssu.ac.kr}
   ssufid:
     base-url: ${SSUAI_SSUFID_BASE_URL:https://ssufid.yourssu.com}
   chat:
