@@ -81,7 +81,7 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `check_scholarship_policy` | 장학 기준과 입력 조건 근거 대조 |
 | `list_academic_policy_sources` | 학사 RAG 공식 출처 목록 |
 
-학칙·졸업·장학 질문은 서버 시작 후 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 인메모리 corpus를 갱신한다. 도구 응답에는 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`를 포함한다.
+학칙·졸업·장학 질문은 서버 시작 후 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 corpus를 갱신하고 lexical+임베딩 **RRF 하이브리드**로 검색한다(ADR 0020, 아래 아키텍처 참조). 도구 응답에는 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`, `embeddingUsed`를 포함한다. `get_academic_calendar`·`find_academic_calendar_events`는 메인 사이트 `ssu.ac.kr/학사/학사일정/?years={year}`의 서버 렌더링 월 블록을 스크래핑한다(ADR 0054, real 데이터는 카테고리 라벨 없음).
 
 **공지사항**
 
@@ -181,8 +181,8 @@ ssuAgent (Python · LangGraph · k3s)      ssuMCP (Spring Boot 4 · k3s)
 
 REST와 MCP 두 경로는 동일한 Service 레이어를 공유한다. MCP 도구가 별도 비즈니스 로직을 갖지 않는다.
 
-학칙·졸업·장학 질문은 공식 출처 추적형 검색으로 처리한다(현재 키워드 lexical 스코어링, 벡터 임베딩 하이브리드는 예정). 서버 시작 후와 주기 갱신 시
-`rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 인메모리 corpus를 갱신하고, 도구 응답에는
+학칙·졸업·장학 질문은 공식 출처 추적형 **하이브리드 검색**으로 처리한다 — 키워드 lexical 스코어와 임베딩 코사인 유사도를 **RRF(Reciprocal Rank Fusion)**로 융합한다. 임베딩은 `(chunk_hash, model)` 키로 `academic_embeddings` 테이블에 영속화(base64 float32)되어, pod 재시작·주기 갱신이 무료 티어 일일 임베딩 쿼터를 재소진하지 않는다(미임베딩 청크만 새로 임베딩). 임베딩이 비활성/실패하면 lexical 전용으로 자동 강등하며, 응답의 `embeddingUsed`(rrf/lexical) 필드로 노출한다(ADR 0020). 서버 시작 후와 주기 갱신 시
+`rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 corpus를 갱신하고, 도구 응답에는
 `url`, `revision`, `effectiveDate`, `live`, `fallbackUsed`를 포함한다. 개인 졸업 판정은
 u-SAINT 데이터와 이 공식 근거를 함께 반환한다.
 
@@ -206,8 +206,8 @@ MealConnector (interface)
 ```
 사용자 메시지
     → LlmChatService
-    → LlmProvider 체인 (OpenRouter → Mistral → Groq → ...)
-        Rate limit / 서버 오류 시 자동으로 다음 프로바이더로 전환
+    → LlmProvider 체인 (Gemini → Groq → OpenRouter → Cerebras → ... 총 10개)
+        Rate limit / 서버 오류 / CB OPEN 시 자동으로 다음 프로바이더로 전환
     → tool_call 발생 시
         공개 도구: McpSyncClient → 자체 /mcp (self-dogfood)
         개인 도구: 웹 세션 컨텍스트로 Service 직접 호출 (ThreadLocal)
@@ -291,7 +291,7 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 | MCP 구현 | Spring AI 1.1 (Streamable HTTP) |
 | 크롤링 | Jsoup 1.22 |
 | u-SAINT 연동 | rusaint — JNA 5.18로 Rust 라이브러리를 JVM에 연결 |
-| 학사 정책 검색 | 공식 출처 추적형 lexical 검색 (rule.ssu.ac.kr 실시간 크롤링 + 인메모리 corpus; 벡터 하이브리드 예정) |
+| 학사 정책 검색 | 공식 출처 추적형 **하이브리드 RAG** — lexical + 임베딩 코사인을 RRF로 융합, `academic_embeddings` 영속 캐시(rule.ssu.ac.kr 실시간 크롤링 + corpus 갱신; 임베딩 부재 시 lexical 강등) |
 | 인증 | JJWT 0.13 (HS256), AES-256-GCM |
 | 테스트 | JUnit 5, MockWebServer, WireMock 3 |
 | 인프라 | Oracle Cloud ARM64 · k3s · Traefik · ArgoCD · Helm · GHCR · Prometheus · Grafana |
@@ -389,7 +389,7 @@ ssuMCP와 별도 Python 서비스로 분리. MCP 프로토콜로만 연결.
 
 - **Supervisor → Library·Academic·LMS 에이전트** 3-way 라우팅.
 - **HITL 인터럽트**: `prepare_reserve_library_seat` 결과에 `actionId` 포함 시 graph interrupt → 사용자 확인 → `confirm_action` 재개.
-- **LLM 다중 fallback**: Gemini 2.5 Flash → Groq llama-3.3-70b → OpenRouter llama-3.3-70b.
+- **LLM 다중 fallback**: Groq llama-3.3-70b → Gemini 2.5 Flash → OpenRouter llama-3.3-70b (Groq가 무료 일일 쿼터 14,400으로 1순위).
 
 ### 6. MCP 세션 3-tier 인증 (ADR 0036, 0037)
 

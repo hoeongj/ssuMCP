@@ -574,7 +574,7 @@ Flyway layout은 `classpath:db/migration/V*__*.sql,classpath:db/migration/{vendo
 |-----------|--------|-----------|
 | `SSUAI_DB_URL` | Spring Data JPA + Flyway | prod Postgres 연결. dev/test 기본값은 PostgreSQL 호환 모드의 인메모리 H2 |
 | `SSUAI_DB_USERNAME` / `SSUAI_DB_PASSWORD` | Spring Data JPA + Flyway | prod Postgres 연결 |
-| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 9개 프로바이더 LLM fallback (`LlmProviderConfig`) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
+| `SSUAI_GEMINI_API_KEY`, `SSUAI_GROQ_API_KEY`, `SSUAI_CEREBRAS_API_KEY`, `SSUAI_DEEPINFRA_API_KEY`, `SSUAI_SAMBANOVA_API_KEY`, `SSUAI_NSCALE_API_KEY`, `SSUAI_FIREWORKS_API_KEY`, `SSUAI_HUGGINGFACE_API_KEY`, `SSUAI_MISTRAL_API_KEY`, `SSUAI_OPENROUTER_API_KEY` | 10개 프로바이더 LLM fallback (`LlmProviderChain`, 기본 순서 gemini→groq→openrouter→cerebras→deepinfra→sambanova→nscale→fireworks→huggingface→mistral) | 라이브 (채팅) — 각 프로바이더는 선택적; 키 없으면 건너뜀 |
 | `SSUAI_JWT_SECRET` | `JwtProperties` — HS256 access/refresh 서명 | 빈 기본값 = 재시작마다 임시 랜덤. prod는 토큰 유지를 위해 반드시 설정 (32바이트 이상). |
 | `SSUAI_FRONTEND_ORIGIN` | `WebCorsProdConfig` allowlist | 라이브 (prod) |
 | `SSUAI_SAINT_SSO_URL` / `SSUAI_SAINT_PORTAL_URL` | `SaintSsoProperties` | Task 14부터 — 기본값이 이미 saint.ssu.ac.kr을 가리킴 |
@@ -750,6 +750,13 @@ Claude Desktop / IDE
 전체 재임베딩 → 429 → lexical 고착). 벡터는 base64 float32 TEXT로 저장한다 — 코사인은
 수백 청크 규모라 인메모리로 충분해 pgvector 인덱스가 불필요하고 prod Postgres에 확장도
 없다. 임베딩이 비활성/실패하면 lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
+
+학사일정(`get_academic_calendar`·`find_academic_calendar_events`)은 메인 사이트
+`ssu.ac.kr/학사/학사일정/?years={year}`의 서버 렌더링 월 블록(`id="calendarYYYYMM"` 앵커,
+`ul.tb > li > div.row`)을 Jsoup으로 스크래핑한다. 연도는 블록 id에서, 월·일은 날짜 토큰에서
+취하고, 파싱 블록을 요청 연도로 필터해 파라미터가 무시될 때 잘못된 연도 데이터가 섞이지 않게
+한다. 기존 커넥터가 뉴스 포털(scatch)을 가리켜 404였던 것을 메인 사이트로 교정했다. 실제
+페이지는 일정별 카테고리가 없어 real 데이터의 `category`는 빈 문자열이다 (ADR 0054).
 
 규칙:
 
