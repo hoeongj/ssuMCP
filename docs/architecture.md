@@ -221,7 +221,8 @@ com.ssuai
     │   ├── memory      // ChatConversationStore (인메모리 LRU, 30m TTL, 12 turns cap)
     │   └── service
     │       ├── ChatService (인터페이스), MockChatService
-    │       ├── LlmChatService  // MCP 도구 dispatch, secret 가드, 대화 상태 관리
+    │       ├── LlmChatService  // 채팅 오케스트레이션 (메시지 구성·도구 호출·응답 조립); private 도구 dispatch는 위임
+    │       ├── ChatPrivateToolDispatcher // SAINT/LMS/도서관 private 도구 직접 호출 (ADR 0051에서 LlmChatService에서 분리)
     │       ├── LlmProviderChain // provider fallback 순서, privacy mode 전환, provider별 Circuit Breaker
     │       └── llm  // LlmProvider (인터페이스), LlmProviderConfig, LlmCompletionRequest/Result
     ├── dorm            // connector / controller / service — 레지던스홀 기숙사 식단
@@ -870,7 +871,7 @@ domain.mcp.tool
 
 ### 웹 챗봇과의 관계
 
-웹 챗봇 (`LlmChatService`)은 private 도구를 MCP 경로로 호출하지 않는다. SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 세션 컨텍스트를 사용해 해당 서비스를 직접 호출한다. 외부 MCP 클라이언트만 `mcp_session_id`를 도구 인자로 전달한다.
+웹 챗봇 (`LlmChatService`)은 private 도구를 MCP 경로로 호출하지 않는다. SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 세션 컨텍스트를 사용해 해당 서비스를 직접 호출한다(이 직접 호출 분기는 `ChatPrivateToolDispatcher`가 담당 — ADR 0051에서 god-class 축소를 위해 `LlmChatService`에서 분리). 외부 MCP 클라이언트만 `mcp_session_id`를 도구 인자로 전달한다.
 
 ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`)은 웹 챗봇 경로에만 남아 있다. MCP private 도구는 ThreadLocal을 사용하지 않는다 (Task 18 Slice C 이후).
 
