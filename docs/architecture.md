@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-06-19 (ssuAgent + Redis 계획 포함). 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-06-21 (ssuAgent + Redis/EPIC 4·5 출시 반영). 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -9,7 +9,7 @@ ssuMCP가 어떻게 구성되어 있는지 한눈에 파악할 수 있는 단일
 
 ## 비목표
 
-이 문서는 출시된 서버 경계와 명시적으로 계획된 action 레이어를 설명한다. 상세한 도구 인자는 `docs/mcp-tools.md`에, 보안 규칙은 `docs/security.md`에, 배포 운영은 `deploy/README.md`에 있다.
+이 문서는 출시된 서버 경계와 action 레이어를 설명한다. 상세한 도구 인자는 `docs/mcp-tools.md`에, 보안 규칙은 `docs/security.md`에, 배포 운영은 `deploy/README.md`에 있다.
 
 ---
 
@@ -52,7 +52,7 @@ flowchart TD
         end
         subgraph Storage["저장소"]
             PG[(Postgres + Flyway)]
-            REDIS[(Redis · EPIC 4 계획)]
+            REDIS[(Redis · EPIC 4/5)]
         end
     end
 
@@ -79,7 +79,7 @@ flowchart TD
     MCP_S --> SVC
     SVC --> CONN
     SVC --> PG
-    SVC -.->|EPIC 4| REDIS
+    SVC -->|EPIC 4/5| REDIS
     CONN --> Resilience
     Resilience --> PYXIS
     CONN --> SAINT
@@ -791,27 +791,27 @@ Claude Desktop / IDE
 
 ## 14. 출시된 연동 및 남은 작업
 
-읽기와 인증 기반이 출시되어 있다. 남은 작업은 의도적으로 새로운 상태 변경 또는 전달 기능으로 제한된다.
+읽기·인증 기반과 상태 변경 action(도서관 좌석 예약·이석·반납, LMS 자료 내보내기)이 출시되어 있다. 남은 작업은 알림·모바일 같은 전달 기능과 웹 버튼 UX로 제한된다.
 
 <!-- markdownlint-disable MD013 MD060 -->
 
 | 기능 | 상태 | 위치 / 계약 |
 | --- | --- | --- |
 | 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 좌석과 대출은 `LIBRARY` 연동 필요 |
-| 도서관 Redis/Redisson 보조 계층 | 출시 준비 | L2 좌석 cache, `ssuai.library.seat-events.v1`, scheduler lock. [ADR 0024](adr/0024-redis-redisson-adoption.md) |
-| 도서관 좌석 시계열 적재 | 출시 준비 | `domain.library.timeseries`; 5분 raw sample, 월 partition, 시간별 room rollup. [ADR 0023](adr/0023-library-seat-timeseries.md) |
-| 실시간 SSE 좌석 업데이트 | 출시 준비 | `LibrarySeatSseRegistry`, `/api/library/seats/events` (produces `text/event-stream`). [ADR 0026](adr/0026-sse-seat-updates.md) |
-| LLM Provider CB | 출시 준비 | `LlmProviderChain`별 `llm-{provider}` Resilience4j CB 설정. [ADR 0025](adr/0025-llm-provider-circuit-breaker.md) |
+| 도서관 Redis/Redisson 보조 계층 | 출시 | L2 좌석 cache, `ssuai.library.seat-events.v1`, scheduler lock. [ADR 0024](adr/0024-redis-redisson-adoption.md) |
+| 도서관 좌석 시계열 적재 | 출시 | `domain.library.timeseries`; 5분 raw sample, 월 partition, 시간별 room rollup. [ADR 0023](adr/0023-library-seat-timeseries.md) |
+| 실시간 SSE 좌석 업데이트 | 출시 | `LibrarySeatSseRegistry`, `/api/library/seats/events` (produces `text/event-stream`). [ADR 0026](adr/0026-sse-seat-updates.md) |
+| LLM Provider CB | 출시 | `LlmProviderChain`별 `llm-{provider}` Resilience4j CB 설정. [ADR 0025](adr/0025-llm-provider-circuit-breaker.md) |
 | SAINT 학사 읽기 | 출시 | `domain.saint`, `domain.auth.saint`; `SAINT` 연동 |
 | LMS 과제 읽기 | 출시 | `domain.lms`, `domain.auth.lms`; `LMS` 연동 |
 | MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
-| **도서관 좌석 예약 에이전트** | 구현 중 | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 + same-seat k6 100→1 검증; PR40: PostgreSQL LISTEN/NOTIFY wake 보조 |
-| Action MCP 인프라 | 구현 중 | `prepare_X` + `confirm_action`; [ADR 0015](adr/0015-action-tool-infrastructure.md), [ADR 0022](adr/0022-library-reservation-intent-queue.md) |
+| **도서관 좌석 예약 에이전트(백엔드)** | 출시 (실계정 E2E 검증) | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 + same-seat k6 100→1 검증; PR40: PostgreSQL LISTEN/NOTIFY wake 보조. 웹 버튼 UX는 ssuAI 측 후속 |
+| Action MCP 인프라 | 출시 | `prepare_X` + `confirm_action` 2단계 + `action_audit` 감사; [ADR 0015](adr/0015-action-tool-infrastructure.md), [ADR 0022](adr/0022-library-reservation-intent-queue.md) |
 | 알림 / 모바일 앱 | 미정 | 현재 API와 보안 계약 재사용 필요 |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-**도서관 좌석 에이전트가 플래그십 계획 산출물**이다. PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. PR2부터 즉시 예약 confirm도 같은 큐를 통과한다: `action_audit`는 사용자 동의 증적, `library_reservation_intents`는 실행 단위다. PR40부터 새 intent commit 직후 PostgreSQL `LISTEN/NOTIFY`가 worker를 즉시 깨운다. 단, 알림은 지연 감소용 보조 신호일 뿐이고 1초 polling이 durable primary 경로다. 반납/이석 confirm은 아직 직접 실행 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
+**도서관 좌석 에이전트가 플래그십 산출물**이다(백엔드 출시·실계정 E2E 검증 완료, 웹 UX는 후속). PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. PR2부터 즉시 예약 confirm도 같은 큐를 통과한다: `action_audit`는 사용자 동의 증적, `library_reservation_intents`는 실행 단위다. PR40부터 새 intent commit 직후 PostgreSQL `LISTEN/NOTIFY`가 worker를 즉시 깨운다. 단, 알림은 지연 감소용 보조 신호일 뿐이고 1초 polling이 durable primary 경로다. 반납/이석 confirm은 아직 직접 실행 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/hoeongj/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
 
 ---
 
