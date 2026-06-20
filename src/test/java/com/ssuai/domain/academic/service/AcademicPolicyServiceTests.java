@@ -26,7 +26,7 @@ class AcademicPolicyServiceTests {
     private final AcademicEmbeddingClient embeddingClient = mock(AcademicEmbeddingClient.class);
     private final AcademicQuestionClassifier classifier = new AcademicQuestionClassifier();
     private final AcademicPolicyService service =
-            new AcademicPolicyService(corpusCache, embeddingClient, classifier);
+            new AcademicPolicyService(corpusCache, embeddingClient, classifier, new ScholarshipPolicyEvaluator());
 
     @Test
     void searchReturnsScoredEvidenceFromOfficialSnapshot() {
