@@ -77,6 +77,15 @@ public interface McpAuthService {
     void bindOauthSubject(McpAuthSessionId sessionId, String oauthSubject);
 
     /**
+     * Binds the OAuth {@code sub} when unbound, or verifies it matches an existing binding
+     * (security hardening for tier-2/3 resolution). Returns {@code true} only when the
+     * caller's identity provably owns the session; returns {@code false} on a mismatch,
+     * blank arg, or missing session — the caller MUST treat {@code false} as "ownership
+     * not confirmed" and deny the resolution.
+     */
+    boolean bindOrVerifyOauthSubject(McpAuthSessionId sessionId, String oauthSubject);
+
+    /**
      * Links a provider session to the MCP auth session identified by {@code sessionId}.
      * {@code principalKey} is the key used to look up credentials in the provider store
      * (studentId for SAINT/LMS, library session key for LIBRARY).

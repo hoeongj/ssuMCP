@@ -169,6 +169,48 @@ public class McpAuthSessionStore {
     }
 
     /**
+     * Bind-or-verify the OAuth {@code sub} for ownership confirmation during tier-2/3
+     * session resolution (security hardening). Unlike {@link #bindOauthSubject}, this
+     * REJECTS a mismatch instead of silently keeping the existing binding, so a stolen
+     * transport / opaque id cannot resolve a session bound to a different identity.
+     *
+     * <ul>
+     *   <li>Stored {@code oauthSubject} is null → bind it, persist, return {@code true}.</li>
+     *   <li>Stored value {@code equals} the arg → already this identity, return {@code true}.</li>
+     *   <li>Stored value is a DIFFERENT non-null value → do NOT overwrite, return {@code false}.</li>
+     *   <li>Null/blank arg, or no live session for the id → cannot confirm ownership,
+     *       return {@code false}.</li>
+     * </ul>
+     *
+     * @return {@code true} only when the caller's identity provably owns the session;
+     *         {@code false} when ownership cannot be confirmed (treat as deny).
+     */
+    @Transactional
+    public boolean bindOrVerifyOauthSubject(McpAuthSessionId id, String oauthSubject) {
+        if (id == null || oauthSubject == null || oauthSubject.isBlank()) {
+            return false;
+        }
+        Instant now = clock.instant();
+        Optional<McpSessionEntity> entity = repository.findBySessionIdAndExpiresAtAfter(id.value(), now);
+        if (entity.isEmpty()) {
+            return false;
+        }
+        McpSessionEntity session = entity.get();
+        String stored = session.getOauthSubject();
+        if (stored == null) {
+            session.setOauthSubject(oauthSubject);
+            repository.save(session);
+            log.debug("mcp oauth sub bound (verify) session={}", id.fingerprint());
+            return true;
+        }
+        if (stored.equals(oauthSubject)) {
+            return true;
+        }
+        log.warn("mcp oauth sub mismatch refused session={}", id.fingerprint());
+        return false;
+    }
+
+    /**
      * Links a provider to the session, replacing any prior link for the same provider.
      * A no-op if the session does not exist or has expired.
      */

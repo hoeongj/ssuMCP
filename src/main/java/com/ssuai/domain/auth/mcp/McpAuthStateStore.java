@@ -75,9 +75,15 @@ public class McpAuthStateStore {
     }
 
     /**
-     * Consumes the state token — deletes it from the store and returns the entry if it
-     * is present and not expired. Returns {@link Optional#empty()} if the state is
+     * Consumes the state token — atomically deletes it from the store and returns the entry
+     * if it is present and not expired. Returns {@link Optional#empty()} if the state is
      * unknown, already consumed, or expired (replay and timeout protection).
+     *
+     * <p>The claim is made atomic via {@link McpAuthStateRepository#deleteIfActive}: the entry
+     * is returned only when this caller's delete actually removed the row ({@code claimed == 1}).
+     * If two concurrent callbacks present the same state, exactly one deletes the row and wins;
+     * the loser sees {@code claimed == 0} and gets empty, even though its earlier {@code find}
+     * had observed the (still-present) row. This closes the find-then-delete race.
      */
     @Transactional
     public Optional<McpAuthStateEntry> consume(String state) {
@@ -89,8 +95,8 @@ public class McpAuthStateStore {
         if (found.isEmpty()) {
             return Optional.empty();
         }
-        repository.deleteById(state);
-        return found.map(this::toEntry);
+        int claimed = repository.deleteIfActive(state, now);
+        return claimed == 1 ? found.map(this::toEntry) : Optional.empty();
     }
 
     @Scheduled(fixedDelay = 3_600_000)

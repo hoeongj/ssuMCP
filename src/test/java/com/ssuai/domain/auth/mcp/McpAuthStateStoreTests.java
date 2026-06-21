@@ -53,12 +53,13 @@ class McpAuthStateStoreTests {
                 state, SESSION_ID.value(), McpProviderType.LIBRARY.name(),
                 T0.plus(TTL), T0);
         when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.of(entity));
+        when(repository.deleteIfActive(eq(state), any())).thenReturn(1);
 
         Optional<McpAuthStateEntry> consumed = store.consume(state);
 
         assertThat(consumed).isPresent();
         assertThat(consumed.get().provider()).isEqualTo(McpProviderType.LIBRARY);
-        verify(repository).deleteById(state);
+        verify(repository).deleteIfActive(eq(state), any());
     }
 
     @Test
@@ -67,25 +68,42 @@ class McpAuthStateStoreTests {
         McpAuthStateEntity entity = new McpAuthStateEntity(
                 state, SESSION_ID.value(), McpProviderType.SAINT.name(),
                 T0.plus(TTL), T0);
-        when(repository.findByStateAndExpiresAtAfter(eq(state), any()))
-                .thenReturn(Optional.of(entity))
-                .thenReturn(Optional.empty());
+        when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.of(entity));
+        // First claim wins (1 row deleted); a replay finds the row gone (0 deleted).
+        when(repository.deleteIfActive(eq(state), any()))
+                .thenReturn(1)
+                .thenReturn(0);
 
         store.consume(state);
 
         assertThat(store.consume(state)).isEmpty();
-        verify(repository, times(1)).deleteById(state);
+        verify(repository, times(2)).deleteIfActive(eq(state), any());
+    }
+
+    @Test
+    void concurrentLoserGetsEmptyEvenWhenFindObservedTheRow() {
+        // Atomic-claim race: the find still sees the row, but a concurrent caller already
+        // deleted it, so deleteIfActive returns 0 and this caller must get empty.
+        String state = "raced-state";
+        McpAuthStateEntity entity = new McpAuthStateEntity(
+                state, SESSION_ID.value(), McpProviderType.SAINT.name(),
+                T0.plus(TTL), T0);
+        when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.of(entity));
+        when(repository.deleteIfActive(eq(state), any())).thenReturn(0);
+
+        assertThat(store.consume(state)).isEmpty();
+        verify(repository).deleteIfActive(eq(state), any());
     }
 
     @Test
     void expiredStateIsRejectedByRepositoryQuery() {
         // Expired states are filtered in the repository query; the store
-        // gets an empty Optional and returns empty without deleting.
+        // gets an empty Optional and returns empty without claiming.
         String state = "expired-state";
         when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.empty());
 
         assertThat(store.consume(state)).isEmpty();
-        verify(repository, never()).deleteById(any());
+        verify(repository, never()).deleteIfActive(any(), any());
     }
 
     @Test
@@ -93,7 +111,7 @@ class McpAuthStateStoreTests {
         when(repository.findByStateAndExpiresAtAfter(any(), any())).thenReturn(Optional.empty());
 
         assertThat(store.consume("nonexistent-state")).isEmpty();
-        verify(repository, never()).deleteById(any());
+        verify(repository, never()).deleteIfActive(any(), any());
     }
 
     @Test
@@ -127,12 +145,14 @@ class McpAuthStateStoreTests {
                 T0.plus(TTL), T0);
         when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.of(entity));
 
+        when(repository.deleteIfActive(eq(state), any())).thenReturn(1);
+
         Optional<McpAuthStateEntry> peeked = store.peek(state);
         Optional<McpAuthStateEntry> consumed = store.consume(state);
 
         assertThat(peeked).isPresent();
         assertThat(consumed).isPresent();
-        verify(repository, times(1)).deleteById(state);
+        verify(repository, times(1)).deleteIfActive(eq(state), any());
     }
 
     @Test
@@ -150,6 +170,7 @@ class McpAuthStateStoreTests {
                 state, SESSION_ID.value(), McpProviderType.SAINT.name(),
                 T0.plus(TTL), T0);
         when(repository.findByStateAndExpiresAtAfter(eq(state), any())).thenReturn(Optional.of(entity));
+        when(repository.deleteIfActive(eq(state), any())).thenReturn(1);
 
         Optional<McpAuthStateEntry> consumed = store.consume(state);
 
