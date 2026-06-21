@@ -43,18 +43,20 @@ public class LmsMaterialsMcpTool {
             @ToolParam(required = false, description = "조회할 학기 ID. 생략 시 현재 활성 학기가 선택됩니다.")
             Long term_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
                         // Fetch every course WITH its filtered materials (groups, counts, sizes,
                         // content_ids) in one shot so the user sees course + files together right
                         // after login. courseIds=null → all courses.
-                        List<LmsCourseMaterials> courses = materialsService.listMaterials(studentId, null, term_id);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, courses);
+                        List<LmsCourseMaterials> courses = materialsService.listMaterials(principal.studentId(), null, term_id);
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), courses);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })
@@ -76,15 +78,17 @@ public class LmsMaterialsMcpTool {
             @ToolParam(required = false, description = "조회할 학기 ID (선택).")
             Long term_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
-                        List<LmsCourseMaterials> materials = materialsService.listMaterials(studentId, course_ids, term_id);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, materials);
+                        List<LmsCourseMaterials> materials = materialsService.listMaterials(principal.studentId(), course_ids, term_id);
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), materials);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })

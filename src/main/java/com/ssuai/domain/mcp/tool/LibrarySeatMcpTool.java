@@ -47,16 +47,17 @@ public class LibrarySeatMcpTool {
     ) {
         LibraryFloor target = LibraryFloor.fromCode(floor);
         boolean isCompact = Boolean.TRUE.equals(compact);
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> {
                     log.debug("get_library_seat_status: fetching seats");
                     try {
                         LibrarySeatStatusResponse data =
-                                libraryService.getSeatStatusForSession(target, sessionKey);
+                                libraryService.getSeatStatusForSession(target, principal.studentId());
                         Object payload = isCompact
                                 ? LibrarySeatStatusCompactResponse.from(data)
                                 : data;
-                        return McpPrivateToolResponse.ok(mcp_session_id, payload);
+                        return McpPrivateToolResponse.ok(
+                                principal.sessionId(), McpProviderType.LIBRARY.name(), payload);
                     } catch (LibraryAuthRequiredException exception) {
                         log.debug("get_library_seat_status: library token expired, returning AUTH_REQUIRED");
                         return authHelper.<Object>buildAuthRequired(

@@ -41,7 +41,7 @@ class SaintGradesMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<GradesResponse> stub =
                 McpPrivateToolResponse.authRequired(null, "SAINT", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<GradesResponse>buildAuthRequired(null, McpProviderType.SAINT)).thenReturn(stub);
 
         McpPrivateToolResponse<GradesResponse> resp = tool.getMyGrades(null);
@@ -55,7 +55,7 @@ class SaintGradesMcpToolTests {
     void returnsAuthRequiredWhenSaintNotLinked() {
         McpPrivateToolResponse<GradesResponse> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "SAINT", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<GradesResponse>buildAuthRequired(SESSION_ID, McpProviderType.SAINT)).thenReturn(stub);
 
         McpPrivateToolResponse<GradesResponse> resp = tool.getMyGrades(SESSION_ID);
@@ -68,8 +68,8 @@ class SaintGradesMcpToolTests {
     void returnsOkWithDataWhenLinked() {
         GpaSummary zero = new GpaSummary(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         GradesResponse stub = new GradesResponse(List.of(), zero, zero, Map.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(gradesService.fetchGrades("20221528")).thenReturn(stub);
 
         McpPrivateToolResponse<GradesResponse> resp = tool.getMyGrades(SESSION_ID);
@@ -84,8 +84,8 @@ class SaintGradesMcpToolTests {
     void responseDoesNotContainStudentId() {
         GpaSummary zero = new GpaSummary(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         GradesResponse stub = new GradesResponse(List.of(), zero, zero, Map.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(gradesService.fetchGrades("20221528")).thenReturn(stub);
 
         McpPrivateToolResponse<GradesResponse> resp = tool.getMyGrades(SESSION_ID);

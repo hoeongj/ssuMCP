@@ -49,8 +49,8 @@ public class LibraryCancelMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> prepareForSession(mcp_session_id, sessionKey))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> prepareForSession(principal.sessionId(), principal.studentId()))
                 .orElseGet(() -> {
                     log.debug("prepare_cancel_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<LibraryPrepareResult>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
@@ -66,7 +66,9 @@ public class LibraryCancelMcpTool {
 
         LibraryReservationResult current = reservationConnector.getCurrentCharge(token).orElse(null);
         if (current == null) {
-            return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(0L, "현재 예약된 좌석이 없습니다."));
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId, McpProviderType.LIBRARY.name(),
+                    new LibraryPrepareResult(0L, "현재 예약된 좌석이 없습니다."));
         }
 
         long actionId = actionService.createPendingAction(
@@ -78,6 +80,7 @@ public class LibraryCancelMcpTool {
                         + "confirm_action을 호출해 최종 확인하세요.",
                 current.roomName(), current.seatCode(), current.chargeId(),
                 current.beginTime(), current.endTime());
-        return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(actionId, message));
+        return McpPrivateToolResponse.ok(
+                mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(actionId, message));
     }
 }

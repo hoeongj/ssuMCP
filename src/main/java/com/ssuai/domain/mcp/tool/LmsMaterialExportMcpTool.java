@@ -47,15 +47,17 @@ public class LmsMaterialExportMcpTool {
             @ToolParam(required = false, description = "조회할 학기 ID (선택).")
             Long term_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
-                        LmsExportPrepareResponse prepareResponse = exportService.prepare(studentId, term_id, content_ids);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, prepareResponse);
+                        LmsExportPrepareResponse prepareResponse = exportService.prepare(principal.studentId(), term_id, content_ids);
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), prepareResponse);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })
@@ -78,15 +80,17 @@ public class LmsMaterialExportMcpTool {
             @ToolParam(required = false, description = "조회할 학기 ID. 생략 시 현재 활성 학기가 자동 선택됩니다.")
             Long term_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
-                        LmsExportPrepareResponse preview = exportService.exportAll(studentId, term_id);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, preview);
+                        LmsExportPrepareResponse preview = exportService.exportAll(principal.studentId(), term_id);
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), preview);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })
@@ -103,20 +107,26 @@ public class LmsMaterialExportMcpTool {
             @ToolParam(description = "MCP session ID with LMS linked.")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
-                        LmsExportConfirmResponse confirmResponse = exportService.confirm(studentId);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, confirmResponse);
+                        LmsExportConfirmResponse confirmResponse = exportService.confirm(principal.studentId());
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), confirmResponse);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     } catch (NoPendingActionException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, "대기 중인 내보내기 요청이 없습니다. prepare_lms_material_export를 먼저 호출해주세요.");
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
+                                "대기 중인 내보내기 요청이 없습니다. prepare_lms_material_export를 먼저 호출해주세요.");
                     } catch (ActionExpiredException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, "내보내기 요청이 만료되었습니다. prepare_lms_material_export를 다시 호출해주세요.");
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
+                                "내보내기 요청이 만료되었습니다. prepare_lms_material_export를 다시 호출해주세요.");
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

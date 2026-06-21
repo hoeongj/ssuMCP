@@ -58,8 +58,8 @@ public class LibraryReservationMcpTool {
     ) {
         long seatId = parseSeatId(seat_id);
         LibraryReservationRequest request = new LibraryReservationRequest(seatId);
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> prepareForSession(mcp_session_id, sessionKey, request))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> prepareForSession(principal.sessionId(), principal.studentId(), request))
                 .orElseGet(() -> {
                     log.debug("prepare_reserve_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<LibraryPrepareResult>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
@@ -82,14 +82,16 @@ public class LibraryReservationMcpTool {
                             + "반납하려면 prepare_cancel_library_seat를 사용하세요.",
                     active.roomName(), active.seatCode(), active.chargeId(),
                     active.beginTime(), active.endTime());
-            return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(0L, alreadyMsg));
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(0L, alreadyMsg));
         }
 
         long actionId = actionService.createPendingAction(sessionKey, ACTION_TYPE, request).getId();
         String message = SeatDisplay.describe(catalogService, request.seatId()) + " 예약을 준비했습니다. "
                 + "confirm_action을 호출해 최종 확인하세요."
                 + SeatDisplay.graduateOnlyWarning(catalogService, request.seatId());
-        return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(actionId, message));
+        return McpPrivateToolResponse.ok(
+                mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(actionId, message));
     }
 
     private static long parseSeatId(String seatId) {

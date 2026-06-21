@@ -42,14 +42,14 @@ public class LibraryAvailableSeatsMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> {
                     log.debug("get_library_available_seats: fetching all rooms");
                     try {
                         LibraryAllAvailableSeatsResponse data =
-                                availableSeatsService.getAllAvailableSeats(sessionKey);
+                                availableSeatsService.getAllAvailableSeats(principal.studentId());
                         return McpPrivateToolResponse.<LibraryAllAvailableSeatsResponse>ok(
-                                mcp_session_id, data);
+                                principal.sessionId(), McpProviderType.LIBRARY.name(), data);
                     } catch (LibraryAuthRequiredException exception) {
                         log.debug("get_library_available_seats: token expired");
                         return authHelper.<LibraryAllAvailableSeatsResponse>buildAuthRequired(

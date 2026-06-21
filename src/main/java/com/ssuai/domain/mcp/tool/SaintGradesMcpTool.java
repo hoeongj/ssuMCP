@@ -44,11 +44,12 @@ public class SaintGradesMcpTool {
     public McpPrivateToolResponse<GradesResponse> getMyGrades(
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("get_my_grades: fetching grades");
-                    GradesResponse data = gradesService.fetchGrades(studentId);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    GradesResponse data = gradesService.fetchGrades(principal.studentId());
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> {
                     log.debug("get_my_grades: SAINT not linked, returning AUTH_REQUIRED");

@@ -129,6 +129,31 @@ public class McpAuthHelper {
     }
 
     /**
+     * Resolves both the provider {@code principalKey} (studentId) and the canonical
+     * resolved session id in a single 3-tier lookup. Returns empty in exactly the same
+     * cases as {@link #principalKey(String, McpProviderType)} — i.e. when no session is
+     * found via any tier or the provider has not been linked — so OK-path callers can
+     * keep using the empty branch to emit AUTH_REQUIRED.
+     *
+     * <p>The {@code sessionId} is the id of the resolved {@code McpAuthSession}, which may
+     * differ from {@code idValue} when the session was found via the OAuth-sub or transport
+     * tier rather than the opaque argument. OK responses should echo this canonical id, not
+     * the raw input argument.
+     */
+    public Optional<ResolvedPrincipal> resolvePrincipal(String idValue, McpProviderType provider) {
+        return resolveSession(idValue)
+                .flatMap(session -> session.provider(provider)
+                        .map(link -> new ResolvedPrincipal(link.principalKey(), session.id().value())));
+    }
+
+    /**
+     * Pairing of the provider {@code principalKey} (studentId) with the canonical resolved
+     * session id, returned by {@link #resolvePrincipal(String, McpProviderType)}.
+     */
+    public record ResolvedPrincipal(String studentId, String sessionId) {
+    }
+
+    /**
      * Builds an AUTH_REQUIRED response using the 3-tier resolution strategy.
      * Gets-or-creates the session (so the client always gets back a stable mcpSessionId),
      * generates a one-time state token, and constructs the login URL.
@@ -190,6 +215,10 @@ public class McpAuthHelper {
         try {
             return request.getHeader("Mcp-Session-Id");
         } catch (Exception e) {
+            // No active request scope (non-HTTP transport) or proxy access failure.
+            // Returning null falls through to the next resolution tier; logged so
+            // framework-level failures stay traceable.
+            log.trace("transport session id unavailable", e);
             return null;
         }
     }

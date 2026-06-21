@@ -52,7 +52,7 @@ class LibrarySwapMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<LibraryPrepareResult> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryPrepareResult>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareSwapLibrarySeat(null, "3200");
@@ -66,8 +66,8 @@ class LibrarySwapMcpToolTests {
     void returnsAuthRequiredWhenTokenMissing() {
         McpPrivateToolResponse<LibraryPrepareResult> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryPrepareResult>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(stub);
 
@@ -79,8 +79,8 @@ class LibrarySwapMcpToolTests {
 
     @Test
     void suggestsReserveWhenNoCurrentCharge() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
 
@@ -96,8 +96,8 @@ class LibrarySwapMcpToolTests {
         // E2E fixture: current seat 마루열람실(6F) 89, target externalSeatId 3196 = visible seat 91
         LibraryReservationResult current =
                 new LibraryReservationResult(1968552L, "마루열람실(6F)", "89", "09:00", "18:00");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit42 = mockAudit(42L);
@@ -121,8 +121,8 @@ class LibrarySwapMcpToolTests {
     void fallsBackToSeatIdNoticeWhenSeatNotInCatalog() {
         LibraryReservationResult current =
                 new LibraryReservationResult(1966801L, "열람실", "74", "09:00", "18:00");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit43 = mockAudit(43L);
@@ -140,8 +140,8 @@ class LibrarySwapMcpToolTests {
     void warnsWhenTargetSeatIsGraduateOnly() {
         LibraryReservationResult current =
                 new LibraryReservationResult(1966801L, "마루열람실(6F)", "74", "09:00", "18:00");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit44 = mockAudit(44L);

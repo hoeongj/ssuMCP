@@ -41,7 +41,7 @@ class LibraryCurrentSeatMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<String> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<String>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<String> response = tool.getMyLibrarySeat(null);
@@ -54,8 +54,8 @@ class LibraryCurrentSeatMcpToolTests {
     void returnsAuthRequiredWhenTokenMissing() {
         McpPrivateToolResponse<String> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.empty());
         when(authHelper.<String>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(stub);
 
@@ -66,8 +66,8 @@ class LibraryCurrentSeatMcpToolTests {
 
     @Test
     void returnsNoReservationMessageWhenNoCurrentCharge() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
 
@@ -81,8 +81,8 @@ class LibraryCurrentSeatMcpToolTests {
     void returnsFormattedCurrentReservationInfo() {
         LibraryReservationResult current =
                 new LibraryReservationResult(1966801L, "열람실", "74", "09:00", "18:00");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
 

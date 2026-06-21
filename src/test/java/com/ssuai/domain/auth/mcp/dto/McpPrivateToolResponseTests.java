@@ -39,12 +39,24 @@ class McpPrivateToolResponseTests {
 
     @Test
     void ok_hasNoMessages() {
-        McpPrivateToolResponse<String> r = McpPrivateToolResponse.ok("sid-3", "payload");
+        McpPrivateToolResponse<String> r = McpPrivateToolResponse.ok("sid-3", "SAINT", "payload");
 
         assertThat(r.status()).isEqualTo("OK");
         assertThat(r.data()).isEqualTo("payload");
         assertThat(r.message()).isNull();
         assertThat(r.userMessage()).isNull();
         assertThat(r.developerMessage()).isNull();
+    }
+
+    @Test
+    void ok_carriesResolvedSessionIdAndProvider() {
+        // The OK factory now echoes the canonical resolved session id (not the raw input
+        // argument) and names the provider that served the response.
+        McpPrivateToolResponse<String> r =
+                McpPrivateToolResponse.ok("resolved-session-id", "LIBRARY", "payload");
+
+        assertThat(r.mcpSessionId()).isEqualTo("resolved-session-id");
+        assertThat(r.provider()).isNotNull();
+        assertThat(r.provider()).isEqualTo("LIBRARY");
     }
 }

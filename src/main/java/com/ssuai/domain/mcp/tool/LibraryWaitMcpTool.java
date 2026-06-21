@@ -56,8 +56,8 @@ public class LibraryWaitMcpTool {
             @ToolParam(required = false, description = "Wait expiry in minutes. Defaults to 120 minutes.")
             Integer expires_in_minutes
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> register(mcp_session_id, sessionKey,
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> register(principal.sessionId(), principal.studentId(),
                         floor, room_ids, seat_attributes, target_seat_id, expires_in_minutes))
                 .orElseGet(() -> {
                     log.debug("wait_for_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
@@ -73,10 +73,10 @@ public class LibraryWaitMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> {
-                    Optional<LibraryReservationIntentView> latest = transactions.latestForSession(sessionKey);
-                    return McpPrivateToolResponse.ok(mcp_session_id,
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> {
+                    Optional<LibraryReservationIntentView> latest = transactions.latestForSession(principal.studentId());
+                    return McpPrivateToolResponse.ok(principal.sessionId(), McpProviderType.LIBRARY.name(),
                             latest.map(this::statusMessage).orElse("No library seat wait intent exists."));
                 })
                 .orElseGet(() -> {
@@ -94,10 +94,10 @@ public class LibraryWaitMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> {
-                    Optional<LibraryReservationIntentView> cancelled = transactions.cancelActive(sessionKey);
-                    return McpPrivateToolResponse.ok(mcp_session_id,
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> {
+                    Optional<LibraryReservationIntentView> cancelled = transactions.cancelActive(principal.studentId());
+                    return McpPrivateToolResponse.ok(principal.sessionId(), McpProviderType.LIBRARY.name(),
                             cancelled.map(this::cancelMessage).orElse("No active library seat wait intent exists."));
                 })
                 .orElseGet(() -> {
@@ -124,7 +124,8 @@ public class LibraryWaitMcpTool {
         String prefix = result.newlyCreated()
                 ? "Library seat wait registered. "
                 : "An active library seat wait already exists; returning it. ";
-        return McpPrivateToolResponse.ok(mcpSessionId, prefix + statusMessage(result.intent())
+        return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
+                prefix + statusMessage(result.intent())
                 + " After registration, a worker may autonomously reserve a matching seat when one opens.");
     }
 

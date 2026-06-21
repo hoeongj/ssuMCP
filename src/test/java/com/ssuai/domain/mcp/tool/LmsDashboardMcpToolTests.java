@@ -40,7 +40,7 @@ class LmsDashboardMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getLmsDashboard(null, null);
@@ -55,7 +55,7 @@ class LmsDashboardMcpToolTests {
     void returnsAuthRequiredWhenLmsNotLinked() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(SESSION_ID, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getLmsDashboard(SESSION_ID, null);
@@ -67,8 +67,8 @@ class LmsDashboardMcpToolTests {
     @Test
     void returnsOkWithDataWhenLinked() {
         LmsDashboardResponse stub = new LmsDashboardResponse(List.of(), List.of(), List.of(), "2026 1학기", "");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(dashboardService.getDashboard("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getLmsDashboard(SESSION_ID, null);
@@ -80,8 +80,8 @@ class LmsDashboardMcpToolTests {
 
     @Test
     void returnsAuthRequiredWhenSessionExpired() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(dashboardService.getDashboard("20221528", null)).thenThrow(new LmsSessionExpiredException());
 
         McpPrivateToolResponse<Object> stub =
@@ -97,13 +97,13 @@ class LmsDashboardMcpToolTests {
     @Test
     void responseDoesNotContainStudentId() {
         LmsDashboardResponse stub = new LmsDashboardResponse(List.of(), List.of(), List.of(), "2026 1학기", "");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(dashboardService.getDashboard("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getLmsDashboard(SESSION_ID, null);
 
         assertThat(resp.toString()).doesNotContain("20221528");
-        assertThat(resp.provider()).isNull();
+        assertThat(resp.provider()).isEqualTo("LMS");
     }
 }

@@ -40,7 +40,7 @@ class SaintScheduleMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<ScheduleResponse> stub =
                 McpPrivateToolResponse.authRequired(null, "SAINT", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<ScheduleResponse>buildAuthRequired(null, McpProviderType.SAINT)).thenReturn(stub);
 
         McpPrivateToolResponse<ScheduleResponse> resp = tool.getMySchedule(null, null, null);
@@ -55,7 +55,7 @@ class SaintScheduleMcpToolTests {
     void returnsAuthRequiredWhenSaintNotLinked() {
         McpPrivateToolResponse<ScheduleResponse> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "SAINT", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<ScheduleResponse>buildAuthRequired(SESSION_ID, McpProviderType.SAINT)).thenReturn(stub);
 
         McpPrivateToolResponse<ScheduleResponse> resp = tool.getMySchedule(null, null, SESSION_ID);
@@ -68,8 +68,8 @@ class SaintScheduleMcpToolTests {
     void returnsOkWithDataWhenLinked() {
         ScheduleResponse stub = new ScheduleResponse(2022, 2025, 2, List.of(
                 new TermSchedule(2025, 2, List.of())));
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(scheduleService.fetchSchedule("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<ScheduleResponse> resp = tool.getMySchedule(null, null, SESSION_ID);
@@ -83,8 +83,8 @@ class SaintScheduleMcpToolTests {
     void passesRequestedTermToService() {
         ScheduleResponse stub = new ScheduleResponse(2022, 2026, 1, List.of(
                 new TermSchedule(2026, 1, List.of())));
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(scheduleService.fetchSchedule("20221528", 2026, 1)).thenReturn(stub);
 
         McpPrivateToolResponse<ScheduleResponse> resp = tool.getMySchedule(2026, 1, SESSION_ID);
@@ -97,13 +97,13 @@ class SaintScheduleMcpToolTests {
     @Test
     void responseDoesNotContainStudentId() {
         ScheduleResponse stub = new ScheduleResponse(2022, 2025, 2, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(scheduleService.fetchSchedule("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<ScheduleResponse> resp = tool.getMySchedule(null, null, SESSION_ID);
 
         assertThat(resp.toString()).doesNotContain("20221528");
-        assertThat(resp.provider()).isNull();
+        assertThat(resp.provider()).isEqualTo("SAINT");
     }
 }
