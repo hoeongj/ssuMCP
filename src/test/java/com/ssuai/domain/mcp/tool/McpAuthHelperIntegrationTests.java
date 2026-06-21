@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,5 +91,29 @@ class McpAuthHelperIntegrationTests {
         assertThat(resolved).isPresent();
         assertThat(resolved.get().id()).isEqualTo(NEWER_SESSION);
         assertThat(principalKey).contains("newer-student");
+    }
+
+    @Test
+    void resolveSessionDeniesTransportTierWhenJwtSubMismatchesBoundSubject() {
+        // End-to-end ownership guard (real store + real bindOrVerify + real fall-through):
+        // a session is bound to oauth_subject sub-A and carries the transport id, but the
+        // request presents a verified JWT with sub-B. The stolen transport id must NOT
+        // resolve the victim's session. With no opaque arg, resolution returns empty and
+        // the existing sub-A binding must be left untouched (not overwritten to sub-B).
+        McpSessionEntity victim = new McpSessionEntity(OLDER_SESSION.value(), T0, EXPIRES, "{}");
+        victim.setTransportSessionId(TRANSPORT_ID);
+        victim.setOauthSubject("sub-A");
+        repository.save(victim);
+        store.linkProvider(OLDER_SESSION, McpProviderType.SAINT, "victim-student");
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new JwtAuthenticationToken(
+                        Jwt.withTokenValue("token").header("alg", "none").subject("sub-B").build()));
+
+        Optional<McpAuthSession> resolved = helper.resolveSession(null);
+
+        assertThat(resolved).isEmpty();
+        assertThat(repository.findById(OLDER_SESSION.value()).orElseThrow().getOauthSubject())
+                .isEqualTo("sub-A");
     }
 }

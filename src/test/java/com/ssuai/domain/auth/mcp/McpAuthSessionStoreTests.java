@@ -397,6 +397,56 @@ class McpAuthSessionStoreTests {
         assertThat(futureStore.findByOauthSubject("google-sub-12345")).isEmpty();
     }
 
+    // --- bind-or-verify OAuth subject (security hardening: tier-2/3 ownership guard) ---
+
+    @Test
+    void bindOrVerifyOauthSubject_bindsWhenUnboundAndPersists() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        boolean result = store.bindOrVerifyOauthSubject(session.id(), "sub-A");
+
+        assertThat(result).isTrue();
+        assertThat(repository.findById(session.id().value()).orElseThrow().getOauthSubject())
+                .isEqualTo("sub-A");
+    }
+
+    @Test
+    void bindOrVerifyOauthSubject_returnsTrueForMatchingSubject() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+        store.bindOauthSubject(session.id(), "sub-A");
+
+        assertThat(store.bindOrVerifyOauthSubject(session.id(), "sub-A")).isTrue();
+        assertThat(repository.findById(session.id().value()).orElseThrow().getOauthSubject())
+                .isEqualTo("sub-A");
+    }
+
+    @Test
+    void bindOrVerifyOauthSubject_returnsFalseForDifferentSubjectAndDoesNotOverwrite() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+        store.bindOauthSubject(session.id(), "sub-A");
+
+        boolean result = store.bindOrVerifyOauthSubject(session.id(), "sub-B");
+
+        assertThat(result).isFalse();
+        // The existing binding must be preserved — a mismatched sub never overwrites it.
+        assertThat(repository.findById(session.id().value()).orElseThrow().getOauthSubject())
+                .isEqualTo("sub-A");
+    }
+
+    @Test
+    void bindOrVerifyOauthSubject_returnsFalseForBlankArgOrMissingSession() {
+        McpAuthSessionStore store = store(T0, Duration.ofHours(4));
+        McpAuthSession session = store.create();
+
+        assertThat(store.bindOrVerifyOauthSubject(session.id(), null)).isFalse();
+        assertThat(store.bindOrVerifyOauthSubject(session.id(), "  ")).isFalse();
+        assertThat(store.bindOrVerifyOauthSubject(null, "sub-A")).isFalse();
+        assertThat(store.bindOrVerifyOauthSubject(McpAuthSessionId.generate(), "sub-A")).isFalse();
+    }
+
     private McpAuthSessionStore store(Instant now, Duration sessionTtl) {
         return store(Clock.fixed(now, ZoneOffset.UTC), sessionTtl);
     }

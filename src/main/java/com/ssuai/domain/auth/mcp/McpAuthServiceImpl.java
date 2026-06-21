@@ -72,6 +72,11 @@ class McpAuthServiceImpl implements McpAuthService {
     }
 
     @Override
+    public boolean bindOrVerifyOauthSubject(McpAuthSessionId sessionId, String oauthSubject) {
+        return sessionStore.bindOrVerifyOauthSubject(sessionId, oauthSubject);
+    }
+
+    @Override
     public void linkProvider(McpAuthSessionId sessionId, McpProviderType provider, String principalKey) {
         sessionStore.linkProvider(sessionId, provider, principalKey);
     }

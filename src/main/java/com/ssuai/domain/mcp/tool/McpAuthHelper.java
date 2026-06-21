@@ -88,12 +88,16 @@ public class McpAuthHelper {
             Optional<McpAuthSession> session = mcpAuthService.findByTransportId(transportId);
             if (session.isPresent()) {
                 McpAuthSession found = session.get();
-                log.debug("mcp session resolved via transport session={}", found.id().fingerprint());
-                // Opportunistic: bind oauth sub for future tier-1 lookup
-                if (oauthSub != null) {
-                    mcpAuthService.bindOauthSubject(found.id(), oauthSub);
+                // Ownership guard: if a JWT sub is present it must bind-or-match the session's
+                // oauth_subject. A mismatch means a stolen transport id is presenting a different
+                // identity — deny by falling through to the next tier (do NOT return this session).
+                if (oauthSub != null && !mcpAuthService.bindOrVerifyOauthSubject(found.id(), oauthSub)) {
+                    log.warn("mcp session oauth-sub mismatch on tier resolve session={}",
+                            found.id().fingerprint());
+                } else {
+                    log.debug("mcp session resolved via transport session={}", found.id().fingerprint());
+                    return session;
                 }
-                return session;
             }
         }
 
@@ -102,15 +106,20 @@ public class McpAuthHelper {
             Optional<McpAuthSession> session = mcpAuthService.find(mcpSessionId);
             if (session.isPresent()) {
                 McpAuthSession found = session.get();
-                log.debug("mcp session resolved via opaque-id session={}", found.id().fingerprint());
-                // Opportunistic: bind for faster future resolution
-                if (oauthSub != null) {
-                    mcpAuthService.bindOauthSubject(found.id(), oauthSub);
+                // Ownership guard (see Tier 2). A mismatch here falls through to the empty
+                // return below — and we must NOT opportunistically bind the transport id to a
+                // session the caller does not own.
+                if (oauthSub != null && !mcpAuthService.bindOrVerifyOauthSubject(found.id(), oauthSub)) {
+                    log.warn("mcp session oauth-sub mismatch on tier resolve session={}",
+                            found.id().fingerprint());
+                } else {
+                    log.debug("mcp session resolved via opaque-id session={}", found.id().fingerprint());
+                    // Opportunistic: bind transport id for faster future resolution
+                    if (transportId != null) {
+                        mcpAuthService.bindTransportId(found.id(), transportId);
+                    }
+                    return session;
                 }
-                if (transportId != null) {
-                    mcpAuthService.bindTransportId(found.id(), transportId);
-                }
-                return session;
             }
         }
 
