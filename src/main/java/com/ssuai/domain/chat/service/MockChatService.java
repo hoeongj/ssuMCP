@@ -10,7 +10,7 @@ import com.ssuai.domain.chat.dto.ChatResponse;
 public class MockChatService implements ChatService {
 
     @Override
-    public ChatResponse reply(String conversationId, String message, String studentId) {
+    public ChatResponse reply(String owner, String conversationId, String message, String studentId) {
         String normalized = message == null ? "" : message.toLowerCase();
         String reply;
 

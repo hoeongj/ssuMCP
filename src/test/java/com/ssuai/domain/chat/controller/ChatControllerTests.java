@@ -39,8 +39,8 @@ class ChatControllerTests {
 
     @Test
     void replyWithValidBodyReturnsSuccessEnvelopeAndGeneratedConversationId() throws Exception {
-        when(chatService.reply(anyString(), eq("오늘 학식 뭐야?"), org.mockito.ArgumentMatchers.isNull()))
-                .thenAnswer(invocation -> new ChatResponse(invocation.getArgument(0), "오늘 학식은 mock 메뉴예요."));
+        when(chatService.reply(anyString(), anyString(), eq("오늘 학식 뭐야?"), org.mockito.ArgumentMatchers.isNull()))
+                .thenAnswer(invocation -> new ChatResponse(invocation.getArgument(1), "오늘 학식은 mock 메뉴예요."));
 
         mockMvc.perform(post("/api/chat")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -50,7 +50,9 @@ class ChatControllerTests {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.conversationId").value(matchesPattern("^c-[0-9a-f]{8}$")))
+                // Server now issues a full UUID (128-bit), not a 32-bit "c-xxxxxxxx" prefix.
+                .andExpect(jsonPath("$.data.conversationId")
+                        .value(matchesPattern("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")))
                 .andExpect(jsonPath("$.data.reply").value("오늘 학식은 mock 메뉴예요."))
                 .andExpect(jsonPath("$.error").value(nullValue()))
                 .andExpect(jsonPath("$.traceId").value(not(emptyOrNullString())));
@@ -58,7 +60,7 @@ class ChatControllerTests {
 
     @Test
     void replyPreservesProvidedConversationId() throws Exception {
-        when(chatService.reply(eq("c-existing-1"), eq("카페 어디 있어?"), org.mockito.ArgumentMatchers.isNull()))
+        when(chatService.reply(anyString(), eq("c-existing-1"), eq("카페 어디 있어?"), org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn(new ChatResponse("c-existing-1", "시설 검색 결과예요."));
 
         mockMvc.perform(post("/api/chat")
@@ -126,7 +128,7 @@ class ChatControllerTests {
 
     @Test
     void chatUnavailableReturnsServiceUnavailableEnvelope() throws Exception {
-        when(chatService.reply(anyString(), eq("오늘 학식 뭐야?"), org.mockito.ArgumentMatchers.isNull())).thenThrow(new ChatUnavailableException());
+        when(chatService.reply(anyString(), anyString(), eq("오늘 학식 뭐야?"), org.mockito.ArgumentMatchers.isNull())).thenThrow(new ChatUnavailableException());
 
         mockMvc.perform(post("/api/chat")
                         .contentType(MediaType.APPLICATION_JSON)

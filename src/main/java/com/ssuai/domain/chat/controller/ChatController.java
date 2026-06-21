@@ -37,8 +37,13 @@ public class ChatController {
         String conversationId = resolveConversationId(request.conversationId());
         String studentId = (String) httpRequest.getAttribute(AuthAttributes.STUDENT_ID);
         String sessionKey = httpRequest.getSession().getId();
+        // Isolate conversation memory per owner: the authenticated student
+        // when present, else the server session so anonymous callers are
+        // still scoped to their own session and can never read another
+        // owner's history by passing/guessing their conversationId.
+        String owner = studentId != null && !studentId.isBlank() ? studentId : sessionKey;
         try (LibraryToolContext.Scope ignored = LibraryToolContext.withSessionKey(sessionKey)) {
-            ChatResponse response = chatService.reply(conversationId, request.message(), studentId);
+            ChatResponse response = chatService.reply(owner, conversationId, request.message(), studentId);
             return ApiResponse.success(response);
         }
     }
@@ -47,6 +52,9 @@ public class ChatController {
         if (conversationId != null && !conversationId.isBlank()) {
             return conversationId;
         }
-        return "c-" + UUID.randomUUID().toString().substring(0, 8);
+        // Full 128-bit id (not a 32-bit prefix): now that history is
+        // namespaced per owner the id is no longer a security boundary, but
+        // a full UUID keeps server-issued ids collision-free.
+        return UUID.randomUUID().toString();
     }
 }
