@@ -62,7 +62,8 @@ public class SaintGraduationService {
         try {
             completedSemesters = countCompletedChapelSemesters(studentId, cookies, status.grade());
         } catch (Exception exception) {
-            log.warn("chapel semester count failed for graduation merge: studentId={}", studentId, exception);
+            log.warn("chapel semester count failed for graduation merge: studentId={}",
+                    SaintSessionStore.fingerprint(studentId), exception);
             return status; // connector threw — leave 0/0 unchanged
         }
         // completedSemesters is authoritative: 0 means genuinely zero passed, not a fetch failure

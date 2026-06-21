@@ -3,6 +3,7 @@ package com.ssuai.global.security;
 import java.util.List;
 import java.util.function.Consumer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,7 +97,7 @@ class McpOAuthSecurityConfig {
     private String resourceBaseUrl;
 
     @Bean
-    SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
@@ -135,9 +136,10 @@ class McpOAuthSecurityConfig {
                     res.setHeader("WWW-Authenticate",
                             "Bearer realm=\"ssuMCP\", resource_metadata=\"" + metadataUrl + "\"");
                     res.setContentType("application/json;charset=UTF-8");
-                    res.getWriter().write(
-                            "{\"error\":\"unauthorized\",\"message\":\"Bearer token required or token invalid. "
-                            + "Discover the Authorization Server at: " + metadataUrl + "\"}");
+                    res.getWriter().write(objectMapper.writeValueAsString(java.util.Map.of(
+                            "error", "unauthorized",
+                            "message", "Bearer token required or token invalid. "
+                                    + "Discover the Authorization Server at: " + metadataUrl)));
                 })
             );
         } else {
