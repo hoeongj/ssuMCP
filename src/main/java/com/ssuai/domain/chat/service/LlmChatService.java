@@ -152,14 +152,14 @@ public class LlmChatService implements ChatService {
     }
 
     @Override
-    public ChatResponse reply(String conversationId, String message, String studentId) {
+    public ChatResponse reply(String owner, String conversationId, String message, String studentId) {
         if (looksLikeSecretInput(message)) {
             // Never persist the user message: it may contain secrets.
             return new ChatResponse(conversationId, SECRET_GUIDANCE);
         }
         if (looksLikeOutOfScopeRequest(message)) {
-            conversationStore.appendUser(conversationId, message);
-            conversationStore.appendAssistant(conversationId, SCOPE_GUIDANCE);
+            conversationStore.appendUser(owner, conversationId, message);
+            conversationStore.appendAssistant(owner, conversationId, SCOPE_GUIDANCE);
             return new ChatResponse(conversationId, SCOPE_GUIDANCE);
         }
 
@@ -169,16 +169,16 @@ public class LlmChatService implements ChatService {
         log.info("chat reply started: conversationId={} messageLength={} authenticated={}",
                 conversationId, messageLength, authenticated);
 
-        List<Turn> history = conversationStore.history(conversationId);
-        conversationStore.appendUser(conversationId, message);
+        List<Turn> history = conversationStore.history(owner, conversationId);
+        conversationStore.appendUser(owner, conversationId, message);
 
         try {
-            LlmPrivacyMode privacyMode = authenticated || conversationStore.isPrivate(conversationId)
+            LlmPrivacyMode privacyMode = authenticated || conversationStore.isPrivate(owner, conversationId)
                     ? LlmPrivacyMode.PRIVATE
                     : LlmPrivacyMode.PUBLIC;
-            ChatResponse response = callLlm(conversationId, message, history,
+            ChatResponse response = callLlm(owner, conversationId, message, history,
                     privacyMode, studentId);
-            conversationStore.appendAssistant(conversationId, response.reply());
+            conversationStore.appendAssistant(owner, conversationId, response.reply());
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
             log.info("chat reply completed: conversationId={} messageLength={} latencyMs={} historyTurns={}",
                     conversationId, messageLength, latencyMs, history.size());
@@ -197,6 +197,7 @@ public class LlmChatService implements ChatService {
     }
 
     private ChatResponse callLlm(
+            String owner,
             String conversationId,
             String message,
             List<Turn> history,
@@ -256,7 +257,7 @@ public class LlmChatService implements ChatService {
                 .map(toolCall -> toolCall.function() == null ? "" : toolCall.function().name())
                 .anyMatch(PRIVATE_RESULT_TOOLS::contains);
         if (hasPrivateResult) {
-            conversationStore.markPrivate(conversationId);
+            conversationStore.markPrivate(owner, conversationId);
         }
         LlmPrivacyMode finalPrivacyMode = hasPrivateResult ? LlmPrivacyMode.PRIVATE : privacyMode;
         LlmCompletionResult finalResult = providerChain.complete(new LlmCompletionRequest(
