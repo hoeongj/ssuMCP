@@ -4440,3 +4440,67 @@ build/test-results/test/binary/in-progress-results-generic.bin
 1. 테스트 command가 timeout된 뒤 같은 테스트를 바로 재실행하면 어떤 race condition이 발생할 수 있나요?
 2. assertion 실패와 Gradle test result infrastructure 실패를 어떤 로그와 경로로 구분했나요?
 3. CI에서 동일 workspace의 테스트 중첩 실행을 방지하려면 어떤 격리 전략을 사용할 수 있나요?
+
+---
+
+## 사건 14: 다중 AI 보안 분석의 "최우선 P0"가 오진 — MCP 3-tier 세션 해소를 코드로 추적해 판별 (2026-06-21)
+
+전체 코드를 5종 AI(Claude·ChatGPT·Gemini·AGY·Codex)에 주고 받은 보안 분석을 통합·검증하던 중, ChatGPT가 "지금까지 본 것 중 제일 심각"이라며 보고한 P0를 코드 대조로 오진 판정한 사건.
+
+### 증상
+ChatGPT가 실제 로그인 세션으로 테스트 후, 가짜 `mcp_session_id="invalid-session-after-login-test"`로 `get_my_schedule`·`get_my_lms_terms`·`prepare_lms_material_export`·`confirm_lms_material_export`가 전부 `status:OK` + 실데이터/다운로드 capability URL을 반환했다며 "인증 우회 P0"로 단정. 응답은 `{"status":"OK","provider":null,"mcpSessionId":"invalid-..."}` 형태였음.
+
+### 틀린 가설
+"private tool이 입력 `mcp_session_id`를 검증하지 않고 런타임에 남은 ambient 로그인 상태를 사용한다 → 임의 문자열로 타인 데이터 접근 가능." 처방으로 `requireProviderSession`(인자가 DB 세션에 없으면 거부) 제시.
+
+### 실제 원인
+`McpAuthHelper.resolveSession()`은 ADR 0036의 **3-tier 전략**: Tier1 OAuth `sub`(검증된 Bearer JWT) → Tier2 transport id(`Mcp-Session-Id` 헤더) → Tier3 opaque `mcp_session_id`(LLM 인자). prod는 `rs-enabled=true`(ChatGPT의 OAuth/PRM 디스커버리가 동작하는 것으로 확인)라 **Tier1에서 테스터 자신의 세션이 먼저 해소**된다 — 가짜 Tier3 인자는 도달조차 안 함. 반환 데이터는 ChatGPT 자기 계정 것. 게다가 `McpPrivateToolResponse.ok(mcpSessionId, data)`가 **입력 인자를 그대로 echo**하고 `provider`를 **null로 하드코딩**해, 응답이 "가짜 세션이 먹혔다"는 착시를 만들었다. 미인증(JWT·transport 모두 없음) + 가짜 인자뿐이면 Tier3 `find()`가 empty → `AUTH_REQUIRED`. 우회는 존재하지 않음.
+
+### 판별 방법
+1. `McpAuthHelper`(3-tier 해소·opportunistic bind), `SaintScheduleMcpTool:60`(OK 경로가 입력 인자 echo), `McpPrivateToolResponse.ok()`(provider=null 하드코딩) 3곳을 직접 읽어 착시의 출처를 특정.
+2. 보안설정에서 prod가 `rs-enabled=true`임을 확인 → Tier1 라이브 → 가짜 인자 무관하게 자기 세션이 해소됨을 입증.
+3. ChatGPT 처방(`requireProviderSession`)을 그대로 적용하면 정당한 Tier1/2 해소를 깨 **인증 기능 회귀**가 남을 확인 → 적용 거부.
+
+### 대응
+오진은 강등하되, 같은 코드의 **진짜 결함**(Gemini ①: `bindOauthSubject`를 기존 바인딩 일치 검사 없이 수행 → 세션 고정/권한 상승)은 별도 P0로 분리(인증경계 wave에서 처리). 오진을 *유발한* 경미버그(echo·provider:null)는 #104로 수정 — OK 응답이 canonical 세션id + provider를 반환하도록.
+
+### 핵심 파일 / 커밋
+`McpAuthHelper.java`, `McpPrivateToolResponse.java`(ok 팩토리), `SaintScheduleMcpTool.java` / 수정 커밋 `8000e32` (#104).
+
+### 포트폴리오 포인트
+- 5개 AI 중 하나가 "최우선"이라 외친 P0를, 전송계층 OAuth 3-tier 설계를 코드로 추적해 오진으로 판정하고, 그 오진을 *유발한* 진짜 경미버그(응답 echo)는 따로 잡아냈다.
+- 외부 분석/도구 자가보고를 맹신하지 않고 신뢰경계를 1차 자료(코드)로 검증하는 습관. 잘못된 처방의 회귀 위험까지 평가.
+
+### 예상 면접 질문
+1. MCP 서버에서 세션을 3-tier(OAuth sub / transport header / opaque arg)로 해소하는 이유와, 가짜 opaque 인자가 인증 우회가 되지 않는 이유는?
+2. "가짜 세션 id로 실데이터가 조회됐다"는 보안 제보를 받으면, 실제 우회인지 전송계층 인증 아티팩트인지 어떻게 가르겠는가?
+3. 응답에 입력 세션id를 그대로 echo한 것이 왜 분석을 오도했고, 해소된 canonical id 반환이 왜 더 안전하고 정확한가?
+
+---
+
+## 사건 15: 로컬(Windows) 통과·CI(Linux JDK21) 실패 — ErrorCode.java UTF-8 손상이 컴파일을 깨뜨림 (2026-06-21)
+
+### 증상
+보안 보강 PR의 CI "Backend (Gradle, JDK 21)"가 약 1분 만에 실패, 로그가 전부 `ErrorCode.java ... error: unmappable character (0x..) for encoding UTF-8`. 그러나 동일 파일로 로컬 `gradlew clean test`(Windows)는 `BUILD SUCCESSFUL`.
+
+### 틀린 가설
+"방금 머지 준비한 코드 변경이 CI를 깨뜨렸다." (확인 결과 변경 파일엔 에러 0건 — 전부 `ErrorCode.java` 한 파일.)
+
+### 실제 원인
+`ErrorCode.java`의 한글 메시지가 과거 lossy 재인코딩으로 **유효하지 않은 UTF-8**(replacement byte `0x3f` 혼입)이 되어 있었다. JDK 21은 javac 기본 소스 인코딩이 UTF-8(JEP 400)이라 **Linux CI에서 unmappable이 치명적 컴파일 에러**가 된다. 로컬 Windows는 플랫폼 기본 인코딩(MS949) 영향으로 통과해 보이지 않았다. 즉 **origin/main의 Backend CI는 이미 red**였고(인코딩 손상 유입 이후), 배포 이미지 빌드는 별도 워크플로라 통과해 운영은 지속되고 있었다.
+
+### 해결
+`ErrorCode.java`를 문맥(enum 상수·HttpStatus·영문) 기반으로 valid UTF-8 한글로 재작성 + `tasks.withType(JavaCompile){ options.encoding='UTF-8' }` 명시 + `.editorconfig`/`.gitattributes` 추가(#103, `a775777`). 후속 PR을 #103 위로 rebase하니 CI green.
+
+### 핵심 파일 / 커밋
+`ErrorCode.java`, `build.gradle`, `.editorconfig`, `.gitattributes` / `a775777` (#103).
+
+### 포트폴리오 포인트
+- "로컬 통과 = CI 통과" 가정을 버리고, OS별 javac 기본 인코딩 차이(Windows MS949 vs Linux UTF-8·JEP 400)를 원인으로 특정.
+- CI 실패 로그를 직접 분석해 "내 변경 탓"이라는 첫 가설을 기각하고 main에 숨어 있던 red를 발견 → 인코딩 수정이 단순 미관이 아니라 **깨진 CI 복구**임을 입증.
+- 빌드 인코딩을 명시 고정해 환경 의존 재발을 차단.
+
+### 예상 면접 질문
+1. 동일 소스가 로컬은 컴파일되고 CI는 unmappable로 실패하는 원인으로 무엇을 의심하고 어떻게 좁히겠는가?
+2. JDK 21의 javac 기본 소스 인코딩 변경(JEP 400)이 비-ASCII(한글) 소스에 주는 영향과, 안전한 고정 방법은?
+3. 소스 인코딩·줄바꿈 드리프트를 CI에서 사전 차단하려면 어떤 장치(.gitattributes, CI 검사 등)를 두겠는가?
