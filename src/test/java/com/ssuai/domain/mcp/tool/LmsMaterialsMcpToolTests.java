@@ -41,7 +41,7 @@ class LmsMaterialsMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(null, null);
@@ -52,7 +52,7 @@ class LmsMaterialsMcpToolTests {
 
     @Test
     void returnsAuthRequiredWhenSessionExpired() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(materialsService.listMaterials("20221528", null, null)).thenThrow(new LmsSessionExpiredException());
 
         McpPrivateToolResponse<Object> stub =
@@ -68,7 +68,7 @@ class LmsMaterialsMcpToolTests {
     void returnsOkWithCoursesWhenLinked() {
         List<LmsCourseMaterials> stub = List.of(
                 new LmsCourseMaterials(new LmsCourse(1L, "Math", "MATH101", 100L), List.of(), 0, 0L));
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(materialsService.listMaterials("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);
@@ -80,7 +80,7 @@ class LmsMaterialsMcpToolTests {
     @Test
     void returnsOkWithMaterialsWhenLinked() {
         List<LmsCourseMaterials> stub = List.of();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(materialsService.listMaterials("20221528", List.of(1L), null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsMaterials(SESSION_ID, List.of(1L), null);
@@ -93,7 +93,7 @@ class LmsMaterialsMcpToolTests {
     void toStringDoesNotLeakStudentId() {
         List<LmsCourseMaterials> stub = List.of(
                 new LmsCourseMaterials(new LmsCourse(1L, "Math", "MATH101", 100L), List.of(), 0, 0L));
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(materialsService.listMaterials("20221528", null, null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyLmsCourses(SESSION_ID, null);

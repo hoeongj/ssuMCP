@@ -41,7 +41,7 @@ class LibraryLoansMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<LibraryLoansResponse> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryLoansResponse>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryLoansResponse> resp = tool.getMyLibraryLoans(null);
@@ -56,7 +56,7 @@ class LibraryLoansMcpToolTests {
     void returnsAuthRequiredWhenLibraryNotLinked() {
         McpPrivateToolResponse<LibraryLoansResponse> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryLoansResponse>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryLoansResponse> resp = tool.getMyLibraryLoans(SESSION_ID);
@@ -68,8 +68,8 @@ class LibraryLoansMcpToolTests {
     @Test
     void returnsOkWithDataWhenLinked() {
         LibraryLoansResponse stub = new LibraryLoansResponse(0, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(loansService.getLoansForSession(OPAQUE_KEY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryLoansResponse> resp = tool.getMyLibraryLoans(SESSION_ID);
@@ -84,8 +84,8 @@ class LibraryLoansMcpToolTests {
     void expiredLibraryTokenReturnsAuthRequiredForRelinking() {
         McpPrivateToolResponse<LibraryLoansResponse> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(loansService.getLoansForSession(OPAQUE_KEY))
                 .thenThrow(new LibraryAuthRequiredException());
         when(authHelper.<LibraryLoansResponse>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY))
@@ -100,8 +100,8 @@ class LibraryLoansMcpToolTests {
     void usesOpaqueKeyNotStudentId() {
         // LIBRARY principalKey is an opaque UUID, not a studentId
         LibraryLoansResponse stub = new LibraryLoansResponse(2, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(loansService.getLoansForSession(OPAQUE_KEY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryLoansResponse> resp = tool.getMyLibraryLoans(SESSION_ID);

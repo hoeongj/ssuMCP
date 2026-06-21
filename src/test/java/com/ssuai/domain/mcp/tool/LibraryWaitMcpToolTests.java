@@ -44,7 +44,7 @@ class LibraryWaitMcpToolTests {
     void returnsAuthRequiredWhenLibraryIsNotLinked() {
         McpPrivateToolResponse<String> authRequired =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login", NOW.plusSeconds(600));
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<String>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(authRequired);
 
         McpPrivateToolResponse<String> response =
@@ -56,8 +56,8 @@ class LibraryWaitMcpToolTests {
 
     @Test
     void waitRegistrationMessageStatesAutonomousReservationConsent() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(transactions.registerWait(
                 org.mockito.ArgumentMatchers.eq(SESSION_KEY),
                 org.mockito.ArgumentMatchers.any(LibraryReservationWaitRequest.class)))

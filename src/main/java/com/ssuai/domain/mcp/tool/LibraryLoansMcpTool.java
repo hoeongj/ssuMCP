@@ -47,12 +47,13 @@ public class LibraryLoansMcpTool {
     public McpPrivateToolResponse<LibraryLoansResponse> getMyLibraryLoans(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY). If absent or LIBRARY not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> {
                     log.debug("get_my_library_loans: fetching loans");
                     try {
-                        LibraryLoansResponse data = loansService.getLoansForSession(sessionKey);
-                        return McpPrivateToolResponse.<LibraryLoansResponse>ok(mcp_session_id, data);
+                        LibraryLoansResponse data = loansService.getLoansForSession(principal.studentId());
+                        return McpPrivateToolResponse.<LibraryLoansResponse>ok(
+                                principal.sessionId(), McpProviderType.LIBRARY.name(), data);
                     } catch (LibraryAuthRequiredException exception) {
                         log.debug("get_my_library_loans: library token expired, returning AUTH_REQUIRED");
                         return authHelper.<LibraryLoansResponse>buildAuthRequired(

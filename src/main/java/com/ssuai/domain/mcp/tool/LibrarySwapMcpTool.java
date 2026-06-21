@@ -57,8 +57,8 @@ public class LibrarySwapMcpTool {
             String new_seat_id
     ) {
         long newSeatId = parseSeatId(new_seat_id);
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> prepareForSession(mcp_session_id, sessionKey, newSeatId))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> prepareForSession(principal.sessionId(), principal.studentId(), newSeatId))
                 .orElseGet(() -> {
                     log.debug("prepare_swap_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<LibraryPrepareResult>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
@@ -75,7 +75,7 @@ public class LibrarySwapMcpTool {
 
         LibraryReservationResult current = reservationConnector.getCurrentCharge(token).orElse(null);
         if (current == null) {
-            return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(
                     0L, "현재 예약된 좌석이 없습니다. prepare_reserve_library_seat를 사용하세요."));
         }
 
@@ -89,7 +89,8 @@ public class LibrarySwapMcpTool {
                 current.roomName(), current.seatCode(), current.chargeId(),
                 SeatDisplay.describe(catalogService, newSeatId),
                 SeatDisplay.graduateOnlyWarning(catalogService, newSeatId));
-        return McpPrivateToolResponse.ok(mcpSessionId, new LibraryPrepareResult(actionId, message));
+        return McpPrivateToolResponse.ok(
+                mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(actionId, message));
     }
 
     private static long parseSeatId(String seatId) {

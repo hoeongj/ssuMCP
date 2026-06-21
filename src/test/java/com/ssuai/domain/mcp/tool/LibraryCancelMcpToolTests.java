@@ -49,7 +49,7 @@ class LibraryCancelMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<LibraryPrepareResult> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryPrepareResult>buildAuthRequired(null, McpProviderType.LIBRARY)).thenReturn(stub);
 
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareCancelLibrarySeat(null);
@@ -63,8 +63,8 @@ class LibraryCancelMcpToolTests {
     void returnsAuthRequiredWhenTokenMissing() {
         McpPrivateToolResponse<LibraryPrepareResult> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.empty());
         when(authHelper.<LibraryPrepareResult>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY)).thenReturn(stub);
 
@@ -76,8 +76,8 @@ class LibraryCancelMcpToolTests {
 
     @Test
     void returnsNoReservationMessageWhenNoCurrentCharge() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
 
@@ -92,8 +92,8 @@ class LibraryCancelMcpToolTests {
     void createsPendingCancelActionWhenActiveChargeExists() {
         LibraryReservationResult current =
                 new LibraryReservationResult(1966801L, "열람실", "74", "09:00", "18:00");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit = mockAudit(10L);

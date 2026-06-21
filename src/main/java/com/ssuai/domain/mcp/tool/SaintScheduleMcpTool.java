@@ -53,11 +53,12 @@ public class SaintScheduleMcpTool {
             Integer term,
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("get_my_schedule: fetching schedule");
-                    ScheduleResponse data = scheduleService.fetchSchedule(studentId, year, term);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    ScheduleResponse data = scheduleService.fetchSchedule(principal.studentId(), year, term);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> {
                     log.debug("get_my_schedule: SAINT not linked, returning AUTH_REQUIRED");

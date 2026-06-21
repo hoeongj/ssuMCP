@@ -33,15 +33,17 @@ public class LmsDashboardMcpTool {
             String mcp_session_id,
             @ToolParam(description = "학기 ID (선택). 생략 시 현재 학기 자동 선택.", required = false)
             Long term_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     try {
-                        var dashboard = dashboardService.getDashboard(studentId, term_id);
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id, dashboard);
+                        var dashboard = dashboardService.getDashboard(principal.studentId(), term_id);
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(), dashboard);
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(mcp_session_id,
+                        return McpPrivateToolResponse.<Object>ok(
+                                principal.sessionId(), McpProviderType.LMS.name(),
                                 "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
                     }
                 })

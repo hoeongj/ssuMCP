@@ -54,11 +54,12 @@ public class SaintExtendedMcpTools {
             @ToolParam(required = false, description = "Semester: 1학기, 여름학기, 2학기, or 겨울학기.") String semester,
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("get_my_chapel_info: fetching chapel information");
-                    ChapelInfo data = chapelService.fetchChapelInfo(studentId, year, semester);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    ChapelInfo data = chapelService.fetchChapelInfo(principal.studentId(), year, semester);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> authHelper.buildAuthRequired(mcp_session_id, McpProviderType.SAINT));
     }
@@ -71,11 +72,12 @@ public class SaintExtendedMcpTools {
     public McpPrivateToolResponse<GraduationStatus> checkGraduationRequirements(
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("check_graduation_requirements: fetching status");
-                    GraduationStatus data = graduationService.fetchGraduationRequirements(studentId);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    GraduationStatus data = graduationService.fetchGraduationRequirements(principal.studentId());
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> authHelper.buildAuthRequired(mcp_session_id, McpProviderType.SAINT));
     }
@@ -90,11 +92,12 @@ public class SaintExtendedMcpTools {
             @ToolParam(required = false, description = "Academic year, such as 2026.") Integer year,
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("get_my_scholarships: fetching history");
-                    List<ScholarshipEntry> data = scholarshipService.fetchScholarships(studentId, year);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    List<ScholarshipEntry> data = scholarshipService.fetchScholarships(principal.studentId(), year);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> authHelper.buildAuthRequired(mcp_session_id, McpProviderType.SAINT));
     }
@@ -115,15 +118,16 @@ public class SaintExtendedMcpTools {
             Double targetGpa,
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("simulate_gpa: simulating GPA");
                     GpaSimulationResponse data = gpaSimulationService.simulate(
-                            studentId,
+                            principal.studentId(),
                             plannedCredits == null ? 0.0d : plannedCredits,
                             plannedGradePointAverage,
                             targetGpa);
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> authHelper.buildAuthRequired(mcp_session_id, McpProviderType.SAINT));
     }

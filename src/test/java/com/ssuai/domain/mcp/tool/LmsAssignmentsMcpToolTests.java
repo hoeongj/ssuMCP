@@ -43,7 +43,7 @@ class LmsAssignmentsMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(null, null, null);
@@ -58,7 +58,7 @@ class LmsAssignmentsMcpToolTests {
     void returnsAuthRequiredWhenLmsNotLinked() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(SESSION_ID, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
@@ -70,8 +70,8 @@ class LmsAssignmentsMcpToolTests {
     @Test
     void returnsOkWithDataWhenLinked() {
         AssignmentsResponse stub = new AssignmentsResponse(0L, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
@@ -84,21 +84,21 @@ class LmsAssignmentsMcpToolTests {
     @Test
     void responseDoesNotContainStudentId() {
         AssignmentsResponse stub = new AssignmentsResponse(0L, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, null, null);
 
         assertThat(resp.toString()).doesNotContain("20221528");
-        assertThat(resp.provider()).isNull();
+        assertThat(resp.provider()).isEqualTo("LMS");
     }
 
     @Test
     void compact_false_returnsFullFields() {
         AssignmentsResponse stub = assignments();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, false, null);
@@ -117,8 +117,8 @@ class LmsAssignmentsMcpToolTests {
     @Test
     void compact_true_returnsOnlySummaryFields() throws Exception {
         AssignmentsResponse stub = assignments();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS))
-                .thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(assignmentsService.fetchAssignments("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.getMyAssignments(SESSION_ID, true, null);

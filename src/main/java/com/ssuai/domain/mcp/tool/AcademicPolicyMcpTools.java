@@ -128,13 +128,13 @@ public class AcademicPolicyMcpTools {
             Boolean live,
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.SAINT)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
+                .map(principal -> {
                     log.debug("evaluate_graduation_with_policy: fetching graduation status and policy evidence");
                     String safeQuestion = question == null || question.isBlank()
                             ? "졸업요건 이수학점 전공 교양 다전공 채플"
                             : question;
-                    GraduationStatus status = graduationService.fetchGraduationRequirements(studentId);
+                    GraduationStatus status = graduationService.fetchGraduationRequirements(principal.studentId());
                     AcademicQuestionClassificationResponse classification =
                             policyService.classifier().classify(safeQuestion);
                     AcademicPolicyBriefResponse brief =
@@ -147,7 +147,8 @@ public class AcademicPolicyMcpTools {
                                     "u-SAINT 졸업사정표의 부족 항목과 policyBrief evidence를 함께 비교하세요.",
                                     "학과별 교육과정, 입학연도별 경과조치, 다전공 여부는 공식 학과 안내와 추가 대조가 필요할 수 있습니다.",
                                     "졸업 가능/불가능을 단정하기 전 학사팀 또는 학과 사무실 확인이 필요한 예외를 표시하세요."));
-                    return McpPrivateToolResponse.ok(mcp_session_id, data);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.SAINT.name(), data);
                 })
                 .orElseGet(() -> authHelper.buildAuthRequired(mcp_session_id, McpProviderType.SAINT));
     }

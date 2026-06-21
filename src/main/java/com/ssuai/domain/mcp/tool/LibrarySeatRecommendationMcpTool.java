@@ -66,9 +66,9 @@ public class LibrarySeatRecommendationMcpTool {
         LibrarySeatPreference preference = new LibrarySeatPreference(
                 window, outlet, standing, edge, quiet, near_entrance);
 
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> recommendForSession(
-                        mcp_session_id, sessionKey, target, preference, limit, include_graduate_only))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> recommendForSession(
+                        principal.sessionId(), principal.studentId(), target, preference, limit, include_graduate_only))
                 .orElseGet(() -> {
                     log.debug("recommend_library_seats: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<LibrarySeatRecommendationResponse>buildAuthRequired(
@@ -86,7 +86,7 @@ public class LibrarySeatRecommendationMcpTool {
         try {
             LibrarySeatRecommendationResponse data =
                     recommendationService.recommend(floor, sessionKey, preference, limit, includeGraduateOnly);
-            return McpPrivateToolResponse.ok(mcpSessionId, data);
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(), data);
         } catch (LibraryAuthRequiredException exception) {
             log.debug("recommend_library_seats: library token expired, returning AUTH_REQUIRED");
             return authHelper.<LibrarySeatRecommendationResponse>buildAuthRequired(

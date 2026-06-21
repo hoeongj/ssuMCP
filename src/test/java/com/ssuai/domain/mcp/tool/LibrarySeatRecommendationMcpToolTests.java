@@ -47,7 +47,7 @@ class LibrarySeatRecommendationMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<LibrarySeatRecommendationResponse> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<LibrarySeatRecommendationResponse>buildAuthRequired(null, McpProviderType.LIBRARY))
                 .thenReturn(stub);
 
@@ -62,8 +62,8 @@ class LibrarySeatRecommendationMcpToolTests {
     void returnsRecommendationsForLinkedLibrarySession() {
         LibrarySeatPreference preference = new LibrarySeatPreference(true, true, false, null, null, false);
         LibrarySeatRecommendationResponse stub = recommendationResponse();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(recommendationService.recommend(LibraryFloor.F2, OPAQUE_KEY, preference, 3, null))
                 .thenReturn(stub);
 
@@ -79,8 +79,8 @@ class LibrarySeatRecommendationMcpToolTests {
     void expiredLibraryTokenReturnsAuthRequiredForRelinking() {
         McpPrivateToolResponse<LibrarySeatRecommendationResponse> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(recommendationService.recommend(any(), any(), any(), any(), any()))
                 .thenThrow(new LibraryAuthRequiredException());
         when(authHelper.<LibrarySeatRecommendationResponse>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY))
@@ -103,8 +103,8 @@ class LibrarySeatRecommendationMcpToolTests {
 
     @Test
     void connectorErrorMapsToFriendlyMessage() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(recommendationService.recommend(any(), any(), any(), any(), any()))
                 .thenThrow(new ConnectorTimeoutException());
 

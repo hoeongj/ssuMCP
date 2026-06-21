@@ -49,7 +49,7 @@ class LibrarySeatMcpToolTests {
     void returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LIBRARY)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LIBRARY))
                 .thenReturn(stub);
 
@@ -64,8 +64,8 @@ class LibrarySeatMcpToolTests {
     @Test
     void returnsServiceResponseForLinkedLibrarySession() {
         LibrarySeatStatusResponse stub = seatStatus();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> response =
@@ -80,8 +80,8 @@ class LibrarySeatMcpToolTests {
     void expiredLibraryTokenReturnsAuthRequiredForRelinking() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(SESSION_ID, "LIBRARY", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY))
                 .thenThrow(new LibraryAuthRequiredException());
         when(authHelper.<Object>buildAuthRequired(SESSION_ID, McpProviderType.LIBRARY))
@@ -103,8 +103,8 @@ class LibrarySeatMcpToolTests {
 
     @Test
     void connectorTimeoutMapsToFriendlyKoreanMessage() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY))
                 .thenThrow(new ConnectorTimeoutException());
 
@@ -116,8 +116,8 @@ class LibrarySeatMcpToolTests {
 
     @Test
     void connectorParseErrorMapsToFriendlyKoreanMessage() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY))
                 .thenThrow(new ConnectorParseException());
 
@@ -130,8 +130,8 @@ class LibrarySeatMcpToolTests {
     @Test
     void compact_false_returnsFullFields() {
         LibrarySeatStatusResponse stub = seatStatus();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> response =
@@ -152,8 +152,8 @@ class LibrarySeatMcpToolTests {
     @Test
     void compact_true_returnsOnlySummaryFields() throws Exception {
         LibrarySeatStatusResponse stub = seatStatus();
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(OPAQUE_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(OPAQUE_KEY, SESSION_ID)));
         when(service.getSeatStatusForSession(LibraryFloor.F2, OPAQUE_KEY)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> response =

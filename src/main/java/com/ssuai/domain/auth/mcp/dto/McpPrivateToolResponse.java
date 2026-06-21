@@ -15,7 +15,11 @@ import java.time.Instant;
  *       intentionally unchanged; new clients/UIs should prefer {@code userMessage}.</li>
  * </ul>
  *
- * <p>status=OK: {@code data} holds the payload; message fields are null.
+ * <p>status=OK: {@code data} holds the payload; message fields are null. {@code provider}
+ * names the provider that served the response (SAINT/LMS/LIBRARY) and {@code mcpSessionId}
+ * carries the canonical resolved session id (the id of the {@code McpAuthSession} the tool
+ * authenticated against, NOT the raw input argument, which may differ under the 3-tier
+ * resolution strategy of {@code McpAuthHelper}).
  * status=AUTH_REQUIRED: {@code loginUrl} and {@code provider} indicate what to do next;
  * {@code data} is null. The client should open {@code loginUrl} in a browser, then retry
  * the original private tool call with the same {@code mcpSessionId}.
@@ -33,8 +37,8 @@ public record McpPrivateToolResponse<T>(
         String developerMessage,
         T data) {
 
-    public static <T> McpPrivateToolResponse<T> ok(String mcpSessionId, T data) {
-        return new McpPrivateToolResponse<>("OK", null, mcpSessionId, null, null, null, null, null, data);
+    public static <T> McpPrivateToolResponse<T> ok(String mcpSessionId, String provider, T data) {
+        return new McpPrivateToolResponse<>("OK", provider, mcpSessionId, null, null, null, null, null, data);
     }
 
     public static <T> McpPrivateToolResponse<T> authRequired(

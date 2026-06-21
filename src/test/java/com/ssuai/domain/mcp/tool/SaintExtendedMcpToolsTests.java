@@ -53,7 +53,7 @@ class SaintExtendedMcpToolsTests {
     void returnsAuthRequiredWithoutCallingServices() {
         McpPrivateToolResponse<ChapelInfo> stub = McpPrivateToolResponse.authRequired(
                 null, "SAINT", "https://login.url", Instant.parse("2026-05-23T15:00:00Z"));
-        when(authHelper.principalKey(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<ChapelInfo>buildAuthRequired(null, McpProviderType.SAINT)).thenReturn(stub);
 
         McpPrivateToolResponse<ChapelInfo> response = tools.getMyChapelInfo(null, null, null);
@@ -65,7 +65,8 @@ class SaintExtendedMcpToolsTests {
     @Test
     void chapelToolPassesOptionalTermSelection() {
         ChapelInfo stub = new ChapelInfo(2025, "2학기", "", "", null, null, 0, "", List.of(), List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(STUDENT_ID, SESSION_ID)));
         when(chapelService.fetchChapelInfo(STUDENT_ID, 2025, "2학기")).thenReturn(stub);
 
         McpPrivateToolResponse<ChapelInfo> response =
@@ -78,7 +79,8 @@ class SaintExtendedMcpToolsTests {
     @Test
     void graduationToolDelegatesForLinkedSession() {
         GraduationStatus stub = new GraduationStatus(false, "", "", 3, 100, 133, List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(STUDENT_ID, SESSION_ID)));
         when(graduationService.fetchGraduationRequirements(STUDENT_ID)).thenReturn(stub);
 
         McpPrivateToolResponse<GraduationStatus> response =
@@ -92,7 +94,8 @@ class SaintExtendedMcpToolsTests {
     void scholarshipToolPassesOptionalYear() {
         List<ScholarshipEntry> stub = List.of(
                 new ScholarshipEntry(2025, "2학기", "장학금", 100, "지급", "완료"));
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(STUDENT_ID, SESSION_ID)));
         when(scholarshipService.fetchScholarships(STUDENT_ID, 2025)).thenReturn(stub);
 
         McpPrivateToolResponse<List<ScholarshipEntry>> response =
@@ -107,7 +110,8 @@ class SaintExtendedMcpToolsTests {
     void gpaSimulationToolDelegatesForLinkedSession() {
         GpaSimulationResponse stub = new GpaSimulationResponse(
                 3.32d, 69.0d, 229.2d, 18.0d, 4.0d, 3.4621d, 3.45d, 3.9417d, true, 4.5d, 3.5655d);
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(STUDENT_ID, SESSION_ID)));
         when(gpaSimulationService.simulate(STUDENT_ID, 18.0d, 4.0d, 3.45d)).thenReturn(stub);
 
         McpPrivateToolResponse<GpaSimulationResponse> response =

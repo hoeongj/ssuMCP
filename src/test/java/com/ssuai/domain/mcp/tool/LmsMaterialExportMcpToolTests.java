@@ -43,7 +43,7 @@ class LmsMaterialExportMcpToolTests {
     void prepare_returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.prepareLmsMaterialExport(null, List.of("c1"), null);
@@ -55,7 +55,7 @@ class LmsMaterialExportMcpToolTests {
     @Test
     void prepare_returnsOkWhenLinked() {
         LmsExportPrepareResponse stub = new LmsExportPrepareResponse(0, 0, 0, List.of(), List.of(), "message");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.prepare("20221528", null, List.of("c1"))).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.prepareLmsMaterialExport(SESSION_ID, List.of("c1"), null);
@@ -68,7 +68,7 @@ class LmsMaterialExportMcpToolTests {
     void confirm_returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.confirmLmsMaterialExport(null);
@@ -79,7 +79,7 @@ class LmsMaterialExportMcpToolTests {
 
     @Test
     void confirm_handlesNoPendingActionGracefully() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.confirm("20221528")).thenThrow(new NoPendingActionException());
 
         McpPrivateToolResponse<Object> resp = tool.confirmLmsMaterialExport(SESSION_ID);
@@ -90,7 +90,7 @@ class LmsMaterialExportMcpToolTests {
 
     @Test
     void confirm_handlesActionExpiredGracefully() {
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.confirm("20221528")).thenThrow(new ActionExpiredException());
 
         McpPrivateToolResponse<Object> resp = tool.confirmLmsMaterialExport(SESSION_ID);
@@ -102,7 +102,7 @@ class LmsMaterialExportMcpToolTests {
     @Test
     void confirm_returnsOkWhenSuccessful() {
         LmsExportConfirmResponse stub = new LmsExportConfirmResponse("job1", 1, 100L, "expiry", "url", "");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.confirm("20221528")).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.confirmLmsMaterialExport(SESSION_ID);
@@ -115,7 +115,7 @@ class LmsMaterialExportMcpToolTests {
     void exportAll_returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
-        when(authHelper.principalKey(null, McpProviderType.LMS)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.LMS)).thenReturn(Optional.empty());
         when(authHelper.<Object>buildAuthRequired(null, McpProviderType.LMS)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.exportAllLmsMaterials(null, null);
@@ -127,7 +127,7 @@ class LmsMaterialExportMcpToolTests {
     @Test
     void exportAll_returnsOkWhenLinked() {
         LmsExportPrepareResponse stub = new LmsExportPrepareResponse(0, 0, 0, List.of(), List.of(), "message");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.exportAll("20221528", null)).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.exportAllLmsMaterials(SESSION_ID, null);
@@ -139,7 +139,7 @@ class LmsMaterialExportMcpToolTests {
     @Test
     void toStringDoesNotLeakStudentId() {
         LmsExportConfirmResponse stub = new LmsExportConfirmResponse("job1", 1, 100L, "expiry", "url", "");
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of("20221528"));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
         when(exportService.confirm("20221528")).thenReturn(stub);
 
         McpPrivateToolResponse<Object> resp = tool.confirmLmsMaterialExport(SESSION_ID);

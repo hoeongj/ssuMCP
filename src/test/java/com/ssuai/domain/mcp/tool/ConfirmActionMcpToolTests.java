@@ -63,8 +63,8 @@ class ConfirmActionMcpToolTests {
                 seatEventPublisher,
                 authHelper);
 
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.LIBRARY))
-                .thenReturn(Optional.of(SESSION_KEY));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
     }
 

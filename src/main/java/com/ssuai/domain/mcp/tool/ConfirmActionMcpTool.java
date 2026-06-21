@@ -75,8 +75,8 @@ public class ConfirmActionMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> confirmForSession(mcp_session_id, sessionKey))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> confirmForSession(principal.sessionId(), principal.studentId()))
                 .orElseGet(() -> {
                     log.debug("confirm_action: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<String>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
@@ -86,12 +86,13 @@ public class ConfirmActionMcpTool {
     private McpPrivateToolResponse<String> confirmForSession(String mcpSessionId, String sessionKey) {
         ActionAudit pending = actionService.findPendingAction(sessionKey).orElse(null);
         if (pending == null) {
-            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 액션이 없습니다.");
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId, McpProviderType.LIBRARY.name(), "대기 중인 액션이 없습니다.");
         }
         if (actionService.isExpired(pending)) {
             actionService.expirePending(sessionKey);
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
+                    mcpSessionId, McpProviderType.LIBRARY.name(), "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
         }
 
         String token = sessionStore.token(sessionKey).orElse(null);
@@ -104,10 +105,11 @@ public class ConfirmActionMcpTool {
         try {
             claimed = actionService.claimPendingAction(sessionKey);
         } catch (ActionService.NoPendingActionException exception) {
-            return McpPrivateToolResponse.ok(mcpSessionId, "대기 중인 액션이 없습니다.");
+            return McpPrivateToolResponse.ok(
+                    mcpSessionId, McpProviderType.LIBRARY.name(), "대기 중인 액션이 없습니다.");
         } catch (ActionService.ActionExpiredException exception) {
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
+                    mcpSessionId, McpProviderType.LIBRARY.name(), "액션이 만료됐습니다. 다시 prepare 도구를 호출하세요.");
         }
 
         String actionType = claimed.getActionType();
@@ -121,7 +123,8 @@ public class ConfirmActionMcpTool {
             return executeSwap(mcpSessionId, claimed, token);
         }
         actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "지원하지 않는 액션 타입");
-        return McpPrivateToolResponse.ok(mcpSessionId, "지원하지 않는 대기 액션입니다.");
+        return McpPrivateToolResponse.ok(
+                mcpSessionId, McpProviderType.LIBRARY.name(), "지원하지 않는 대기 액션입니다.");
     }
 
     private McpPrivateToolResponse<String> executeReservationViaIntent(
@@ -155,6 +158,7 @@ public class ConfirmActionMcpTool {
                 "Reservation intent still processing: intentId=" + intentId);
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
+                McpProviderType.LIBRARY.name(),
                 "예약 intent가 처리 중입니다. intentId=" + intentId
                         + ". 같은 mcp_session_id로 get_library_wait_status를 호출해 최종 결과를 확인하세요.");
     }
@@ -168,6 +172,7 @@ public class ConfirmActionMcpTool {
             actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
+                    McpProviderType.LIBRARY.name(),
                     "예약 intent 큐 처리 완료. intentId=" + intent.intentId()
                             + ". " + detail);
         }
@@ -175,6 +180,7 @@ public class ConfirmActionMcpTool {
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
+                    McpProviderType.LIBRARY.name(),
                     "좌석이 이미 선점됐습니다. intentId=" + intent.intentId()
                             + ". recommend_library_seats와 prepare_reserve_library_seat로 다른 좌석을 다시 시도해주세요.");
         }
@@ -186,11 +192,13 @@ public class ConfirmActionMcpTool {
             actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
+                    McpProviderType.LIBRARY.name(),
                     "예약 intent가 실행 전에 만료됐습니다. intentId=" + intent.intentId() + ".");
         }
         actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, detail);
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
+                McpProviderType.LIBRARY.name(),
                 "예약 intent 실행에 실패했습니다. intentId=" + intent.intentId()
                         + ". get_library_wait_status로 상세 상태를 확인하세요.");
     }
@@ -204,24 +212,26 @@ public class ConfirmActionMcpTool {
                     "예약 " + request.chargeId() + " 반납 완료");
             seatEventPublisher.cancel(request.roomId(), request.seatId());
             return McpPrivateToolResponse.ok(
-                    mcpSessionId, "예약 번호 " + request.chargeId() + " 좌석 반납 완료.");
+                    mcpSessionId, McpProviderType.LIBRARY.name(),
+                    "예약 번호 " + request.chargeId() + " 좌석 반납 완료.");
         } catch (LibraryAuthRequiredException exception) {
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, "도서관 세션 만료");
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         } catch (ConnectorTimeoutException exception) {
             actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, "학교 서버 응답 없음");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "학교 서버가 응답이 없어요. 잠시 후 다시 시도해주세요.");
         } catch (LibrarySeatNotAvailableException exception) {
             if (isNotAvailableState(exception)) {
                 actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 반납 불가");
-                return McpPrivateToolResponse.ok(mcpSessionId, notAvailableStateCancelMessage());
+                return McpPrivateToolResponse.ok(
+                        mcpSessionId, McpProviderType.LIBRARY.name(), notAvailableStateCancelMessage());
             }
             throw exception;
         } catch (RuntimeException exception) {
             log.warn("confirm_action cancel failed", exception);
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "반납 실행 오류");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "실행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
         }
     }
@@ -237,18 +247,19 @@ public class ConfirmActionMcpTool {
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         } catch (ConnectorTimeoutException exception) {
             actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, "학교 서버 응답 없음 (반납 단계)");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "학교 서버가 응답이 없어 자리 변경을 못 했어요. 잠시 후 다시 시도해주세요.");
         } catch (LibrarySeatNotAvailableException exception) {
             if (isNotAvailableState(exception)) {
                 actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "미입실 상태로 이석 불가");
-                return McpPrivateToolResponse.ok(mcpSessionId, notAvailableStateSwapMessage());
+                return McpPrivateToolResponse.ok(
+                        mcpSessionId, McpProviderType.LIBRARY.name(), notAvailableStateSwapMessage());
             }
             throw exception;
         } catch (RuntimeException exception) {
             log.warn("confirm_action swap: discharge failed seat={}", request.newSeatId(), exception);
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "기존 좌석 반납 실패");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "기존 좌석 반납에 실패해 자리 변경을 못 했어요. 잠시 후 다시 시도해주세요.");
         }
 
@@ -260,7 +271,7 @@ public class ConfirmActionMcpTool {
             seatEventPublisher.swapReserve(
                     result.roomId(),
                     result.seatId() == null ? request.newSeatId() : result.seatId());
-            return McpPrivateToolResponse.ok(mcpSessionId, String.format(
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(), String.format(
                     "자리 변경 완료! %s %s번 예약 완료. 이용시간: %s ~ %s (예약번호: %d, 반납 시 필요)",
                     result.roomName(), result.seatCode(),
                     result.beginTime(), result.endTime(), result.chargeId()));
@@ -268,14 +279,14 @@ public class ConfirmActionMcpTool {
             log.warn("confirm_action swap: discharge succeeded but seat not available seat={}", request.newSeatId());
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE,
                     "기존 좌석 반납 후 새 좌석 선점됨");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번)이 이미 선점됐습니다. "
                             + "recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
         } catch (RuntimeException exception) {
             log.warn("confirm_action swap: discharge succeeded but reserve failed seat={}", request.newSeatId(), exception);
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM,
                     "기존 좌석 반납 후 새 좌석 예약 실패");
-            return McpPrivateToolResponse.ok(mcpSessionId,
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
                     "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번) 예약에 실패했습니다. "
                             + "prepare_reserve_library_seat로 다시 시도해주세요.");
         }

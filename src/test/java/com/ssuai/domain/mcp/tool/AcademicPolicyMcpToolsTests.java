@@ -99,7 +99,7 @@ class AcademicPolicyMcpToolsTests {
     void graduationPolicyToolReturnsAuthRequiredWithoutCallingServices() {
         McpPrivateToolResponse<GraduationPolicyEvaluationResponse> stub = McpPrivateToolResponse.authRequired(
                 null, "SAINT", "https://login.url", Instant.parse("2026-06-06T00:00:00Z"));
-        when(authHelper.principalKey(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
+        when(authHelper.resolvePrincipal(null, McpProviderType.SAINT)).thenReturn(Optional.empty());
         when(authHelper.<GraduationPolicyEvaluationResponse>buildAuthRequired(null, McpProviderType.SAINT))
                 .thenReturn(stub);
 
@@ -114,7 +114,8 @@ class AcademicPolicyMcpToolsTests {
         GraduationStatus status = new GraduationStatus(false, "", "", 3, 100, 133, List.of());
         AcademicQuestionClassifier classifier = new AcademicQuestionClassifier();
         AcademicPolicyBriefResponse brief = new AcademicPolicyBriefResponse("졸업", "graduation", "summary", List.of(), List.of());
-        when(authHelper.principalKey(SESSION_ID, McpProviderType.SAINT)).thenReturn(Optional.of(STUDENT_ID));
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.SAINT))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(STUDENT_ID, SESSION_ID)));
         when(graduationService.fetchGraduationRequirements(STUDENT_ID)).thenReturn(status);
         when(policyService.classifier()).thenReturn(classifier);
         when(policyService.brief("졸업", "graduation", 5, true)).thenReturn(brief);

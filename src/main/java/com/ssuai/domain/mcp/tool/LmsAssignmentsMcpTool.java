@@ -58,14 +58,15 @@ public class LmsAssignmentsMcpTool {
                     description = "조회할 학기 ID (get_my_lms_terms에서 반환된 id). null이면 LMS 기본 학기 사용.")
             Long term_id) {
         boolean isCompact = Boolean.TRUE.equals(compact);
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     log.debug("get_my_assignments: termId={}", term_id);
-                    AssignmentsResponse data = assignmentsService.fetchAssignments(studentId, term_id);
+                    AssignmentsResponse data = assignmentsService.fetchAssignments(principal.studentId(), term_id);
                     Object payload = isCompact
                             ? AssignmentsCompactResponse.from(data)
                             : data;
-                    return McpPrivateToolResponse.ok(mcp_session_id, payload);
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.LMS.name(), payload);
                 })
                 .orElseGet(() -> {
                     log.debug("get_my_assignments: LMS not linked, returning AUTH_REQUIRED");
@@ -84,11 +85,12 @@ public class LmsAssignmentsMcpTool {
     public McpPrivateToolResponse<Object> getMyLmsTerms(
             @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
             String mcp_session_id) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LMS)
-                .map(studentId -> {
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
+                .map(principal -> {
                     List<LmsTermItem> terms = LmsTermResolver.withResolvedDefault(
-                            assignmentsService.fetchTerms(studentId));
-                    return McpPrivateToolResponse.ok(mcp_session_id, (Object) terms);
+                            assignmentsService.fetchTerms(principal.studentId()));
+                    return McpPrivateToolResponse.ok(
+                            principal.sessionId(), McpProviderType.LMS.name(), (Object) terms);
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
     }

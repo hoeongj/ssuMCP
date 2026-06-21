@@ -43,8 +43,8 @@ public class LibraryCurrentSeatMcpTool {
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
             String mcp_session_id
     ) {
-        return authHelper.principalKey(mcp_session_id, McpProviderType.LIBRARY)
-                .map(sessionKey -> fetchForSession(mcp_session_id, sessionKey))
+        return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
+                .map(principal -> fetchForSession(principal.sessionId(), principal.studentId()))
                 .orElseGet(() -> {
                     log.debug("get_my_library_seat: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<String>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
@@ -61,9 +61,10 @@ public class LibraryCurrentSeatMcpTool {
         try {
             LibraryReservationResult current = reservationConnector.getCurrentCharge(token).orElse(null);
             if (current == null) {
-                return McpPrivateToolResponse.ok(mcpSessionId, "현재 예약된 좌석이 없습니다.");
+                return McpPrivateToolResponse.ok(
+                        mcpSessionId, McpProviderType.LIBRARY.name(), "현재 예약된 좌석이 없습니다.");
             }
-            return McpPrivateToolResponse.ok(mcpSessionId, String.format(
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(), String.format(
                     "현재 %s %s번 좌석 이용 중. 이용시간: %s ~ %s (예약번호: %d)",
                     current.roomName(), current.seatCode(),
                     current.beginTime(), current.endTime(),
