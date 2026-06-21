@@ -29,7 +29,27 @@ dependencyManagement {
     }
 }
 
+// --- Security advisory overrides (wave 2) ---
+// Override Spring Boot BOM-managed versions to ship the fixed patch releases.
+// Tomcat 11.0.21 -> 11.0.22 : 7 advisories incl. GHSA-5m62-pw8w-7w9f, GHSA-r29c-68gh-xp6x.
+// pgjdbc 42.7.10 -> 42.7.11 : GHSA-98qh-xjc8-98pq (SCRAM CPU exhaustion).
+// Boot version properties move every BOM-managed sibling together (no split-version risk).
+ext['tomcat.version'] = '11.0.22'
+ext['postgresql.version'] = '42.7.11'
+
 dependencies {
+    // MCP SDK 0.18.2 -> 0.18.3 : GHSA-hv2w-8mjj-jw22
+    // (Access-Control-Allow-Origin: * on SSE responses leaks the session id cross-origin).
+    // Managed by the Spring AI BOM (spring-ai-mcp -> mcp-core/mcp/mcp-json-jackson2/mcp-spring-webmvc),
+    // so override every SDK artifact in the graph via constraints to avoid a split-version SDK.
+    // The SSE/transport fix lives in mcp-spring-webmvc, not mcp-core, so all four must move.
+    constraints {
+        implementation 'io.modelcontextprotocol.sdk:mcp-core:0.18.3'
+        implementation 'io.modelcontextprotocol.sdk:mcp:0.18.3'
+        implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:0.18.3'
+        implementation 'io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.18.3'
+    }
+
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
