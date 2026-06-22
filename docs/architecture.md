@@ -837,7 +837,7 @@ MCP 클라이언트 → get_my_schedule(mcp_session_id)
   SaintScheduleService    McpAuthHelper.buildAuthRequired()
   .fetchSchedule()        → AUTH_REQUIRED + loginUrl
        │
-  McpPrivateToolResponse.ok(data)
+  McpPrivateToolResponse.ok(canonical sessionId, provider, data)
 ```
 
 ### 패키지
@@ -850,7 +850,7 @@ domain.auth.mcp
 ├── McpAuthStateEntry     // one-time login state token: state, mcpSessionId, provider, expiresAt
 ├── McpAuthSessionStore   // PostgreSQL 영속 세션 스토어. transport/oauth 바인딩 포함. TTL 설정 가능(기본 7d)
 ├── McpAuthStateStore     // one-time state store. max 1000 states, TTL 10min, replay-protected
-├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession, findByTransportId, findByOauthSubject, bindTransportId, bindOrVerifyOauthSubject
+├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession, findByTransportId, findByOauthSubject, bindTransportId, bindOauthSubject, bindOrVerifyOauthSubject
 │                          // bindOrVerifyOauthSubject(sessionId, sub): null→bind / 일치→true / 불일치→false. Tier2/3 해소 시 소유권 가드 (ADR 0056)
 │                          // consumeState는 JPQL deleteIfActive 행수 claim으로 1회만 소비 (find-then-delete race 제거, ADR 0056)
 ├── McpAuthUrlFactory     // buildLoginUrl / buildCallbackUrl per provider

@@ -37,7 +37,7 @@
 ## 5. LMS capability 토큰 1회성 (#16 일부)
 
 - **무엇**: LMS export 다운로드 capability 토큰을 단기 TTL뿐 아니라 **1회 사용 후 무효화**(single-use).
-- **왜 보류**: 현재 단기 TTL이지만 TTL 내 재사용 가능. 1회성은 다운로드 완료 시점 write-back(상태 저장)이 필요한 후속 작업이다. 이미 부분 완화: 응답에 no-referrer/no-store/no-cache + 단기 토큰(ADR 0062/Bundle C1).
+- **왜 보류**: 현재 단기 TTL이지만 TTL 내 재사용 가능. 1회성은 다운로드 완료 시점 write-back(상태 저장)이 필요한 후속 작업이다. 이미 부분 완화: 응답에 no-referrer/no-store/no-cache + 단기 토큰(Bundle C1 `39ad2d9`, #16 부분).
 - **권장 접근**: 토큰 사용 시 atomic하게 "consumed" 마킹(행 락 또는 Redis SETNX) → 재사용 거부.
 - **진행에 필요한 것**: 다운로드 완료 판정 시점 정의(스트림 종료 vs 첫 바이트), 토큰 상태 저장소.
 
