@@ -281,6 +281,13 @@ Grafana는 기존 backend host의 sub-path인 `https://ssumcp.duckdns.org/grafan
 - **읽기 전용 MCP**: 대부분의 도구에 `readOnlyHint=true`, `logout_*`에 `destructiveHint=true`를 표시한다.
 - **Write 도구 설계 원칙**: 예약·취소 같은 상태 변경 도구는 `prepare_*` + `confirm_action` 2단계 확인 패턴으로만 구현한다. (ADR 0015)
 
+### 보안 하드닝 (2026-06 remediation)
+
+5종 AI(Claude·ChatGPT·Gemini·AGY·Codex)에게 전체 코드를 주고 받은 보안 분석을 **코드 대조로 진짜/오진/이미고침을 가른 뒤** 배포했다. 핵심 제어: MCP 세션 해소 시 OAuth-sub 소유권 가드(세션 고정/권한 상승 차단, ADR 0056), CSRF Origin/Referer 검증 필터(SameSite=None 유지, ADR 0057), prod 설정 fail-fast(ADR 0058), 예약 audit 단일 진실원천 + fail-closed 좌석락(ADR 0059), `/api/chat` 챗봇 read-only화(write는 ssuAgent HITL로만, ADR 0060), per-IP rate limit + 입력 상한(ADR 0061), 공급망 SHA 핀 + k8s pod-security(ADR 0062). 외부 리뷰의 일부 처방(예: SameSite=Lax 전환)은 cross-site 인증을 깨뜨리는 **오진으로 코드로 입증해 거부**했다.
+
+- 배포 완료 제어: [`docs/security.md`](docs/security.md) §14-1
+- 보류·후속 항목: [`docs/security-followups.md`](docs/security-followups.md)
+
 ---
 
 ## 기술 스택
