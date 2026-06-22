@@ -301,20 +301,80 @@ public class ConfirmActionMcpTool {
                     result.roomName(), result.seatCode(),
                     result.beginTime(), result.endTime(), result.chargeId()));
         } catch (LibrarySeatNotAvailableException exception) {
-            log.warn("confirm_action swap: discharge succeeded but seat not available seat={}", request.newSeatId());
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE,
-                    "기존 좌석 반납 후 새 좌석 선점됨");
-            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
-                    "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번)이 이미 선점됐습니다. "
-                            + "recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
+            // Old seat already released, new seat taken by a racer. The upstream has no atomic
+            // swap, so we compensate by re-reserving the original seat (Codex #12).
+            log.warn("confirm_action swap: discharge succeeded but new seat not available seat={}", request.newSeatId());
+            return compensateSwap(mcpSessionId, claimed, token, request,
+                    "이미 선점됐습니다", "recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
         } catch (RuntimeException exception) {
+            // Old seat already released, new-seat reserve failed upstream. Same compensation path.
             log.warn("confirm_action swap: discharge succeeded but reserve failed seat={}", request.newSeatId(), exception);
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM,
-                    "기존 좌석 반납 후 새 좌석 예약 실패");
-            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
-                    "기존 좌석은 반납됐으나 새 좌석(" + request.newSeatId() + "번) 예약에 실패했습니다. "
-                            + "prepare_reserve_library_seat로 다시 시도해주세요.");
+            return compensateSwap(mcpSessionId, claimed, token, request,
+                    "예약에 실패했습니다", "prepare_reserve_library_seat로 다시 시도해주세요.");
         }
+    }
+
+    /**
+     * Compensating action for a non-atomic swap (Codex #12). The old seat is already released and
+     * the new-seat reservation failed, so attempt to re-reserve the ORIGINAL seat to restore the
+     * user's prior state.
+     *
+     * <ul>
+     *   <li>Compensation succeeds → report the swap failed but the original seat is RETAINED, and
+     *       re-publish the original seat as reserved (swapDischarge already marked it free, so the
+     *       seat map would otherwise be stale).</li>
+     *   <li>Compensation ALSO fails (e.g. the old seat was taken in between) → return a distinct
+     *       {@link ActionService#OUTCOME_PARTIAL_FAILURE} outcome telling the user they currently
+     *       hold NO seat and must re-reserve, logged at warn for operator visibility. The old seat
+     *       stays free in the seat map, which is correct.</li>
+     * </ul>
+     */
+    private McpPrivateToolResponse<String> compensateSwap(
+            String mcpSessionId,
+            ActionAudit claimed,
+            String token,
+            LibrarySwapRequest request,
+            String newSeatFailureReason,
+            String newSeatRetryHint) {
+        if (request.oldSeatId() == null) {
+            // Defensive: production prepare always populates oldSeatId/oldRoomId; without it we
+            // cannot identify the original seat to re-reserve. Fall back to PARTIAL_FAILURE.
+            log.warn("confirm_action swap: cannot compensate, original seat id is missing newSeat={}",
+                    request.newSeatId());
+            return partialSwapFailure(mcpSessionId, claimed, request, newSeatFailureReason);
+        }
+        try {
+            LibraryReservationResult restored = reservationConnector.reserve(
+                    token, new LibraryReservationRequest(request.oldSeatId()));
+            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE,
+                    "새 좌석 " + newSeatFailureReason + " · 기존 좌석 재예약으로 복구됨");
+            // swapDischarge already freed the old seat in the map; re-publish it as reserved.
+            seatEventPublisher.swapReserve(
+                    restored.roomId() == null ? request.oldRoomId() : restored.roomId(),
+                    restored.seatId() == null ? request.oldSeatId() : restored.seatId());
+            return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
+                    "자리 변경에 실패했어요. 새 좌석(" + request.newSeatId() + "번)이 " + newSeatFailureReason
+                            + ". 기존 좌석은 다시 예약해 그대로 유지했으니 안심하세요. "
+                            + "다른 좌석으로 옮기려면 " + newSeatRetryHint);
+        } catch (RuntimeException compensationFailure) {
+            log.warn("confirm_action swap: compensation re-reserve of original seat {} FAILED; "
+                            + "user now holds NO seat newSeat={}",
+                    request.oldSeatId(), request.newSeatId(), compensationFailure);
+            return partialSwapFailure(mcpSessionId, claimed, request, newSeatFailureReason);
+        }
+    }
+
+    private McpPrivateToolResponse<String> partialSwapFailure(
+            String mcpSessionId,
+            ActionAudit claimed,
+            LibrarySwapRequest request,
+            String newSeatFailureReason) {
+        actionService.completeAction(claimed, ActionService.OUTCOME_PARTIAL_FAILURE,
+                "기존 좌석 반납 후 새 좌석 예약 실패 · 기존 좌석 복구도 실패");
+        return McpPrivateToolResponse.ok(mcpSessionId, McpProviderType.LIBRARY.name(),
+                "자리 변경에 실패했고 기존 좌석 복구도 실패했어요. 현재 예약된 좌석이 하나도 없는 상태입니다. "
+                        + "새 좌석(" + request.newSeatId() + "번)이 " + newSeatFailureReason
+                        + ". prepare_reserve_library_seat로 좌석을 다시 예약해주세요.");
     }
 
     private static boolean isTerminal(LibraryReservationIntentStatus status) {
