@@ -39,9 +39,12 @@ import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 public class ConfirmActionMcpTool {
 
     private static final Logger log = LoggerFactory.getLogger(ConfirmActionMcpTool.class);
-    private static final Duration RESERVATION_INTENT_WAIT = Duration.ofSeconds(8);
-    private static final Duration RESERVATION_INTENT_POLL = Duration.ofMillis(200);
     private static final String NOT_AVAILABLE_STATE_CODE = "warning.smuf.notAvailableState";
+
+    // Non-final so tests can shrink the sync wait without a real 8s sleep. Production keeps
+    // the defaults; the values are not configurable at runtime (mirrors the web controller).
+    private Duration reservationIntentWait = Duration.ofSeconds(8);
+    private Duration reservationIntentPoll = Duration.ofMillis(200);
 
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
@@ -158,39 +161,44 @@ public class ConfirmActionMcpTool {
                 claimed.getId(),
                 request.seatId(),
                 ActionService.ACTION_TTL);
-        return awaitReservationIntent(mcpSessionId, claimed, intent.intentId());
+        return awaitReservationIntent(mcpSessionId, intent.intentId());
     }
 
+    /**
+     * Synchronously waits a short time for the async reservation worker to drive the intent to
+     * a terminal state, then maps that observed state to a user-facing message. This path is
+     * deliberately <em>observe-only</em>: it NEVER writes the {@link ActionAudit} terminal
+     * outcome. The worker is the single source of truth for the audit (it finalizes the linked
+     * audit in the same transaction that makes the intent terminal — Codex #4). On timeout the
+     * audit is intentionally left EXECUTING so the still-running worker can finalize it; a
+     * timeout is a response state, not a business failure.
+     */
     private McpPrivateToolResponse<String> awaitReservationIntent(
             String mcpSessionId,
-            ActionAudit claimed,
             Long intentId) {
-        long deadline = System.nanoTime() + RESERVATION_INTENT_WAIT.toNanos();
+        long deadline = System.nanoTime() + reservationIntentWait.toNanos();
         while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
             Optional<LibraryReservationIntentView> current = intentTransactions.findById(intentId);
             if (current.isPresent() && isTerminal(current.get().status())) {
-                return completeReservationFromIntent(mcpSessionId, claimed, current.get());
+                return describeReservationFromIntent(mcpSessionId, current.get());
             }
             sleepQuietly();
         }
-        actionService.completeAction(
-                claimed,
-                ActionService.OUTCOME_TIMEOUT,
-                "Reservation intent still processing: intentId=" + intentId);
+        // Timeout: do NOT terminally fail the audit. The worker keeps running and may still
+        // succeed; it owns the terminal audit outcome. Leave the audit EXECUTING and tell the
+        // caller their reservation is being completed in the background.
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
                 McpProviderType.LIBRARY.name(),
-                "예약 intent가 처리 중입니다. intentId=" + intentId
+                "예약을 백그라운드에서 계속 처리하고 있습니다. intentId=" + intentId
                         + ". 같은 mcp_session_id로 get_library_wait_status를 호출해 최종 결과를 확인하세요.");
     }
 
-    private McpPrivateToolResponse<String> completeReservationFromIntent(
+    private McpPrivateToolResponse<String> describeReservationFromIntent(
             String mcpSessionId,
-            ActionAudit claimed,
             LibraryReservationIntentView intent) {
         String detail = intent.outcomeMessage() == null ? "intentId=" + intent.intentId() : intent.outcomeMessage();
         if (intent.status() == LibraryReservationIntentStatus.SUCCEEDED) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
                     McpProviderType.LIBRARY.name(),
@@ -198,7 +206,6 @@ public class ConfirmActionMcpTool {
                             + ". " + detail);
         }
         if (intent.status() == LibraryReservationIntentStatus.FAILED_RACE) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
                     McpProviderType.LIBRARY.name(),
@@ -206,17 +213,14 @@ public class ConfirmActionMcpTool {
                             + ". recommend_library_seats와 prepare_reserve_library_seat로 다른 좌석을 다시 시도해주세요.");
         }
         if (intent.status() == LibraryReservationIntentStatus.FAILED_AUTH) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, detail);
             return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
         }
         if (intent.status() == LibraryReservationIntentStatus.EXPIRED) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, detail);
             return McpPrivateToolResponse.ok(
                     mcpSessionId,
                     McpProviderType.LIBRARY.name(),
                     "예약 intent가 실행 전에 만료됐습니다. intentId=" + intent.intentId() + ".");
         }
-        actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, detail);
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
                 McpProviderType.LIBRARY.name(),
@@ -336,9 +340,9 @@ public class ConfirmActionMcpTool {
                 + "미입실 배정 좌석은 도서관 정책에 따라 일정 시간 후 자동 취소될 수 있습니다.";
     }
 
-    private static void sleepQuietly() {
+    private void sleepQuietly() {
         try {
-            Thread.sleep(RESERVATION_INTENT_POLL.toMillis());
+            Thread.sleep(reservationIntentPoll.toMillis());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }

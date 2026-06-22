@@ -191,6 +191,56 @@ class ActionServiceTests {
         verify(repository, never()).findTopByStudentIdAndStatusOrderByCreatedAtDesc(any(), any());
     }
 
+    @Test
+    void finalizeFromIntentCompletesExecutingAuditWithWorkerOutcome() {
+        // Worker reaches a terminal intent outcome and finalizes the linked audit that the
+        // sync confirm path left EXECUTING after timing out.
+        ActionAudit executing = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}", NOW);
+        executing.markExecuting(NOW);
+        ReflectionTestUtils.setField(executing, "id", 70L);
+        when(repository.findById(70L)).thenReturn(java.util.Optional.of(executing));
+
+        service.finalizeFromIntent(70L, ActionService.OUTCOME_SUCCESS, "room 74 reserved");
+
+        assertThat(executing.getStatus()).isEqualTo(ActionStatus.SUCCESS);
+        assertThat(executing.getOutcomeCode()).isEqualTo("SUCCESS");
+        assertThat(executing.getOutcomeMessage()).isEqualTo("room 74 reserved");
+        assertTerminalCounter("success", ActionService.OUTCOME_SUCCESS);
+    }
+
+    @Test
+    void finalizeFromIntentIsNoOpWhenAuditAlreadyTerminal() {
+        // Idempotency: a second worker finalize, or a finalize after the sync path already
+        // completed the audit, must never flip or duplicate the terminal outcome.
+        ActionAudit alreadyFailed = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}", NOW);
+        alreadyFailed.markExecuting(NOW);
+        alreadyFailed.complete(ActionService.OUTCOME_FAILURE_RACE, "lost the race", NOW);
+        ReflectionTestUtils.setField(alreadyFailed, "id", 71L);
+        when(repository.findById(71L)).thenReturn(java.util.Optional.of(alreadyFailed));
+
+        service.finalizeFromIntent(71L, ActionService.OUTCOME_SUCCESS, "room 74 reserved");
+
+        // Outcome unchanged; the success branch never runs, so save is not invoked for it.
+        assertThat(alreadyFailed.getStatus()).isEqualTo(ActionStatus.FAILED);
+        assertThat(alreadyFailed.getOutcomeCode()).isEqualTo("FAILURE_RACE");
+        verify(repository, never()).save(alreadyFailed);
+    }
+
+    @Test
+    void finalizeFromIntentIsNoOpWhenAuditStillPendingOrMissingOrNullId() {
+        ActionAudit pending = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{}", NOW);
+        ReflectionTestUtils.setField(pending, "id", 72L);
+        when(repository.findById(72L)).thenReturn(java.util.Optional.of(pending));
+        when(repository.findById(73L)).thenReturn(java.util.Optional.empty());
+
+        service.finalizeFromIntent(72L, ActionService.OUTCOME_SUCCESS, "x"); // still PENDING
+        service.finalizeFromIntent(73L, ActionService.OUTCOME_SUCCESS, "x"); // missing row
+        service.finalizeFromIntent(null, ActionService.OUTCOME_SUCCESS, "x"); // non-immediate intent
+
+        assertThat(pending.getStatus()).isEqualTo(ActionStatus.PENDING);
+        verify(repository, never()).save(any(ActionAudit.class));
+    }
+
     private void assertCounter(String status) {
         assertThat(meterRegistry.get("library.action")
                 .tag("action_type", ACTION_TYPE)

@@ -4504,3 +4504,33 @@ ChatGPT가 실제 로그인 세션으로 테스트 후, 가짜 `mcp_session_id="
 1. 동일 소스가 로컬은 컴파일되고 CI는 unmappable로 실패하는 원인으로 무엇을 의심하고 어떻게 좁히겠는가?
 2. JDK 21의 javac 기본 소스 인코딩 변경(JEP 400)이 비-ASCII(한글) 소스에 주는 영향과, 안전한 고정 방법은?
 3. 소스 인코딩·줄바꿈 드리프트를 CI에서 사전 차단하려면 어떤 장치(.gitattributes, CI 검사 등)를 두겠는가?
+
+## 사건 16: 예약 confirm 타임아웃이 "실패"로 단정 → 워커는 성공시켜 audit 영구 불일치 (이중 상태 사고, 2026-06-22)
+
+### 증상
+좌석 예약(intent 큐 경로)에서 `confirm_action`/예약 웹 컨트롤러는 worker 결과를 8초만 동기 대기한 뒤, 타임아웃 시 `ActionAudit`를 **종단(FAILED/TIMEOUT)** 으로 마킹했다. 그런데 예약 worker는 계속 돌아 실제로 좌석을 잡을 수 있었고(성공), 이후 누구도 그 audit를 SUCCESS로 갱신하지 않았다. 결과: **API는 "실패/타임아웃"이라고 응답하는데 좌석은 실제 예약됨, 감사 로그는 영구히 틀림** — 금전 거래급 이중 상태(double-state) 사고.
+
+### 틀린 가설
+"동기 대기 타임아웃은 곧 비즈니스 실패다." (실제로는 타임아웃은 단지 **응답 상태**일 뿐, 비동기 worker가 종단 결과의 단일 진실원천이어야 한다.)
+
+### 실제 원인
+종단 outcome을 쓰는 주체가 **둘**이었다. (1) 동기 confirm 경로가 타임아웃/관측 시점에 `completeAction(...)`을 호출, (2) worker가 intent를 종단시킴. 둘 사이에 동기화가 없어, 동기 경로가 먼저 FAILED로 닫은 뒤 worker가 성공해도 audit는 FAILED로 굳었다.
+
+### 해결 (surgical + additive)
+- **타임아웃은 종단이 아니다**: `ConfirmActionMcpTool`/`LibraryReservationWebController`의 동기 대기를 **observe-only**로 전환 — 예약 경로에서는 audit를 절대 쓰지 않고, 타임아웃 시 audit를 `EXECUTING`(진행 중)에 남긴 채 "백그라운드에서 처리 중"(웹은 신규 비종단 status `PROCESSING`) 응답만 반환. 마이그레이션 불필요(기존 EXECUTING 재사용, `status`는 VARCHAR(16) `@Enumerated(STRING)`·check 제약 없음).
+- **worker가 audit의 단일 진실원천**: `LibraryReservationIntentTransactions`의 모든 종단 전이(`succeed`/`failRace`/`failAuth`/`failUpstream`)에서 intent 락과 **같은 트랜잭션** 안에 `ActionService.finalizeFromIntent(intent.actionAuditId, outcome, msg)`를 호출. intent 종단 write와 audit 완료가 원자적으로 커밋되어 좌석 상태와 audit가 절대 어긋날 수 없음.
+- **멱등성**: `finalizeFromIntent`는 `actionAuditId==null`(대기 intent)·row 없음·이미 종단(SUCCESS/FAILED/EXPIRED/SUPERSEDED)·아직 PENDING이면 no-op, 오직 `EXECUTING`만 1회 완료 → 두 번째 finalize·동기 경로가 먼저 닫은 경우 모두 안전.
+- **누락 전이 2종 보강**(이번 변경이 만든 회귀까지 차단): ① `expireWaiting`가 REQUESTED 즉시예약 intent를 EXPIRED시키면 연결 audit를 TIMEOUT으로 finalize(안 하면 EXECUTING 영구 잔류) ② `cancelActive`(cancel_library_wait·DELETE /wait)는 즉시예약 intent를 건너뜀 — 대기열 취소 엔드포인트가 in-flight 예약을 CANCELLED로 종단시키면 audit가 stranded되므로. cancel/swap의 기존 동기 `completeAction` 흐름은 변경 없음.
+- 비고: 새 `PROCESSING` status는 ssuMCP 단독 변경 → 프런트(`ssuAI/lib/api/library.ts`의 union)는 후속 PR에서 추가 필요.
+
+### 핵심 파일 / 커밋
+`ActionService.finalizeFromIntent`(신규 멱등 메서드), `LibraryReservationIntentTransactions`(ActionService 주입 + 종단/만료 finalize + cancel skip), `ConfirmActionMcpTool`/`LibraryReservationWebController`(observe-only + 타임아웃 비종단) / 브랜치 `fix/wave2-audit-state-machine`.
+
+### 포트폴리오 포인트
+- "타임아웃 = 실패"라는 흔한 단정이 비동기 워커 환경에서 어떻게 이중 상태 사고로 이어지는지를 짚고, **단일 진실원천 + 같은 트랜잭션 원자 finalize + 멱등성**으로 푼 분산-일관성 설계.
+- 수정이 만들 수 있는 회귀(cancel/expire 경로의 audit stranding)를 종단 전이 6종 전수 점검으로 선제 차단.
+
+### 예상 면접 질문
+1. 동기 응답과 비동기 워커가 같은 상태를 쓸 때 이중 기록(double-write)을 어떻게 구조적으로 제거했는가? 왜 "단일 진실원천 + 동일 트랜잭션 finalize"인가?
+2. `finalizeFromIntent`의 멱등성은 어떤 상태들에서 no-op이며, 그 가드가 없으면 어떤 레이스로 audit가 뒤집히는가?
+3. 타임아웃 audit를 EXECUTING에 남기는 선택의 트레이드오프(미완 EXECUTING 누수 가능성)와, expireWaiting/cancel 경로로 어떻게 닫는가?

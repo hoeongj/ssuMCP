@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -71,8 +72,11 @@ class ConfirmActionMcpToolTests {
     }
 
     @Test
-    void reservationSuccessCompletesWithSuccessOutcome() {
-        ActionAudit action = reservationAction();
+    void reservationSuccessIsObserveOnlyAndDoesNotCompleteAudit() {
+        // The sync path observes a terminal intent and maps it to a message. It must NOT write
+        // the audit terminal outcome: the worker finalized the linked audit in the same
+        // transaction that made the intent SUCCEEDED (Codex #4, single source of truth).
+        reservationAction();
         when(intentTransactions.createImmediateReservation(
                 eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
                 .thenReturn(intentView(11L, LibraryReservationIntentStatus.REQUESTED, null));
@@ -90,13 +94,13 @@ class ConfirmActionMcpToolTests {
                 .contains("intentId=11")
                 .contains("74")
                 .contains("1966693");
-        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_SUCCESS), any());
+        verify(actionService, never()).completeAction(any(), any(), any());
         verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
     }
 
     @Test
-    void reservationRaceCompletesWithFailureNotSuccess() {
-        ActionAudit action = reservationAction();
+    void reservationRaceIsObserveOnlyAndDoesNotCompleteAudit() {
+        reservationAction();
         when(intentTransactions.createImmediateReservation(
                 eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
                 .thenReturn(intentView(12L, LibraryReservationIntentStatus.REQUESTED, null));
@@ -110,7 +114,34 @@ class ConfirmActionMcpToolTests {
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data()).contains("이미 선점").contains("intentId=12");
-        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_FAILURE_RACE), any());
+        verify(actionService, never()).completeAction(any(), any(), any());
+        verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
+    }
+
+    @Test
+    void reservationSyncTimeoutLeavesAuditExecutingAndReportsProcessing() {
+        // The worker never resolves the intent within the (test-shrunk) sync window. The sync
+        // path must NOT terminally fail the audit (leave it EXECUTING for the still-running
+        // worker) and must tell the caller the reservation is being completed in the background.
+        // No real reservation happens: reservationConnector.reserve is never called.
+        ReflectionTestUtils.setField(tool, "reservationIntentWait", Duration.ofMillis(20));
+        ReflectionTestUtils.setField(tool, "reservationIntentPoll", Duration.ofMillis(5));
+        reservationAction();
+        when(intentTransactions.createImmediateReservation(
+                eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
+                .thenReturn(intentView(13L, LibraryReservationIntentStatus.REQUESTED, null));
+        // Intent stays non-terminal (RESERVING) for the whole sync wait → timeout.
+        when(intentTransactions.findById(13L))
+                .thenReturn(Optional.of(intentView(13L, LibraryReservationIntentStatus.RESERVING, null)));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("백그라운드")
+                .contains("intentId=13");
+        // The bug fix: timeout is a response state, never a terminal audit outcome here.
+        verify(actionService, never()).completeAction(any(), any(), any());
         verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
     }
 

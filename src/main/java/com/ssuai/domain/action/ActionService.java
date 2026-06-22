@@ -163,6 +163,40 @@ public class ActionService {
         return saved;
     }
 
+    /**
+     * Idempotently finalizes the {@link ActionAudit} an async reservation intent is linked to
+     * (via {@code library_reservation_intents.action_audit_id}). The reservation worker is the
+     * single source of truth for the terminal outcome of an intent-queue reservation: when the
+     * worker drives the intent to a terminal state it calls this to mirror that outcome onto the
+     * audit. Because the synchronous confirm path leaves a timed-out reservation audit in
+     * EXECUTING (no longer terminally failing it), this is the call that closes the audit out.
+     *
+     * <p>Idempotent and safe to call more than once or after a terminal state:
+     * <ul>
+     *   <li>{@code actionAuditId == null} (a non-immediate wait intent) — no-op;</li>
+     *   <li>row not found — no-op;</li>
+     *   <li>row already terminal (SUCCESS / FAILED / EXPIRED / SUPERSEDED) or never claimed
+     *       (still PENDING) — no-op, never overwriting an already-decided audit;</li>
+     *   <li>only an EXECUTING row is completed, exactly once.</li>
+     * </ul>
+     * This is what prevents the money-transaction-style double-state accident where the API
+     * reported a timeout/failure but the seat was actually reserved.
+     */
+    @Transactional
+    public void finalizeFromIntent(Long actionAuditId, String outcomeCode, String outcomeMessage) {
+        if (actionAuditId == null) {
+            return;
+        }
+        repository.findById(actionAuditId).ifPresent(action -> {
+            if (action.getStatus() != ActionStatus.EXECUTING) {
+                // Already terminal (the sync path completed it before timing out, or a prior
+                // worker finalize already ran), still PENDING, or expired/superseded: never flip.
+                return;
+            }
+            completeAction(action, outcomeCode, outcomeMessage);
+        });
+    }
+
     /** Marks the latest PENDING action EXPIRED if it is past its TTL. No-op otherwise. */
     @Transactional
     public void expirePending(String studentId) {

@@ -3,6 +3,8 @@ package com.ssuai.domain.library.reservation.web;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -67,6 +70,9 @@ class LibraryReservationWebControllerTests {
 
     @MockitoBean
     private LibraryIntentSseRegistry intentSseRegistry;
+
+    @Autowired
+    private LibraryReservationWebController controller;
 
     @Autowired
     LibraryReservationWebControllerTests(MockMvc mockMvc) {
@@ -136,6 +142,37 @@ class LibraryReservationWebControllerTests {
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.intentId").value(11L))
                 .andExpect(jsonPath("$.data.message").value("Reservation succeeded."));
+    }
+
+    @Test
+    void confirmReserve_syncTimeout_returnsProcessingWithoutFailingAudit() throws Exception {
+        // Worker never resolves the intent within the (shrunk) sync window. The controller must
+        // NOT terminally fail the audit; it returns a non-terminal PROCESSING status so the
+        // still-running worker can finalize the linked audit (Codex #4).
+        ReflectionTestUtils.setField(controller, "reservationIntentWait", Duration.ofMillis(20));
+        ReflectionTestUtils.setField(controller, "reservationIntentPoll", Duration.ofMillis(5));
+        ActionAudit pending = pendingAction("LIBRARY_SEAT_RESERVATION");
+        ActionAudit claimed = pendingAction("LIBRARY_SEAT_RESERVATION");
+        LibraryReservationIntentView reserving = intentView(
+                11L, LibraryReservationIntentStatus.RESERVING, null);
+
+        when(actionService.findPendingAction(anyString())).thenReturn(Optional.of(pending));
+        when(actionService.isExpired(pending)).thenReturn(false);
+        when(actionService.claimPendingAction(anyString())).thenReturn(claimed);
+        when(actionService.payload(claimed, LibraryReservationRequest.class))
+                .thenReturn(new LibraryReservationRequest(3179L));
+        when(intentTransactions.createImmediateReservation(
+                anyString(), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
+                .thenReturn(intentView(11L, LibraryReservationIntentStatus.REQUESTED, null));
+        when(intentTransactions.findById(11L)).thenReturn(Optional.of(reserving));
+
+        mockMvc.perform(post("/api/library/reservations/confirm"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.intentId").value(11L));
+
+        verify(actionService, never()).completeAction(any(), any(), any());
+        verify(reservationConnector, never()).reserve(any(), any());
     }
 
     @Test

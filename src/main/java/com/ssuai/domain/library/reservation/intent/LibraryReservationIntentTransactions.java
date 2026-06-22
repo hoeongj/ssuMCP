@@ -11,6 +11,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssuai.domain.action.ActionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -28,6 +29,7 @@ public class LibraryReservationIntentTransactions {
     private final LibraryReservationIntentProperties properties;
     private final LibraryReservationIntentMetrics metrics;
     private final LibraryReservationIntentWakeNotifier wakeNotifier;
+    private final ActionService actionService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -37,6 +39,7 @@ public class LibraryReservationIntentTransactions {
             LibraryReservationIntentProperties properties,
             LibraryReservationIntentMetrics metrics,
             LibraryReservationIntentWakeNotifier wakeNotifier,
+            ActionService actionService,
             ObjectMapper objectMapper,
             Clock clock) {
         this.intentRepository = intentRepository;
@@ -44,6 +47,7 @@ public class LibraryReservationIntentTransactions {
         this.properties = properties;
         this.metrics = metrics;
         this.wakeNotifier = wakeNotifier;
+        this.actionService = actionService;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -131,6 +135,13 @@ public class LibraryReservationIntentTransactions {
         if (intent.getStatus() == LibraryReservationIntentStatus.RESERVING) {
             return Optional.of(LibraryReservationIntentView.from(intent));
         }
+        if (intent.isImmediateReservation()) {
+            // An immediate reservation is an in-flight confirm, not a wait-queue entry. Cancelling
+            // it here would terminalize the intent (CANCELLED) without finalizing the linked audit,
+            // stranding it in EXECUTING (the sync path is observe-only now). The wait-cancel
+            // endpoint must not touch an immediate reservation; the worker owns its terminal state.
+            return Optional.of(LibraryReservationIntentView.from(intent));
+        }
         intent.cancel(clock.instant(), "User cancelled the wait intent.");
         append(intent, LibraryReservationIntentEventType.CANCELLED, intent.getOutcomeMessage());
         metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
@@ -164,6 +175,10 @@ public class LibraryReservationIntentTransactions {
             intent.expire(now, "Wait intent expired before a matching seat was reserved.");
             append(intent, LibraryReservationIntentEventType.EXPIRED, intent.getOutcomeMessage());
             metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
+            // An immediate-reservation intent can sit REQUESTED past its TTL if the worker never
+            // claims it; expiring it here would otherwise strand its linked audit in EXECUTING
+            // forever (the sync path no longer fails it on timeout). Finalize it as TIMEOUT.
+            finalizeLinkedAudit(intent, ActionService.OUTCOME_TIMEOUT, intent.getOutcomeMessage());
         });
         return expired.size();
     }
@@ -185,6 +200,7 @@ public class LibraryReservationIntentTransactions {
         append(intent, LibraryReservationIntentEventType.SEAT_FOUND, "Seat " + seatId + " was claimable.");
         append(intent, LibraryReservationIntentEventType.RESERVATION_SUCCEEDED, message);
         metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
+        finalizeLinkedAudit(intent, ActionService.OUTCOME_SUCCESS, message);
         return LibraryReservationIntentView.from(intent);
     }
 
@@ -195,6 +211,7 @@ public class LibraryReservationIntentTransactions {
         append(intent, LibraryReservationIntentEventType.SEAT_FOUND, "Seat " + seatId + " was claimable.");
         append(intent, LibraryReservationIntentEventType.RESERVATION_FAILED, message);
         metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
+        finalizeLinkedAudit(intent, ActionService.OUTCOME_FAILURE_RACE, message);
         return LibraryReservationIntentView.from(intent);
     }
 
@@ -204,6 +221,7 @@ public class LibraryReservationIntentTransactions {
         intent.failAuth(clock.instant(), message);
         append(intent, LibraryReservationIntentEventType.RESERVATION_FAILED, message);
         metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
+        finalizeLinkedAudit(intent, ActionService.OUTCOME_FAILURE_AUTH, message);
         return LibraryReservationIntentView.from(intent);
     }
 
@@ -213,7 +231,21 @@ public class LibraryReservationIntentTransactions {
         intent.failUpstream(clock.instant(), message);
         append(intent, LibraryReservationIntentEventType.RESERVATION_FAILED, message);
         metrics.countTransition(intent.getStatus(), intent.getOutcomeCode());
+        finalizeLinkedAudit(intent, ActionService.OUTCOME_FAILURE_UPSTREAM, message);
         return LibraryReservationIntentView.from(intent);
+    }
+
+    /**
+     * Mirrors an immediate-reservation intent's terminal outcome onto its linked
+     * {@link com.ssuai.domain.action.ActionAudit} in the same transaction that made the intent
+     * terminal — making the worker the single source of truth for the audit outcome (Codex #4).
+     * No-op for non-immediate wait intents (no linked audit) and idempotent on the audit side,
+     * so a sync-path timeout that left the audit EXECUTING is finalized exactly once and an
+     * already-terminal audit is never flipped. The intent terminal write and the audit
+     * completion commit atomically, so the seat state and the audit can never disagree.
+     */
+    private void finalizeLinkedAudit(LibraryReservationIntent intent, String outcomeCode, String message) {
+        actionService.finalizeFromIntent(intent.getActionAuditId(), outcomeCode, message);
     }
 
     private LibraryReservationIntent lock(Long intentId) {

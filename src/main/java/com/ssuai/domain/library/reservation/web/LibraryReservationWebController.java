@@ -53,9 +53,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class LibraryReservationWebController {
 
     private static final Logger log = LoggerFactory.getLogger(LibraryReservationWebController.class);
-    private static final Duration RESERVATION_INTENT_WAIT = Duration.ofSeconds(8);
-    private static final Duration RESERVATION_INTENT_POLL = Duration.ofMillis(200);
     private static final String NOT_AVAILABLE_STATE_CODE = "warning.smuf.notAvailableState";
+
+    // Non-final so tests can shrink the sync wait without a real 8s sleep. Production keeps
+    // the defaults; the values are not configurable at runtime (mirrors ConfirmActionMcpTool).
+    private Duration reservationIntentWait = Duration.ofSeconds(8);
+    private Duration reservationIntentPoll = Duration.ofMillis(200);
 
     private final ActionService actionService;
     private final LibrarySessionStore librarySessionStore;
@@ -228,49 +231,47 @@ public class LibraryReservationWebController {
                 claimed.getId(),
                 request.seatId(),
                 ActionService.ACTION_TTL);
-        return awaitReservationIntent(claimed, intent.intentId());
+        return awaitReservationIntent(intent.intentId());
     }
 
-    private LibraryReservationConfirmResponse awaitReservationIntent(ActionAudit claimed, Long intentId) {
-        long deadline = System.nanoTime() + RESERVATION_INTENT_WAIT.toNanos();
+    /**
+     * Observe-only sync wait for the async reservation worker, mirroring
+     * {@code ConfirmActionMcpTool}. It NEVER writes the {@link ActionAudit} terminal outcome:
+     * the worker is the single source of truth and finalizes the linked audit in the same
+     * transaction that makes the intent terminal (Codex #4). On timeout the audit is left
+     * EXECUTING (a timeout is a response state, not a business failure) and the caller gets a
+     * non-terminal {@code PROCESSING} status so the still-running worker can finalize it.
+     */
+    private LibraryReservationConfirmResponse awaitReservationIntent(Long intentId) {
+        long deadline = System.nanoTime() + reservationIntentWait.toNanos();
         while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
             Optional<LibraryReservationIntentView> current = intentTransactions.findById(intentId);
             if (current.isPresent() && isTerminal(current.get().status())) {
-                return completeReservationFromIntent(claimed, current.get());
+                return describeReservationFromIntent(current.get());
             }
             sleepQuietly();
         }
-        actionService.completeAction(
-                claimed,
-                ActionService.OUTCOME_TIMEOUT,
-                "Reservation intent still processing: intentId=" + intentId);
         return new LibraryReservationConfirmResponse(
-                "TIMEOUT",
+                "PROCESSING",
                 intentId,
-                "Reservation intent is still processing. Check the wait status later.");
+                "Reservation is still being completed in the background. Check the wait status later.");
     }
 
-    private LibraryReservationConfirmResponse completeReservationFromIntent(
-            ActionAudit claimed,
+    private LibraryReservationConfirmResponse describeReservationFromIntent(
             LibraryReservationIntentView intent) {
         String detail = intent.outcomeMessage() == null ? "intentId=" + intent.intentId() : intent.outcomeMessage();
         if (intent.status() == LibraryReservationIntentStatus.SUCCEEDED) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_SUCCESS, detail);
             return new LibraryReservationConfirmResponse("SUCCESS", intent.intentId(), detail);
         }
         if (intent.status() == LibraryReservationIntentStatus.FAILED_RACE) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE, detail);
             return new LibraryReservationConfirmResponse("FAILED_RACE", intent.intentId(), detail);
         }
         if (intent.status() == LibraryReservationIntentStatus.FAILED_AUTH) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_AUTH, detail);
             return new LibraryReservationConfirmResponse("FAILED_AUTH", intent.intentId(), detail);
         }
         if (intent.status() == LibraryReservationIntentStatus.EXPIRED) {
-            actionService.completeAction(claimed, ActionService.OUTCOME_TIMEOUT, detail);
             return new LibraryReservationConfirmResponse("TIMEOUT", intent.intentId(), detail);
         }
-        actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, detail);
         return new LibraryReservationConfirmResponse("FAILED_UPSTREAM", intent.intentId(), detail);
     }
 
@@ -469,9 +470,9 @@ public class LibraryReservationWebController {
         return NOT_AVAILABLE_STATE_CODE.equals(exception.getPyxisCode());
     }
 
-    private static void sleepQuietly() {
+    private void sleepQuietly() {
         try {
-            Thread.sleep(RESERVATION_INTENT_POLL.toMillis());
+            Thread.sleep(reservationIntentPoll.toMillis());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
