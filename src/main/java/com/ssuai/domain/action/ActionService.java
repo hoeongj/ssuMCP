@@ -26,6 +26,9 @@ public class ActionService {
     public static final String OUTCOME_FAILURE_AUTH = "FAILURE_AUTH";
     public static final String OUTCOME_FAILURE_UPSTREAM = "FAILURE_UPSTREAM";
     public static final String OUTCOME_TIMEOUT = "TIMEOUT";
+    // Non-atomic swap left the user holding NO seat: old released, new not reserved, and the
+    // compensating re-reservation of the old seat also failed (Codex #12).
+    public static final String OUTCOME_PARTIAL_FAILURE = "PARTIAL_FAILURE";
 
     private final ActionAuditRepository repository;
     private final ObjectMapper objectMapper;

@@ -220,6 +220,59 @@ class ConfirmActionMcpToolTests {
     }
 
     @Test
+    void swapTargetReserveFailsButCompensationReReservesOriginalSeat() {
+        // Non-atomic swap (Codex #12): old seat discharged, new seat taken upstream. The
+        // compensating re-reservation of the ORIGINAL seat succeeds → swap reported as failed but
+        // the original seat is retained, and the old seat is re-published as reserved.
+        ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibrarySwapRequest.class))
+                .thenReturn(new LibrarySwapRequest(1966693L, 3179L, 54, 926L));
+        // First reserve = new seat → race; second reserve = compensating old seat → success.
+        when(reservationConnector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
+                .thenThrow(new LibrarySeatNotAvailableException("warning.smuf.seatTaken"));
+        when(reservationConnector.reserve(TOKEN, new LibraryReservationRequest(926L)))
+                .thenReturn(new LibraryReservationResult(180L, "room", "12", "09:00", "13:00", 54, 926L));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("기존 좌석은 다시 예약해 그대로 유지")
+                .contains("3179");
+        // Compensating call verified, original seat re-published as reserved.
+        verify(reservationConnector).reserve(TOKEN, new LibraryReservationRequest(926L));
+        verify(seatEventPublisher).swapDischarge(54, 926L);
+        verify(seatEventPublisher).swapReserve(54, 926L);
+        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_FAILURE_RACE), any());
+    }
+
+    @Test
+    void swapTargetReserveFailsAndCompensationFailsReturnsPartialFailure() {
+        // Worst case (Codex #12): old seat discharged, new seat reserve fails upstream, AND the
+        // compensating re-reservation of the original seat ALSO fails (old seat taken in between).
+        // → PARTIAL_FAILURE: user holds NO seat, clear message, warn log, old seat left free.
+        ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
+        when(actionService.payload(action, LibrarySwapRequest.class))
+                .thenReturn(new LibrarySwapRequest(1966693L, 3179L, 54, 926L));
+        when(reservationConnector.reserve(TOKEN, new LibraryReservationRequest(3179L)))
+                .thenThrow(new IllegalStateException("upstream 500"));
+        when(reservationConnector.reserve(TOKEN, new LibraryReservationRequest(926L)))
+                .thenThrow(new LibrarySeatNotAvailableException("warning.smuf.seatTaken"));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data())
+                .contains("현재 예약된 좌석이 하나도 없는")
+                .contains("3179");
+        verify(reservationConnector).reserve(TOKEN, new LibraryReservationRequest(926L));
+        // Old seat stays free in the map (compensation failed): only the discharge event published.
+        verify(seatEventPublisher).swapDischarge(54, 926L);
+        verify(seatEventPublisher, never()).swapReserve(any(), anyLong());
+        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_PARTIAL_FAILURE), any());
+    }
+
+    @Test
     void explicitActionIdConfirmsThatExactAction() {
         // Caller passes a specific action_id; it is owned + PENDING, so it is claimed by id
         // (not by "latest") and executed.

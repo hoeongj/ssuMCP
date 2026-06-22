@@ -242,7 +242,10 @@ class LibraryReservationWorkerTests {
     }
 
     @Test
-    void seatLockContentionFailsRaceWithoutCallingPyxis() {
+    void seatLockContentionDefersForRetryWithoutCallingPyxis() {
+        // Fail-closed (Codex #13): "couldn't acquire within the wait window" must NOT terminally
+        // fail the intent; it is deferred to the worker's existing retry path (returnToWaiting),
+        // never a lock-less reservation.
         FakeLockClient lockClient = FakeLockClient.skipped();
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         LibraryReservationWorker lockedWorker = new LibraryReservationWorker(
@@ -256,13 +259,17 @@ class LibraryReservationWorkerTests {
         lockedWorker.poll();
 
         verify(connector, never()).reserve(any(), any());
-        verify(transactions).failRace(eq(11L), eq(SEAT_ID), any());
+        verify(transactions).returnToWaiting(11L);
+        verify(transactions, never()).failRace(eq(11L), any(), any());
         assertThat(meterRegistry.find("library.seat.lock")
                 .tag("outcome", "skipped").counter().count()).isEqualTo(1.0);
     }
 
     @Test
-    void seatLockRedisFailureFallsBackToExecuteWithoutLock() {
+    void seatLockRedisFailureFailsClosedAndDefersForRetry() {
+        // Fail-closed (Codex #13): a Redis/lock exception must NEVER reserve without the lock
+        // (double-booking risk). The intent is deferred via returnToWaiting, and reserve upstream
+        // is never called.
         FakeLockClient lockClient = FakeLockClient.failing();
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         LibraryReservationWorker lockedWorker = new LibraryReservationWorker(
@@ -272,15 +279,37 @@ class LibraryReservationWorkerTests {
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-12")).thenReturn(Optional.of(TOKEN));
         when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
-        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
-                .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
 
         lockedWorker.poll();
 
-        verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
-        verify(transactions).succeed(eq(12L), eq(SEAT_ID), any());
+        verify(connector, never()).reserve(any(), any());
+        verify(transactions).returnToWaiting(12L);
+        verify(transactions, never()).succeed(eq(12L), any(), any());
         assertThat(meterRegistry.find("library.seat.lock")
-                .tag("outcome", "fallback").counter().count()).isEqualTo(1.0);
+                .tag("outcome", "deferred").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void seatLockInterruptFailsClosedAndDefersForRetry() {
+        // Fail-closed (Codex #13): an interrupt while acquiring the lock must NOT reserve
+        // lock-less; defer for retry instead.
+        FakeLockClient lockClient = FakeLockClient.interrupting();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        LibraryReservationWorker lockedWorker = new LibraryReservationWorker(
+                transactions, seatSelector, sessionStore, connector, seatEventPublisher,
+                lockClient, new LibraryRedisMetrics(meterRegistry), new LibraryRedisProperties());
+        LibraryReservationIntent intent = claimedIntent(13L, "session-13");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-13")).thenReturn(Optional.of(TOKEN));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+
+        lockedWorker.poll();
+
+        verify(connector, never()).reserve(any(), any());
+        verify(transactions).returnToWaiting(13L);
+        assertThat(meterRegistry.find("library.seat.lock")
+                .tag("outcome", "deferred").counter().count()).isEqualTo(1.0);
+        assertThat(Thread.interrupted()).isTrue(); // interrupt flag re-raised then cleared here
     }
 
     private static final class FakeLockClient implements LibraryDistributedLockClient {
@@ -292,13 +321,15 @@ class LibraryReservationWorkerTests {
         static FakeLockClient acquired() { return new FakeLockClient("acquired"); }
         static FakeLockClient skipped() { return new FakeLockClient("skipped"); }
         static FakeLockClient failing() { return new FakeLockClient("failing"); }
+        static FakeLockClient interrupting() { return new FakeLockClient("interrupting"); }
 
         @Override
-        public Optional<LockLease> tryAcquire(String lockName, Duration waitTime) {
+        public Optional<LockLease> tryAcquire(String lockName, Duration waitTime) throws InterruptedException {
             return switch (mode) {
                 case "acquired" -> Optional.of(releases::incrementAndGet);
                 case "skipped" -> Optional.empty();
                 case "failing" -> throw new IllegalStateException("redis down");
+                case "interrupting" -> throw new InterruptedException("lock wait interrupted");
                 default -> throw new IllegalStateException("unknown mode: " + mode);
             };
         }
