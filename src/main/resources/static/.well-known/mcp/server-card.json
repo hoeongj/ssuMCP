@@ -353,6 +353,431 @@
         },
         "required": ["mcp_session_id"]
       }
+    },
+    {
+      "name": "get_meal_weekly",
+      "description": "숭실대학교 학생식당의 주간(7일) 메뉴를 조회합니다. weekOffset=0(이번 주, 기본), 1(다음 주), -1(지난 주).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "weekOffset": {
+            "type": "integer",
+            "description": "주 오프셋. 0=이번 주(기본), 1=다음 주, -1=지난 주"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_academic_calendar",
+      "description": "숭실대학교 학사일정(수강신청·시험·방학 등)을 [{date, event, category}] 형태로 조회합니다. year 생략 시 현재 연도.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "조회할 연도(예: 2026). 생략 시 현재 연도"
+          }
+        }
+      }
+    },
+    {
+      "name": "find_academic_calendar_events",
+      "description": "숭실대학교 학사일정을 연도·월·키워드로 필터링해 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "조회할 연도(선택). 생략 시 현재 연도"
+          },
+          "month": {
+            "type": "integer",
+            "description": "조회할 월(선택, 1~12)"
+          },
+          "keyword": {
+            "type": "string",
+            "description": "검색 키워드(선택). 예: 수강신청, 개강, 시험"
+          }
+        }
+      }
+    },
+    {
+      "name": "classify_academic_question",
+      "description": "학사 질문을 졸업/장학/학사일정/일반 규정 의도로 분류하고 이어서 호출할 도구를 추천합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "분류할 학사 질문. 예: 복수전공 졸업 학점 조건"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "search_academic_policy_sources",
+      "description": "공식 규정관리시스템·학사 안내 페이지에서 학칙·졸업·장학 근거 문단을 검색합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "검색어. 예: 복수전공 졸업 학점"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_academic_policy_brief",
+      "description": "학사 질문에 대한 공식 출처 기반 근거 요약(출처 URL·개정 이력·live/fallback 상태 포함)을 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "요약할 학사 질문"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "check_scholarship_policy",
+      "description": "장학금 질문·입력 조건(GPA·취득학점·입학연도·TOPIK 등)을 공식 장학 규정과 대조해 decision/근거를 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "장학금 질문(선택). 예: 백마성적우수장학금 기준"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_academic_policy_sources",
+      "description": "학사 RAG가 조회하는 공식 출처 목록(URL·개정일·live 지원 여부 등)을 반환합니다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "출처 범위: graduation, scholarship, academic 중 하나(선택). 생략 시 전체"
+          }
+        }
+      }
+    },
+    {
+      "name": "evaluate_graduation_with_policy",
+      "description": "인증된 학생의 u-SAINT 졸업요건 상태와 공식 학칙/졸업 근거를 함께 반환합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "추가로 확인할 졸업 질문(선택)"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "simulate_gpa",
+      "description": "u-SAINT academicRecord 기반으로 누적 GPA를 시뮬레이션합니다. SAINT 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "plannedCredits": {
+            "type": "number",
+            "description": "이수 예정 학점"
+          },
+          "plannedGradePointAverage": {
+            "type": "number",
+            "description": "예상 평균 평점(선택)"
+          },
+          "targetGpa": {
+            "type": "number",
+            "description": "목표 GPA(선택). 필요한 평균을 역산"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_library_available_seats",
+      "description": "도서관 전체 열람실(7개)의 예약 가능 좌석을 실시간 조회합니다 (읽기 전용).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_room_available_seats",
+      "description": "특정 열람실의 모든 좌석 현황(available/occupied/away/inactive·좌석번호·잔여 이석시간)을 실시간 조회합니다 (읽기 전용).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "description": "열람실 식별자"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_library_seat_catalog",
+      "description": "도서관 열람실·좌석 배치 정적 카탈로그를 반환합니다 (실시간 현황 아님, 인증 불필요).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_layout": {
+            "type": "boolean",
+            "description": "true이면 텍스트 기반 좌석 배치도 포함"
+          }
+        }
+      }
+    },
+    {
+      "name": "recommend_library_seats",
+      "description": "사용자 선호(창가·콘센트 등)에 따라 현재 예약 가능한 좌석을 순위화해 추천합니다 (읽기 전용).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_my_library_seat",
+      "description": "현재 도서관에서 예약 중인 좌석 정보를 조회합니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "prepare_reserve_library_seat",
+      "description": "도서관 좌석 예약을 준비합니다. 실제 예약은 confirm_action 호출 시 실행됩니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "prepare_cancel_library_seat",
+      "description": "현재 예약된 좌석 반납을 준비합니다. 실제 반납은 confirm_action 호출 시 실행됩니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "prepare_swap_library_seat",
+      "description": "현재 좌석을 반납하고 새 좌석으로 변경을 준비합니다. 실제 변경은 confirm_action 호출 시 실행됩니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "confirm_action",
+      "description": "준비된 사용자 승인 대기 액션(좌석 예약/반납/변경 등)을 최종 확인하고 실행합니다. action_id로 특정 액션 지정 가능(생략 가능).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "description": "prepare 응답의 actionId(선택). 생략 시 현재 대기 중인 단일 액션 실행"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "wait_for_library_seat",
+      "description": "도서관 좌석 대기 의도를 백그라운드로 등록합니다. 등록 자체가 사용자 동의이며, 좌석이 비면 서버가 자동 예약할 수 있습니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_library_wait_status",
+      "description": "최근 도서관 좌석 대기 의도 상태를 조회합니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "cancel_library_wait",
+      "description": "예약 시작 전인 활성 도서관 좌석 대기 의도를 취소합니다. LIBRARY 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_lms_dashboard",
+      "description": "미제출 과제·퀴즈 마감, 학사일정, 진행 중 공지를 한 번에 요약합니다. term_id 생략 시 현재 학기. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "term_id": {
+            "type": "integer",
+            "description": "조회할 학기 ID(선택). 생략 시 현재 학기"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_lms_terms",
+      "description": "사용자의 LMS 등록 학기 목록(id·name·기간·기본 학기 여부)을 반환합니다. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_lms_courses",
+      "description": "LMS 수강 과목을 각 과목의 다운로드 가능한 자료(파일 수·용량·content_id)와 함께 조회합니다. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "term_id": {
+            "type": "integer",
+            "description": "조회할 학기 ID(선택). 생략 시 현재 학기"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "get_my_lms_materials",
+      "description": "지정 LMS 과목들의 주차별 학습 자료(PDF·PPT·DOC·HWP·TXT 등) 목록을 확장자별로 조회합니다. 동영상·오디오 제외. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "term_id": {
+            "type": "integer",
+            "description": "조회할 학기 ID(선택). 생략 시 현재 학기"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "prepare_lms_material_export",
+      "description": "선택한 과목의 LMS 학습 자료 내보내기를 검증하고 대기열 등록을 준비합니다. confirm_lms_material_export로 최종 실행. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "content_ids": {
+            "type": "array",
+            "description": "내보낼 자료의 content_id 목록(get_my_lms_courses 응답에 포함)"
+          },
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "export_all_lms_materials",
+      "description": "현재 학기 전체 과목의 LMS 학습 자료를 일괄 수집해 내보내기 미리보기를 반환합니다. 사용자가 '전체 다운로드'를 명시할 때만 사용. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
+    },
+    {
+      "name": "confirm_lms_material_export",
+      "description": "대기 상태인 LMS 자료 내보내기 액션을 실행 승인합니다. 승인 시 비동기 ZIP 빌드 후 20분 유효 다운로드 링크를 반환합니다. LMS 로그인 필요.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mcp_session_id": {
+            "type": "string"
+          }
+        },
+        "required": ["mcp_session_id"]
+      }
     }
   ],
   "resources": [],
