@@ -100,6 +100,20 @@ public class ActionAudit {
         this.expiredAt = Objects.requireNonNull(expiredAt, "expiredAt");
     }
 
+    /**
+     * Marks a still-PENDING action SUPERSEDED because its owner prepared a newer action.
+     * No-op once the action has left PENDING, so it can never undo an EXECUTING/terminal
+     * state. Reuses {@code expired_at} as the "made-inert at" timestamp — a SUPERSEDED row
+     * is, like EXPIRED, a PENDING action that was never confirmed.
+     */
+    public void supersede(Instant supersededAt) {
+        if (status != ActionStatus.PENDING) {
+            return;
+        }
+        this.status = ActionStatus.SUPERSEDED;
+        this.expiredAt = Objects.requireNonNull(supersededAt, "supersededAt");
+    }
+
     public Long getId() {
         return id;
     }

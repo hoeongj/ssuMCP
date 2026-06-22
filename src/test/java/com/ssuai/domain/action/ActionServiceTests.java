@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 
@@ -121,6 +123,72 @@ class ActionServiceTests {
         assertThat(stale.getStatus()).isEqualTo(ActionStatus.EXPIRED);
         assertThat(stale.getExpiredAt()).isEqualTo(NOW);
         verify(repository).saveAll(List.of(stale));
+    }
+
+    @Test
+    void createPendingActionSupersedesPriorPendingOfSameOwner() {
+        // prepare A then prepare B for the same owner: B's prepare must first move every
+        // still-PENDING action of that owner to SUPERSEDED so it can never be confirmed later.
+        when(repository.markPendingSuperseded(eq(STUDENT_ID), eq(NOW))).thenReturn(1);
+
+        ActionAudit b = service.createPendingAction(
+                STUDENT_ID, ACTION_TYPE, new LibraryReservationRequest(202L));
+
+        verify(repository).markPendingSuperseded(STUDENT_ID, NOW);
+        assertThat(b.getStatus()).isEqualTo(ActionStatus.PENDING);
+        // Supersede is metered, and it runs before the new row is persisted.
+        assertCounter("superseded");
+        assertCounter("prepared");
+    }
+
+    @Test
+    void claimPendingActionByIdMovesOwnedPendingActionToExecuting() {
+        ActionAudit owned = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}", NOW);
+        ReflectionTestUtils.setField(owned, "id", 55L);
+        when(repository.lockByIdAndStudentIdAndStatus(
+                eq(55L), eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of(owned));
+
+        ActionAudit claimed = service.claimPendingActionById(STUDENT_ID, 55L);
+
+        assertThat(claimed.getStatus()).isEqualTo(ActionStatus.EXECUTING);
+        assertThat(claimed.getConfirmedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void claimPendingActionByIdThrowsWhenIdNotOwnedByCaller() {
+        // Wrong owner / unknown id: the ownership-filtered locked query returns nothing.
+        when(repository.lockByIdAndStudentIdAndStatus(
+                eq(999L), eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.claimPendingActionById(STUDENT_ID, 999L))
+                .isInstanceOf(ActionService.NoPendingActionException.class);
+    }
+
+    @Test
+    void claimPendingActionByIdThrowsAndExpiresWhenPastTtl() {
+        ActionAudit stale = ActionAudit.pending(
+                STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}",
+                NOW.minus(ActionService.ACTION_TTL).minusSeconds(1));
+        ReflectionTestUtils.setField(stale, "id", 66L);
+        when(repository.lockByIdAndStudentIdAndStatus(
+                eq(66L), eq(STUDENT_ID), eq(ActionStatus.PENDING), any(Pageable.class)))
+                .thenReturn(List.of(stale));
+
+        assertThatThrownBy(() -> service.claimPendingActionById(STUDENT_ID, 66L))
+                .isInstanceOf(ActionService.ActionExpiredException.class);
+        assertThat(stale.getStatus()).isEqualTo(ActionStatus.EXPIRED);
+    }
+
+    @Test
+    void findActivePendingActionsReturnsAllPendingForOwner() {
+        ActionAudit a = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{}", NOW);
+        when(repository.findAllByStudentIdAndStatus(STUDENT_ID, ActionStatus.PENDING))
+                .thenReturn(List.of(a));
+
+        assertThat(service.findActivePendingActions(STUDENT_ID)).containsExactly(a);
+        verify(repository, never()).findTopByStudentIdAndStatusOrderByCreatedAtDesc(any(), any());
     }
 
     private void assertCounter(String status) {

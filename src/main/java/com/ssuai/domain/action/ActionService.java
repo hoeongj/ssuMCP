@@ -47,10 +47,22 @@ public class ActionService {
         this.meterRegistry = new SimpleMeterRegistry();
     }
 
+    /**
+     * Prepares a new PENDING action for {@code studentId}. Before inserting it, every prior
+     * still-PENDING action of the same owner is atomically marked SUPERSEDED (ADR 0055) so a
+     * later confirm can never execute a stale request the user did not re-approve. After this
+     * call the owner has exactly one active PENDING action: the one returned here.
+     */
     @Transactional
     public ActionAudit createPendingAction(String studentId, String actionType, Object payload) {
         String serialized = serialize(payload);
-        ActionAudit action = ActionAudit.pending(studentId, actionType, serialized, clock.instant());
+        Instant now = clock.instant();
+        int superseded = repository.markPendingSuperseded(studentId, now);
+        if (superseded > 0) {
+            meterRegistry.counter("library.action", "action_type", actionType, "status", "superseded")
+                    .increment(superseded);
+        }
+        ActionAudit action = ActionAudit.pending(studentId, actionType, serialized, now);
         ActionAudit saved = repository.save(action);
         count(actionType, "prepared");
         return saved;
@@ -59,6 +71,16 @@ public class ActionService {
     @Transactional(readOnly = true)
     public Optional<ActionAudit> findPendingAction(String studentId) {
         return repository.findTopByStudentIdAndStatusOrderByCreatedAtDesc(studentId, ActionStatus.PENDING);
+    }
+
+    /**
+     * Returns all still-PENDING actions of {@code studentId}. Post-supersede a well-behaved
+     * owner has 0 or 1; more than one is only reachable through a concurrent-prepare race and
+     * is the signal the no-id confirm path uses to refuse rather than guess which to execute.
+     */
+    @Transactional(readOnly = true)
+    public List<ActionAudit> findActivePendingActions(String studentId) {
+        return repository.findAllByStudentIdAndStatus(studentId, ActionStatus.PENDING);
     }
 
     /**
@@ -75,6 +97,38 @@ public class ActionService {
     public ActionAudit claimPendingAction(String studentId) {
         ActionAudit action = repository
                 .lockByStudentIdAndStatus(studentId, ActionStatus.PENDING, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElseThrow(NoPendingActionException::new);
+        Instant now = clock.instant();
+        if (isExpired(action, now)) {
+            action.expire(now);
+            repository.save(action);
+            count(action.getActionType(), "expired");
+            throw new ActionExpiredException();
+        }
+        action.markExecuting(now);
+        ActionAudit saved = repository.save(action);
+        count(action.getActionType(), "executing");
+        return saved;
+    }
+
+    /**
+     * Ownership-enforced explicit-id claim. Locks and moves to EXECUTING the action with the
+     * given {@code actionId} <em>only</em> when it belongs to {@code studentId} and is still
+     * PENDING and not past its TTL. There is deliberately no fallback to "confirm the latest
+     * action": a wrong owner, an unknown id, or an already-executed / superseded / expired row
+     * raises an exception so confirm_action can surface a clear error and never execute a
+     * different action than the one the caller targeted.
+     *
+     * @throws NoPendingActionException if no PENDING action with that id is owned by the caller
+     * @throws ActionExpiredException   if the targeted action is owned and PENDING but past TTL
+     *                                  (it is marked EXPIRED before throwing)
+     */
+    @Transactional
+    public ActionAudit claimPendingActionById(String studentId, Long actionId) {
+        ActionAudit action = repository
+                .lockByIdAndStudentIdAndStatus(actionId, studentId, ActionStatus.PENDING, PageRequest.of(0, 1))
                 .stream()
                 .findFirst()
                 .orElseThrow(NoPendingActionException::new);

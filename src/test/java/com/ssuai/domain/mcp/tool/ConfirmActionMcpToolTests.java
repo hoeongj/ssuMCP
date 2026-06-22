@@ -2,6 +2,7 @@ package com.ssuai.domain.mcp.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -80,7 +82,7 @@ class ConfirmActionMcpToolTests {
                         LibraryReservationIntentStatus.SUCCEEDED,
                         "room 74 reserved, chargeId=1966693, time=14:59~18:59")));
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data())
@@ -104,7 +106,7 @@ class ConfirmActionMcpToolTests {
                         LibraryReservationIntentStatus.FAILED_RACE,
                         "Seat was already taken upstream.")));
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data()).contains("이미 선점").contains("intentId=12");
@@ -120,7 +122,7 @@ class ConfirmActionMcpToolTests {
         doThrow(new LibrarySeatNotAvailableException("warning.smuf.notAvailableState"))
                 .when(reservationConnector).discharge(TOKEN, 1966693L);
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data())
@@ -136,7 +138,7 @@ class ConfirmActionMcpToolTests {
         when(actionService.payload(action, LibraryCancelRequest.class))
                 .thenReturn(new LibraryCancelRequest(1966693L, 54, 926L));
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         verify(reservationConnector).discharge(TOKEN, 1966693L);
@@ -152,7 +154,7 @@ class ConfirmActionMcpToolTests {
         doThrow(new LibrarySeatNotAvailableException("warning.smuf.notAvailableState"))
                 .when(reservationConnector).discharge(TOKEN, 1966693L);
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data())
@@ -178,12 +180,93 @@ class ConfirmActionMcpToolTests {
                         58,
                         3179L));
 
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID);
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         verify(seatEventPublisher).swapDischarge(54, 926L);
         verify(seatEventPublisher).swapReserve(58, 3179L);
         verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_SUCCESS), any());
+    }
+
+    @Test
+    void explicitActionIdConfirmsThatExactAction() {
+        // Caller passes a specific action_id; it is owned + PENDING, so it is claimed by id
+        // (not by "latest") and executed.
+        ActionAudit action = ActionAudit.pending(SESSION_KEY, LibraryCancelMcpTool.ACTION_TYPE, "{}", Instant.now());
+        ReflectionTestUtils.setField(action, "id", ACTION_ID);
+        when(actionService.claimPendingActionById(SESSION_KEY, ACTION_ID)).thenReturn(action);
+        when(actionService.payload(action, LibraryCancelRequest.class))
+                .thenReturn(new LibraryCancelRequest(1966693L, 54, 926L));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, ACTION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        verify(reservationConnector).discharge(TOKEN, 1966693L);
+        verify(actionService).completeAction(eq(action), eq(ActionService.OUTCOME_SUCCESS), any());
+        // No-id "latest" lookup must NOT be consulted when an explicit id is given.
+        verify(actionService, never()).findActivePendingActions(any());
+    }
+
+    @Test
+    void explicitActionIdNotOwnedIsDeniedWithoutExecuting() {
+        // The id belongs to another session/owner (or is unknown): the ownership-filtered
+        // locked claim finds nothing and raises NoPendingActionException. confirm_action must
+        // deny with a clear error and must NEVER execute a different action.
+        long foreignActionId = 999L;
+        when(actionService.claimPendingActionById(SESSION_KEY, foreignActionId))
+                .thenThrow(new ActionService.NoPendingActionException());
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, foreignActionId);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("본인 세션의 액션이 아닙니다");
+        // Executor/connector untouched: no cross-owner or fallback execution.
+        verify(reservationConnector, never()).discharge(any(), anyLong());
+        verify(reservationConnector, never()).reserve(any(), any(LibraryReservationRequest.class));
+        verify(intentTransactions, never()).createImmediateReservation(any(), anyLong(), anyLong(), any());
+        verify(actionService, never()).claimPendingAction(any());
+    }
+
+    @Test
+    void explicitActionIdExpiredIsDeniedWithoutExecuting() {
+        // Owned + PENDING but past its TTL: the locked claim marks it EXPIRED and throws.
+        when(actionService.claimPendingActionById(SESSION_KEY, ACTION_ID))
+                .thenThrow(new ActionService.ActionExpiredException());
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, ACTION_ID);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("만료");
+        verify(reservationConnector, never()).discharge(any(), anyLong());
+        verify(reservationConnector, never()).reserve(any(), any(LibraryReservationRequest.class));
+    }
+
+    @Test
+    void noIdWithZeroPendingReturnsNothingToConfirm() {
+        when(actionService.findActivePendingActions(SESSION_KEY)).thenReturn(List.of());
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("대기 중인 액션이 없습니다");
+        verify(actionService, never()).claimPendingActionById(any(), any());
+        verify(reservationConnector, never()).discharge(any(), anyLong());
+    }
+
+    @Test
+    void noIdWithMultiplePendingRefusesAndAsksForActionId() {
+        // Only reachable via a concurrent-prepare race; confirm must refuse, not guess.
+        ActionAudit a = ActionAudit.pending(SESSION_KEY, LibraryCancelMcpTool.ACTION_TYPE, "{}", Instant.now());
+        ActionAudit b = ActionAudit.pending(SESSION_KEY, LibraryReservationMcpTool.ACTION_TYPE, "{}", Instant.now());
+        when(actionService.findActivePendingActions(SESSION_KEY)).thenReturn(List.of(a, b));
+
+        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("action_id를 지정");
+        verify(actionService, never()).claimPendingActionById(any(), any());
+        verify(reservationConnector, never()).discharge(any(), anyLong());
+        verify(reservationConnector, never()).reserve(any(), any(LibraryReservationRequest.class));
     }
 
     private ActionAudit reservationAction() {
@@ -196,9 +279,9 @@ class ConfirmActionMcpToolTests {
     private ActionAudit claimableAction(String actionType) {
         ActionAudit action = ActionAudit.pending(SESSION_KEY, actionType, "{}", Instant.now());
         ReflectionTestUtils.setField(action, "id", ACTION_ID);
-        when(actionService.findPendingAction(SESSION_KEY)).thenReturn(Optional.of(action));
-        when(actionService.isExpired(action)).thenReturn(false);
-        when(actionService.claimPendingAction(SESSION_KEY)).thenReturn(action);
+        // No-id confirm path: exactly one active pending action, claimed by its id.
+        when(actionService.findActivePendingActions(SESSION_KEY)).thenReturn(List.of(action));
+        when(actionService.claimPendingActionById(SESSION_KEY, ACTION_ID)).thenReturn(action);
         return action;
     }
 
