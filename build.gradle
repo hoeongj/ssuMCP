@@ -44,10 +44,10 @@ dependencies {
     // so override every SDK artifact in the graph via constraints to avoid a split-version SDK.
     // The SSE/transport fix lives in mcp-spring-webmvc, not mcp-core, so all four must move.
     constraints {
-        implementation 'io.modelcontextprotocol.sdk:mcp-core:0.18.3'
-        implementation 'io.modelcontextprotocol.sdk:mcp:0.18.3'
-        implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:0.18.3'
-        implementation 'io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.18.3'
+        implementation 'io.modelcontextprotocol.sdk:mcp-core:2.0.0'
+        implementation 'io.modelcontextprotocol.sdk:mcp:2.0.0'
+        implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.0'
+        implementation 'io.modelcontextprotocol.sdk:mcp-spring-webmvc:2.0.0'
     }
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
