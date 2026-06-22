@@ -209,7 +209,14 @@ public class LibraryReservationWebController {
     public SseEmitter intentEvents(
             @PathVariable Long intentId,
             HttpServletRequest httpRequest) {
-        requireLibrarySession(httpRequest);
+        String sessionKey = requireLibrarySession(httpRequest);
+        // IDOR guard (Codex #7): a valid library session alone is NOT enough — the intentId must
+        // belong to THIS caller's session. Otherwise a guessable/sequential intentId lets one
+        // user subscribe to another user's reservation result/seat. Reject with 404 (not 403) so
+        // we never confirm whether the intentId exists, and crucially do NOT open the stream.
+        if (!intentTransactions.isOwnedBySession(intentId, sessionKey)) {
+            throw new ApiException(ErrorCode.NOT_FOUND);
+        }
         return intentSseRegistry.createEmitter(intentId);
     }
 

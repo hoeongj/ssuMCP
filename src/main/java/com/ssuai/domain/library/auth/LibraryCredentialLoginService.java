@@ -63,8 +63,27 @@ public class LibraryCredentialLoginService {
      * Calls pyxis-api login with a password already encrypted in the oasis format.
      */
     public void login(String sessionKey, String loginId, String encryptedPassword) {
+        String accessToken = authenticate(loginId, encryptedPassword);
+        bind(sessionKey, accessToken);
+    }
+
+    /**
+     * Authenticates against pyxis-api and returns the captured {@code accessToken} WITHOUT
+     * binding it to any session. Split out from {@link #login} so the servlet-session caller can
+     * rotate its session id between a successful authentication and the session→token binding
+     * (session-fixation hardening, Codex #8). Throws {@link LibraryAuthRequiredException} on
+     * invalid credentials.
+     */
+    public String authenticate(String loginId, String encryptedPassword) {
         String body = callLogin(loginId, encryptedPassword);
-        String accessToken = extractAccessToken(body);
+        return extractAccessToken(body);
+    }
+
+    /**
+     * Binds an already-authenticated {@code accessToken} to {@code sessionKey}. Kept separate
+     * from {@link #authenticate} so the binding can target a freshly rotated session id.
+     */
+    public void bind(String sessionKey, String accessToken) {
         sessionStore.put(sessionKey, accessToken);
         log.info("library credential login ok: sessionKey={} tokenFp={}",
                 LibrarySessionStore.fingerprint(sessionKey),
