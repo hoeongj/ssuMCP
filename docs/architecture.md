@@ -197,6 +197,10 @@ com.ssuai
 ├── global
 │   ├── auth            // JwtProvider, JwtProperties, JwtTokenType, JwtClaims, InvalidJwtException
 │   ├── config          // @Configuration 클래스 — CORS, OpenAPI, TraceId filter, RestClient, JacksonConfig
+│   │                   // ProdConfigValidator — @Profile("prod") 부팅 시 prod-critical 설정 fail-fast (ADR 0058)
+│   ├── security        // 서블릿 필터 보안 계층 (2026-06 remediation)
+│   │                   // CsrfOriginGuardFilter — /api/* 상태변경 Origin/Referer 검증 (ADR 0057)
+│   │                   // RateLimitFilter + RateLimitProperties + IpRateLimiter + ClientIpResolver — per-IP 횟수 제한 (ADR 0061)
 │   ├── exception       // ConnectorException 계층, ApiException, GlobalExceptionHandler
 │   └── response        // ApiResponse<T> envelope, ErrorResponse
 └── domain
@@ -846,7 +850,9 @@ domain.auth.mcp
 ├── McpAuthStateEntry     // one-time login state token: state, mcpSessionId, provider, expiresAt
 ├── McpAuthSessionStore   // PostgreSQL 영속 세션 스토어. transport/oauth 바인딩 포함. TTL 설정 가능(기본 7d)
 ├── McpAuthStateStore     // one-time state store. max 1000 states, TTL 10min, replay-protected
-├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession, findByTransportId, findByOauthSubject, bindTransportId, bindOauthSubject
+├── McpAuthService        // interface: find, getOrCreate, generateState, consumeState, linkProvider, unlinkProvider, invalidateSession, findByTransportId, findByOauthSubject, bindTransportId, bindOrVerifyOauthSubject
+│                          // bindOrVerifyOauthSubject(sessionId, sub): null→bind / 일치→true / 불일치→false. Tier2/3 해소 시 소유권 가드 (ADR 0056)
+│                          // consumeState는 JPQL deleteIfActive 행수 claim으로 1회만 소비 (find-then-delete race 제거, ADR 0056)
 ├── McpAuthUrlFactory     // buildLoginUrl / buildCallbackUrl per provider
 ├── McpSaintAuthController // GET /api/mcp/auth/saint/start → SmartID redirect
 │                          // GET /api/mcp/auth/saint/callback → SaintSsoService → linkProvider
@@ -860,6 +866,8 @@ domain.auth.mcp
 domain.mcp.tool
 ├── McpAuthMcpTools  // @Tool get_auth_status, start_auth, logout_provider, logout_all
 ├── McpAuthHelper    // 3-tier resolveSession() — OAuth sub → transport id → opaque mcp_session_id; principalKey() + buildAuthRequired() factory
+│                    // resolvePrincipal() — 해소된 세션을 (sessionId, studentId, sessionKey) principal로 묶어 반환; Tier2/3는 bindOrVerifyOauthSubject 가드 통과 시에만 반환 (불일치 sub면 세션 미반환, ADR 0056)
+│                    // 개인 도구 OK 응답: McpPrivateToolResponse.ok(canonical sessionId, provider, data) — 입력 인자 echo·provider:null 제거 (ADR 0056)
 ├── SaintScheduleMcpTool   // get_my_schedule(mcp_session_id) → McpPrivateToolResponse<ScheduleResponse>
 ├── SaintGradesMcpTool     // get_my_grades(mcp_session_id)
 ├── LmsAssignmentsMcpTool  // get_my_assignments(mcp_session_id)
@@ -885,6 +893,29 @@ ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`)은 웹 
 LLM provider 순회는 `LlmProviderChain`이 담당한다. `LlmChatService`는 메시지 구성, 도구 호출, 최종 응답 조립에 집중하고, provider order·PUBLIC/PRIVATE fallback·최대 attempt 제한·provider별 Circuit Breaker 상태 확인은 chain으로 위임한다. Circuit Breaker 이름은 `llm-{provider}`이며, OPEN 또는 FORCED_OPEN provider는 사용자 요청 경로에서 예외를 던지지 않고 다음 provider로 skip한다. 모든 provider가 미설정이거나 OPEN이면 기존과 같이 `ChatUnavailableException`으로 귀결된다.
 
 `primaryObjectMapper`는 `global.config.JacksonConfig`에서 항상 등록된다. 이 설정은 Redis JSON payload, REST/MCP DTO, chat DTO 모두에 쓰이는 전역 JSON 정책이므로 `ssuai.connector.chat=llm` 조건부 provider 설정에 묶지 않는다.
+
+### `/api/chat` 챗봇은 read-only (ADR 0060)
+
+`/api/chat`(`LlmChatService`)은 read-only Q&A surface다. `CHAT_EXCLUDED_TOOLS`(13종 = auth 4 + write/confirm 9)를 도구 discovery에서 제외하고 `executeToolCall`에서도 방어적으로 거부하므로, 챗 LLM은 좌석 예약·이석·반납·LMS export·confirm을 실행할 수 없다. 학교 상태를 바꾸는 write 실행은 HITL(human-in-the-loop) 확인이 있는 **ssuAgent** 흐름(`/agent` graph interrupt → 사용자 확인 → `confirm_action` 재개)에만 속한다. 제외 도구 전체 목록은 `docs/mcp-tools.md` 참조.
+
+---
+
+## 15-1. 보안 필터 계층 + 예약 audit SoT (2026-06 remediation)
+
+이번 보안 remediation에서 추가된 횡단(cross-cutting) 컴포넌트와 신뢰성 경계를 한곳에 모은다. 각 결정의 배경·대안·근거는 링크된 ADR에 있다.
+
+**서블릿 필터 보안 계층 (`global.security` / `global.config`):**
+
+| 컴포넌트 | 역할 | ADR |
+|----------|------|-----|
+| `CsrfOriginGuardFilter` | `/api/*` 상태변경(POST/PUT/PATCH/DELETE)에서 Origin(없으면 Referer) origin을 `ssuai.frontend.origin` allowlist와 대조, 불일치 403. Origin·Referer 둘 다 없으면 허용(비브라우저). `/api/mcp/auth/**`·`/mcp`·actuator 제외. SameSite=None 유지. | [0057](adr/0057-csrf-origin-referer-guard.md) |
+| `RateLimitFilter` (+ `RateLimitProperties`·`IpRateLimiter`·`ClientIpResolver`) | `POST /api/library/login`(10/min)·`POST /api/chat`(30/min) per-IP(XFF 좌측) fixed-window, 초과 429+Retry-After. **카운터 per-pod** — 멀티포드는 shared store 필요. | [0061](adr/0061-per-ip-rate-limit-input-caps.md) |
+| `ProdConfigValidator` (`global.config`) | `@Profile("prod")` 부팅 시 DB non-H2·JWT secret·암호화 키·OAuth(RS 활성 시)·LLM 키≥1 검증, 누락 시 startup 실패(fail-open 차단). | [0058](adr/0058-prod-config-fail-fast.md) |
+| `McpAuthHelper.resolvePrincipal` + `bindOrVerifyOauthSubject` | 세션 해소 Tier2/3에서 oauth-sub 소유권 가드(bind-or-verify), 불일치 sub면 세션 미반환(세션 고정/권한 상승 차단). | [0056](adr/0056-mcp-oauth-ownership-guard-state-consume.md) |
+
+**예약 audit 단일 진실원천(SoT) + fail-closed 좌석락 (ADR 0059):**
+
+좌석 예약(intent 큐 경로)에서 종단 audit(`action_audit`)를 쓰는 주체를 **하나로 통일**했다. 동기 confirm 경로(`ConfirmActionMcpTool`/`LibraryReservationWebController`)는 타임아웃을 terminal FAIL이 아닌 비terminal "처리중(PROCESSING)"으로 응답하고 observe-only다. audit 최종 상태는 예약 worker(`LibraryReservationWorker`)가 `LibraryReservationIntentTransactions`의 lock txn 내에서 `ActionService.finalizeFromIntent`(EXECUTING일 때만 1회 멱등)로만 기록한다 → "API는 실패인데 좌석은 예약됨" double-state 제거. Redisson 좌석락 획득 실패는 fail-closed(예약 미호출 + returnToWaiting requeue), swap 부분실패는 원좌석 보상/PARTIAL_FAILURE.
 
 ---
 
