@@ -1,7 +1,9 @@
 package com.ssuai.domain.lms.controller;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -234,6 +236,16 @@ public class LmsExportController {
                         .body(Map.of("status", "FAILED", "message", "파일이 삭제되었거나 존재하지 않습니다."));
             }
 
+            // Path-traversal guard: resolve the canonical real paths of the served file and the
+            // configured export base dir, then require the file to live inside the base (component-wise
+            // Path.startsWith — NOT String.startsWith, which a sibling like "<base>-evil" would pass).
+            // A crafted job.filePath containing "../" cannot escape the export dir and serve arbitrary
+            // files. toRealPath() also resolves symlinks, so a symlinked path can't tunnel out either.
+            if (!isInsideExportBase(file)) {
+                log.warn("LMS export download path escapes export base dir: jobId={} filePath={}", jobId, job.getFilePath());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+
             // Page poll (format=json): report readiness without consuming the one-shot stream.
             if (wantsJsonStatus) {
                 return ResponseEntity.ok(Map.of("status", "READY", "message", "다운로드 준비가 완료되었습니다."));
@@ -242,14 +254,39 @@ public class LmsExportController {
             Resource resource = new FileSystemResource(file);
             String contentDisposition = "attachment; filename=\"lms-materials-" + jobId + ".zip\"";
 
+            // The capability token rides in the URL query string (browser-download constraint).
+            //  - Referrer-Policy: no-referrer → the token URL is never sent as a Referer to any
+            //    third-party resource the download might touch.
+            //  - Cache-Control: no-store + Pragma: no-cache → the tokenised response is never cached
+            //    by browsers/proxies, so the token can't be replayed from a cache.
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                    .header("Referrer-Policy", "no-referrer")
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .header(HttpHeaders.PRAGMA, "no-cache")
                     .contentType(MediaType.parseMediaType("application/zip"))
                     .contentLength(file.length())
                     .body(resource);
         }
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+    }
+
+    /**
+     * True iff {@code file}'s canonical real path is contained within the configured export base
+     * dir. Both sides are canonicalized via {@link Path#toRealPath()} (resolving symlinks and
+     * "../"), then compared component-wise with {@link Path#startsWith}. Any I/O failure (missing
+     * base dir, unreadable path) is treated as "not inside" — fail closed.
+     */
+    private boolean isInsideExportBase(File file) {
+        try {
+            Path base = new File(properties.getTempDir()).toPath().toRealPath();
+            Path target = file.toPath().toRealPath();
+            return target.startsWith(base);
+        } catch (IOException e) {
+            log.warn("LMS export download path containment check failed", e);
+            return false;
+        }
     }
 
     // Helper static class to avoid Optional import conflicts
