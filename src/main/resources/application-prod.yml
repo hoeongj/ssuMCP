@@ -81,6 +81,10 @@ server:
         same-site: none
         secure: true
 
+# Prod recon-surface reduction: turn off OpenAPI docs + Swagger UI entirely
+# (both default-on in base application.yml; left ON in dev/default).
 springdoc:
+  api-docs:
+    enabled: false
   swagger-ui:
     enabled: false
