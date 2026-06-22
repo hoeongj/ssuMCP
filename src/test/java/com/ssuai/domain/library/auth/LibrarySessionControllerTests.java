@@ -69,4 +69,26 @@ class LibrarySessionControllerTests {
         verify(credentialLoginService).bind(boundKey.capture(), org.mockito.ArgumentMatchers.eq("pyxis-token"));
         assertThat(boundKey.getValue()).isNotEqualTo(originalId);
     }
+
+    @Test
+    void credentialLogin_overMaxPasswordReturnsValidationError() throws Exception {
+        // Input size cap (Codex #9): password is bounded at 2000 chars; an over-max
+        // body is rejected by the existing 400 validation handler before authenticate runs.
+        String oversized = "a".repeat(2001);
+        mockMvc.perform(post("/api/library/login")
+                        .contentType("application/json")
+                        .content("{\"loginId\":\"20250001\",\"password\":\"" + oversized + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void credentialLogin_overMaxLoginIdReturnsValidationError() throws Exception {
+        String oversized = "1".repeat(101);
+        mockMvc.perform(post("/api/library/login")
+                        .contentType("application/json")
+                        .content("{\"loginId\":\"" + oversized + "\",\"password\":\"enc-pw\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
 }
