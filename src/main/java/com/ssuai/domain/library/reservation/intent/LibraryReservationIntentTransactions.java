@@ -115,6 +115,25 @@ public class LibraryReservationIntentTransactions {
                 .map(LibraryReservationIntentView::from);
     }
 
+    /**
+     * True only when the intent exists AND its bound {@code sessionKey} matches the caller's
+     * library session (IDOR guard for the wait-events SSE subscribe, Codex #7). The caller's
+     * identity is the same servlet session id the reservation flow keys everything on, so a
+     * guessable/sequential {@code intentId} no longer lets one session subscribe to another's
+     * reservation result. The {@code sessionKey} field is the semantic owner key (it equals
+     * {@code studentId} today but is the binding that survives if those ever diverge). The view
+     * intentionally omits the owner key, so this check runs against the entity here.
+     */
+    @Transactional(readOnly = true)
+    public boolean isOwnedBySession(Long intentId, String sessionKey) {
+        if (intentId == null || sessionKey == null || sessionKey.isBlank()) {
+            return false;
+        }
+        return intentRepository.findSnapshotById(intentId)
+                .map(intent -> sessionKey.equals(intent.getSessionKey()))
+                .orElse(false);
+    }
+
     @Transactional(readOnly = true)
     public boolean hasActiveCompletedImmediateAttemptForSeat(Long seatId) {
         return intentRepository.existsActiveCompletedImmediateAttemptForSeat(

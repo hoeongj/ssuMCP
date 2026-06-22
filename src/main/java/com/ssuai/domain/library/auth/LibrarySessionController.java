@@ -40,8 +40,16 @@ public class LibrarySessionController {
             @Valid @RequestBody LibraryCredentialLoginRequest request,
             HttpServletRequest httpRequest
     ) {
-        String sessionKey = httpRequest.getSession().getId();
-        credentialLoginService.login(sessionKey, request);
+        // Authenticate FIRST, then rotate the servlet session id, then bind the token to the new
+        // id (session-fixation hardening, Codex #8). An attacker-fixed pre-auth JSESSIONID can no
+        // longer be reused post-auth: the authenticated library session lives only under the
+        // rotated id. Rotation happens only after a successful authentication so failed logins
+        // don't churn session ids. We never call getSession() before this point in the request,
+        // so changeSessionId() rotates the same session the binding then resolves through.
+        String accessToken = credentialLoginService.authenticate(request.loginId(), request.password());
+        httpRequest.getSession(); // ensure a session exists before rotating its id
+        String rotatedSessionKey = httpRequest.changeSessionId();
+        credentialLoginService.bind(rotatedSessionKey, accessToken);
         return ApiResponse.success(null);
     }
 

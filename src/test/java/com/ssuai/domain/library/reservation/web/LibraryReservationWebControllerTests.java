@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Duration;
@@ -39,6 +40,7 @@ import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatu
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationRegistrationResult;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @ActiveProfiles("test")
 @WebMvcTest(LibraryReservationWebController.class)
@@ -210,6 +212,30 @@ class LibraryReservationWebControllerTests {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("ACTIVE_WAIT_EXISTS"));
+    }
+
+    @Test
+    void intentEvents_ownerSubscribingToOwnIntent_opensStream() throws Exception {
+        when(intentTransactions.isOwnedBySession(eq(11L), anyString())).thenReturn(true);
+        when(intentSseRegistry.createEmitter(11L)).thenReturn(new SseEmitter());
+
+        mockMvc.perform(get("/api/library/reservations/wait/events/11"))
+                .andExpect(request().asyncStarted());
+
+        verify(intentSseRegistry).createEmitter(11L);
+    }
+
+    @Test
+    void intentEvents_intentNotOwnedByCaller_returns404AndNoStream() throws Exception {
+        // IDOR guard (Codex #7): a valid library session but an intentId owned by someone else
+        // (or unknown) must be rejected as 404 and MUST NOT open the stream.
+        when(intentTransactions.isOwnedBySession(eq(11L), anyString())).thenReturn(false);
+
+        mockMvc.perform(get("/api/library/reservations/wait/events/11"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
+        verify(intentSseRegistry, never()).createEmitter(any());
     }
 
     @Test
