@@ -115,6 +115,7 @@ class LmsExportControllerTests {
         job.markReady(zipFile.getAbsolutePath(), 1, 15L, Instant.now());
 
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(tempDir.getAbsolutePath());
 
         mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
                         .param("token", token))
@@ -122,6 +123,75 @@ class LmsExportControllerTests {
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"lms-materials-" + job.getId() + ".zip\""))
                 .andExpect(content().contentType(MediaType.parseMediaType("application/zip")))
                 .andExpect(content().string("mock-zip-content"));
+    }
+
+    @Test
+    void readyDownloadCarriesNoLeakHeaders() throws Exception {
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        File zipFile = new File(tempDir, "headers.zip");
+        Files.writeString(zipFile.toPath(), "mock-zip-content");
+        job.markReady(zipFile.getAbsolutePath(), 1, 15L, Instant.now());
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(tempDir.getAbsolutePath());
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"));
+    }
+
+    @Test
+    void filePathOutsideExportBaseIsRefused() throws Exception {
+        // A job whose READY filePath resolves OUTSIDE the configured export base dir (e.g. a crafted
+        // "../" escape) must be refused with 404 and never streamed — even though the file exists.
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        // Export base = a subdir of tempDir; the served file sits OUTSIDE it (a sibling under tempDir).
+        File exportBase = new File(tempDir, "export-base");
+        exportBase.mkdirs();
+        File outsideFile = new File(tempDir, "outside-secret.zip");
+        Files.writeString(outsideFile.toPath(), "secret-content");
+        job.markReady(outsideFile.getAbsolutePath(), 1, 14L, Instant.now());
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(exportBase.getAbsolutePath());
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void filePathInsideExportBaseIsServed() throws Exception {
+        // The legitimate counterpart: a file genuinely inside the export base streams fine.
+        String token = "token";
+        String tokenHash = sha256(token);
+        LmsExportJob job = LmsExportJob.createQueued("student1", tokenHash, "[]", Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        File exportBase = new File(tempDir, "export-base-ok");
+        exportBase.mkdirs();
+        File insideFile = new File(exportBase, "inside.zip");
+        Files.writeString(insideFile.toPath(), "legit-content");
+        job.markReady(insideFile.getAbsolutePath(), 1, 13L, Instant.now());
+
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(exportBase.getAbsolutePath());
+
+        mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
+                        .param("token", token))
+                .andExpect(status().isOk())
+                .andExpect(content().string("legit-content"));
     }
 
     @Test
@@ -156,6 +226,7 @@ class LmsExportControllerTests {
         job.markReady(zipFile.getAbsolutePath(), 1, 9L, Instant.now());
 
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(tempDir.getAbsolutePath());
 
         mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
                         .param("token", token)
@@ -178,6 +249,7 @@ class LmsExportControllerTests {
         job.markReady(zipFile.getAbsolutePath(), 1, 16L, Instant.now());
 
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(properties.getTempDir()).thenReturn(tempDir.getAbsolutePath());
 
         mockMvc.perform(get("/api/lms/exports/" + job.getId() + "/download")
                         .param("token", token)

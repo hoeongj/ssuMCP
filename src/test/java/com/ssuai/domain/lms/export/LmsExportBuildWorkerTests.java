@@ -156,4 +156,67 @@ class LmsExportBuildWorkerTests {
         File partialZip = new File(tempDir, job.getId() + ".zip");
         assertThat(partialZip.exists()).isFalse();
     }
+
+    @Test
+    void exceedsMaxBytesPerFileAbortsMidStreamAndCleansUp() throws Exception {
+        // A single oversized remote file must be aborted MID-STREAM by the bounded stream,
+        // before the whole file lands on disk — the hard per-file cap.
+        properties.setMaxBytesPerFile(10L);   // per-file cap
+        properties.setMaxBytesPerExport(1_000_000L); // total is generous; per-file is the limiter
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("c1", 1L, "Math", "big.pdf")
+        ), 0L);
+        String payloadJson = objectMapper.writeValueAsString(payload);
+        LmsExportJob job = LmsExportJob.createQueued(STUDENT_ID, "hash", payloadJson, Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "c1")).thenReturn(Optional.of(new ContentDownloadInfo("c1", "a", "https://url/1")));
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            OutputStream out = invocation.getArgument(2);
+            // 50 bytes written one-by-one; the bounded stream must throw after 10.
+            for (int i = 0; i < 50; i++) {
+                out.write('x');
+            }
+            return null;
+        }).when(connector).download(eq(COOKIES), eq("https://url/1"), any(OutputStream.class));
+
+        worker.poll();
+
+        verify(claimer).saveJob(job);
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        // failureReason is the generic, user-safe limit message (NOT raw exception/stack text).
+        assertThat(job.getFailureReason()).isEqualTo("내보내기 한도가 초과되었습니다.");
+
+        File partialZip = new File(tempDir, job.getId() + ".zip");
+        assertThat(partialZip.exists()).isFalse();
+    }
+
+    @Test
+    void unexpectedFailureStoresGenericMessageNotRawException() throws Exception {
+        // An unexpected exception (raw message would leak internals) must NOT reach failureReason.
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("c1", 1L, "Math", "a.pdf")
+        ), 0L);
+        String payloadJson = objectMapper.writeValueAsString(payload);
+        LmsExportJob job = LmsExportJob.createQueued(STUDENT_ID, "hash", payloadJson, Instant.now(), Instant.now().plusSeconds(600));
+        job.markBuilding();
+
+        String leakyDetail = "secret upstream url https://lms.internal/secret?token=abc123";
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "c1")).thenReturn(Optional.of(new ContentDownloadInfo("c1", "a", "https://url/1")));
+        org.mockito.Mockito.doThrow(new RuntimeException(leakyDetail))
+                .when(connector).download(eq(COOKIES), eq("https://url/1"), any(OutputStream.class));
+
+        worker.poll();
+
+        verify(claimer).saveJob(job);
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).doesNotContain(leakyDetail);
+        assertThat(job.getFailureReason()).isEqualTo("내보내기 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+
+        File partialZip = new File(tempDir, job.getId() + ".zip");
+        assertThat(partialZip.exists()).isFalse();
+    }
 }

@@ -3,7 +3,9 @@ package com.ssuai.domain.lms.export;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.util.HashSet;
@@ -116,19 +118,29 @@ public class LmsExportBuildWorker {
                     String uniquePath = getUniqueZipPath(addedPaths, selection.courseName(), selection.fileName());
                     addedPaths.add(uniquePath.toLowerCase());
 
-                    File singleTemp = File.createTempFile("lms-dl-", ".tmp");
+                    // Per-file cap enforced ahead of the total to keep file-count headroom in the message.
+                    if (actualFileCount + 1 > properties.getMaxFilesPerExport()) {
+                        log.error("Export file count limit blown mid-build: jobId={} files={}", job.getId(), actualFileCount + 1);
+                        throw new ExportLimitExceededException();
+                    }
+
+                    File singleTemp = File.createTempFile("lms-dl-", ".tmp", tempDir);
                     try {
-                        try (FileOutputStream fileOut = new FileOutputStream(singleTemp)) {
-                            connector.download(cookies, downloadInfo.absoluteDownloadUrl(), fileOut);
+                        // Hard per-file byte cap: a BoundedOutputStream aborts the transfer the moment
+                        // the remote file crosses the limit, so a hostile/oversized upstream can never
+                        // fill the export disk (the old post-download length() check only fired after
+                        // the whole file had already landed). The remaining total cap stays below.
+                        long remainingTotal = properties.getMaxBytesPerExport() - actualBytes;
+                        long perFileCap = Math.min(properties.getMaxBytesPerFile(), Math.max(remainingTotal, 0));
+                        try (FileOutputStream fileOut = new FileOutputStream(singleTemp);
+                             BoundedOutputStream boundedOut = new BoundedOutputStream(fileOut, perFileCap)) {
+                            connector.download(cookies, downloadInfo.absoluteDownloadUrl(), boundedOut);
+                        } catch (ExportLimitExceededException limit) {
+                            log.error("Export byte limit blown mid-stream: jobId={} cap={}", job.getId(), perFileCap);
+                            throw limit;
                         }
 
-                        // Check limits during build defensively
                         long currentFileBytes = singleTemp.length();
-                        if (actualFileCount + 1 > properties.getMaxFilesPerExport() ||
-                                actualBytes + currentFileBytes > properties.getMaxBytesPerExport()) {
-                            log.error("Job limits blown mid-build: jobId={} files={} bytes={}", job.getId(), actualFileCount + 1, actualBytes + currentFileBytes);
-                            throw new IllegalStateException("내보내기 한도가 초과되었습니다.");
-                        }
 
                         ZipEntry entry = new ZipEntry(uniquePath);
                         zipOut.putNextEntry(entry);
@@ -148,9 +160,17 @@ public class LmsExportBuildWorker {
             claimer.saveJob(job);
             log.info("LMS material export job completed successfully: jobId={} files={} bytes={}", job.getId(), actualFileCount, actualBytes);
 
+        } catch (ExportLimitExceededException limit) {
+            // Controlled, user-safe message — no internal detail to hide.
+            log.warn("LMS material export job hit a configured limit: jobId={}", job.getId());
+            job.markFailed(limit.getMessage(), Instant.now());
+            claimer.saveJob(job);
+            deletePartialFile(zipFile, job.getId());
         } catch (Exception e) {
+            // Unexpected failure: log the real exception server-side, but NEVER surface
+            // e.getMessage() to the user — it can leak upstream URLs, stack/IO detail, etc.
             log.error("LMS material export job failed: jobId={}", job.getId(), e);
-            job.markFailed("내보내기 생성 도중 오류가 발생했습니다: " + e.getMessage(), Instant.now());
+            job.markFailed("내보내기 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", Instant.now());
             claimer.saveJob(job);
             // A failed job never gets a filePath set, so sweepExpiredJobs cannot reclaim it.
             // Delete the half-written ZIP here to avoid leaking partial files on the export disk.
@@ -216,6 +236,53 @@ public class LmsExportBuildWorker {
             path = cleanCourse + "/" + baseName + "(" + count + ")" + ext;
         }
         return path;
+    }
+}
+
+/**
+ * Signals that a configured export limit (per-file bytes, total bytes, or file count) was hit.
+ * Its message is intentionally user-safe and carries NO internal detail, so the worker can store
+ * it directly into {@code failureReason} without leaking upstream URLs or stack/IO specifics.
+ */
+class ExportLimitExceededException extends RuntimeException {
+    ExportLimitExceededException() {
+        super("내보내기 한도가 초과되었습니다.");
+    }
+}
+
+/**
+ * Caps the number of bytes that may be written through it. As soon as a write would push the
+ * running total past {@code maxBytes}, it throws {@link ExportLimitExceededException} instead of
+ * forwarding the bytes — turning the streaming download into a hard, mid-flight byte cap rather
+ * than an after-the-fact size check.
+ */
+class BoundedOutputStream extends FilterOutputStream {
+    private final long maxBytes;
+    private long written;
+
+    BoundedOutputStream(OutputStream out, long maxBytes) {
+        super(out);
+        this.maxBytes = maxBytes;
+    }
+
+    @Override
+    public void write(int b) throws IOException {
+        ensureCapacity(1);
+        out.write(b);
+        written++;
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        ensureCapacity(len);
+        out.write(b, off, len);
+        written += len;
+    }
+
+    private void ensureCapacity(long incoming) {
+        if (written + incoming > maxBytes) {
+            throw new ExportLimitExceededException();
+        }
     }
 }
 
