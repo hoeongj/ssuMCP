@@ -147,24 +147,23 @@ JVM 재시작
 
 ---
 
-## 5. Redis 미사용 / 미가용 (계획 중 — EPIC 4)
+## 5. Redis 미가용 (EPIC 4 — 출시 완료)
 
 ### 현재 상태
 
-EPIC 4(Redis/Redisson)는 아직 구현되지 않았다. 현재 캐시와 세션은 인프로세스 `ConcurrentHashMap`이다.
+EPIC 4(Redis/Redisson)는 출시되었다 (ADR 0047, 2026-06-19). Redis는 세 가지 역할을 한다:
+1. **분산 좌석 락** (Redisson `RLock`, `RedissonLibraryDistributedLockClient`) — 멀티 팟에서 같은 좌석 동시 reserve 방지
+2. **좌석 L2 캐시** (`RedissonLibraryRoomSeatL2Cache`) — 열람실 좌석 현황 캐싱
+3. **좌석 이벤트 pub/sub** (`RedissonLibrarySeatEventBus`) 및 예약 intent 상태 버스
 
-### 계획된 처리 (EPIC 4 이후)
+### Redis 미가용 시 처리 (실제 동작)
 
-EPIC 4 구현 시 Redis는 두 가지 역할:
-1. **분산 좌석 락** (Redisson `RLock`) — 멀티 팟에서 같은 좌석 동시 reserve 방지
-2. **대기열 ZSET** — 좌석 알림 대기 우선순위
+Redis 연결이 비활성/불가일 때의 graceful degradation:
+- 좌석 락: lock 획득 실패 시 graceful degradation. 락이 죽어도 Postgres `SELECT … FOR UPDATE`가 중복 예약을 막으므로 정합성은 유지된다 (§3, ADR 0047).
+- L2 캐시: `LibraryRoomSeatL2Cache.noop()` 로 폴백 — 캐시 없이 Pyxis 실시간 조회를 그대로 사용 (느리지만 서비스 유지).
+- 이벤트 버스: pub/sub 비활성화 시 SSE 실시간 갱신만 영향받고, 직접 조회·예약은 계속 가능.
 
-**Redis 미가용 시 계획:**
-- 좌석 락: lock 획득 실패 시 `FAILURE_LOCK_UNAVAILABLE`로 graceful degradation
-- 대기열: Redis 없으면 대기열 기능 비활성화 (좌석 직접 예약은 계속 가능)
-- 세션/캐시: Postgres fallback (TTL 짧은 메모리 캐시보다 느리지만 서비스 유지)
-
-현재 단일 팟 배포이므로 Redis 없이도 race 시나리오(§3)는 Postgres `SELECT FOR UPDATE`로 처리 가능.
+단일 팟 배포에서도 Redis 없이 race 시나리오(§3)는 Postgres `SELECT FOR UPDATE`로 처리 가능하며, 멀티 팟에서는 위 분산 락이 추가 직렬화를 제공한다.
 
 ---
 
@@ -178,4 +177,4 @@ EPIC 4 구현 시 Redis는 두 가지 역할:
 | Duplicate confirm | action_audit `SELECT FOR UPDATE` | "already executed" 에러 | 409 or 400 |
 | Same-seat race | Pyxis 예약 실패 | action_audit `FAILURE_RACE` | "좌석이 이미 예약됨" |
 | Worker crash | Postgres 영속 intent | 재시작 후 `getCurrentCharge` 복구 | 지연 상태 확인 가능 |
-| Redis 미가용 | (EPIC 4 이후) | 기능 비활성화 + Postgres fallback | 대기 알림 없음, 직접 예약 가능 |
+| Redis 미가용 | 락/캐시/이벤트 폴백 | L2 캐시 noop + Postgres `SELECT FOR UPDATE` 정합성 유지 | 실시간 갱신만 영향, 직접 예약 가능 |

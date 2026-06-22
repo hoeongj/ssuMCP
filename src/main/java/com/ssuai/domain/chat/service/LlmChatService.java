@@ -249,7 +249,7 @@ public class LlmChatService implements ChatService {
                 String content = index < maxToolCalls()
                         ? executeToolCall(toolCall, studentId)
                         : toolError("한 번에 처리할 수 있는 도구 호출 수를 초과했습니다. 한두 가지씩 나눠서 물어봐 주세요.");
-                messages.add(OpenAiChatCompletionRequest.toolResultMessage(toolCallId, content));
+                messages.add(OpenAiChatCompletionRequest.toolResultMessage(toolCallId, wrapToolResult(content)));
             }
         }
 
@@ -681,6 +681,22 @@ public class LlmChatService implements ChatService {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("도구 인자를 JSON으로 해석하지 못했습니다.", exception);
         }
+    }
+
+    static final String TOOL_RESULT_OPEN = "[TOOL_RESULT]";
+    static final String TOOL_RESULT_CLOSE = "[/TOOL_RESULT]";
+
+    /**
+     * Indirect prompt-injection defense: external/tool-returned content is
+     * untrusted data. It is wrapped in an explicit labeled block so the model
+     * structurally distinguishes data from instructions, reinforcing the
+     * system-prompt policy that any instruction-like text inside a tool result
+     * must be ignored (see {@code SystemPromptBuilder} guideline #10). The data
+     * itself is not altered — only delimited.
+     */
+    static String wrapToolResult(String content) {
+        String body = content == null ? "" : content;
+        return TOOL_RESULT_OPEN + "\n" + body + "\n" + TOOL_RESULT_CLOSE;
     }
 
     private String toolError(String message) {
