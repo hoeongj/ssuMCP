@@ -1,12 +1,15 @@
 services:
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:2.26.8
     ports:
-      - "5678:5678"
+      # Bind to localhost only — this demo has no TLS/ingress in front of it.
+      - "127.0.0.1:5678:5678"
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      # No default — set N8N_PASSWORD in .env (see .env.example). n8n fails to
+      # start if basic auth is active without a password, which is intended.
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?set N8N_PASSWORD in .env}
       - WEBHOOK_URL=http://localhost:5678/
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - SSUAI_API_BASE=https://ssumcp.duckdns.org

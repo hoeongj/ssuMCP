@@ -174,7 +174,11 @@ containerSecurityContext:
   runAsNonRoot: true
   runAsUser: 1001
   allowPrivilegeEscalation: false
+  # readOnlyRootFilesystem intentionally left false: the LMS export worker
+  # writes temp files to the local filesystem before streaming the ZIP.
   readOnlyRootFilesystem: false
+  seccompProfile:
+    type: RuntimeDefault
   capabilities:
     drop:
     - ALL

@@ -35,7 +35,7 @@ cp .env.example .env
 docker compose up -d
 
 # 3. 접속
-# http://localhost:5678  (admin / changeme)
+# http://localhost:5678  (admin / .env의 N8N_PASSWORD)
 
 # 4. 워크플로우 import
 # Settings > Import Workflow > workflows/notice-discord.json
@@ -46,7 +46,7 @@ docker compose up -d
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `N8N_PASSWORD` | `changeme` | n8n 관리자 비밀번호 |
+| `N8N_PASSWORD` | (필수) | n8n 관리자 비밀번호 — 기본값 없음, `.env`에 직접 설정 |
 | `DISCORD_WEBHOOK_URL` | (필수) | Discord Webhook URL |
 | `SSUAI_API_BASE` | `https://ssumcp.duckdns.org` | ssuMCP API 베이스 URL |
 

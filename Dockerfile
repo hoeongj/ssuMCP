@@ -11,7 +11,7 @@
 #     -t ghcr.io/<owner>/ssumcp:<sha> --push .
 
 # ---- rusaint native library stage -----------------------------------------
-FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS rusaint-builder
+FROM --platform=$BUILDPLATFORM ubuntu:22.04@sha256:4f838adc7181d9039ac795a7d0aba05a9bd9ecd480d294483169c5def983b64d AS rusaint-builder  # ubuntu:22.04
 
 ARG RUST_VERSION=1.95.0
 ARG RUSAINT_REF=c2bdcf91c6efb313b971efa2a8a67ed79ad77b4b
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
  && cp "target/$(cat /tmp/rust-target)/release/librusaint_ffi.so" /workspace/librusaint_ffi.so
 
 # ---- Build stage ----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk-jammy AS builder
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk-jammy@sha256:801b7e1a9c4befaf82bf9a2a58025ef43a7694bbc84779187ad0524d84742772 AS builder  # eclipse-temurin:21-jdk-jammy
 WORKDIR /workspace
 
 # Cache Gradle wrapper + dependency resolution before copying sources so
@@ -71,7 +71,7 @@ COPY src ./src
 RUN ./gradlew --no-daemon bootJar -x test
 
 # ---- Runtime stage --------------------------------------------------------
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:21-jre-jammy@sha256:199aebeb3adcde4910695cdebfe782ada38dadb6cc8013159b58d3724451befd AS runtime  # eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 # Run as non-root. curl is used by the HEALTHCHECK below; libssl3 covers

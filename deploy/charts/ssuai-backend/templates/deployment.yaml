@@ -28,6 +28,9 @@ spec:
         {{- include "ssuai-backend.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/part-of: ssuai
     spec:
+      # The Spring app never calls the Kubernetes API, so don't mount the
+      # default ServiceAccount token into the pod (reduces blast radius).
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ .Values.podSecurityContext.terminationGracePeriodSeconds }}
       {{- if .Values.persistence.lmsExport.enabled }}
       securityContext:
