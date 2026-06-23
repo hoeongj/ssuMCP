@@ -359,18 +359,71 @@ public class LibraryReservationWebController {
                     null,
                     result.roomName() + " " + result.seatCode() + " reserved.");
         } catch (LibrarySeatNotAvailableException exception) {
-            log.warn("confirm reservation swap: reserve failed seat={}", request.newSeatId());
+            // Old seat already released, new seat taken by a racer. The upstream has no atomic
+            // swap, so compensate by re-reserving the original seat (mirrors
+            // ConfirmActionMcpTool.compensateSwap — the MCP path had this guard, the web path did not).
+            log.warn("confirm reservation swap: discharge succeeded but new seat unavailable seat={}",
+                    request.newSeatId());
+            return compensateSwap(claimed, token, request, "Target seat became unavailable.");
+        } catch (RuntimeException exception) {
+            log.warn("confirm reservation swap: discharge succeeded but reserve failed seat={}",
+                    request.newSeatId(), exception);
+            return compensateSwap(claimed, token, request, "Swap reserve failed.");
+        }
+    }
+
+    /**
+     * Compensating action for a non-atomic swap. The old seat is already released and the new-seat
+     * reservation failed, so re-reserve the ORIGINAL seat to restore the user's prior state. Mirrors
+     * {@code ConfirmActionMcpTool.compensateSwap} so the web confirm path has the same safety
+     * guarantee as the MCP path (previously the web path returned failure without restoring the
+     * old seat, leaving the user holding NO seat).
+     *
+     * <ul>
+     *   <li>Compensation succeeds → {@code OUTCOME_FAILURE_RACE}; re-publish the original seat as
+     *       reserved (swapDischarge already freed it in the seat map) and tell the user the seat is
+     *       retained.</li>
+     *   <li>Compensation also fails → {@code OUTCOME_PARTIAL_FAILURE}; the user holds no seat and
+     *       must re-reserve (logged at warn for operator visibility).</li>
+     * </ul>
+     */
+    private LibraryReservationConfirmResponse compensateSwap(
+            ActionAudit claimed, String token, LibrarySwapRequest request, String newSeatFailureReason) {
+        if (request.oldSeatId() == null) {
+            // Defensive: prepare always populates oldSeatId; without it we cannot restore.
+            log.warn("confirm reservation swap: cannot compensate, original seat id missing newSeat={}",
+                    request.newSeatId());
+            return partialSwapFailure(claimed);
+        }
+        try {
+            LibraryReservationResult restored = reservationConnector.reserve(
+                    token, new LibraryReservationRequest(request.oldSeatId()));
             actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_RACE,
-                    "Target seat became unavailable.");
+                    "New seat " + newSeatFailureReason + " — original seat re-reserved (compensated).");
+            // swapDischarge already freed the old seat in the map; re-publish it as reserved.
+            seatEventPublisher.swapReserve(
+                    restored.roomId() == null ? request.oldRoomId() : restored.roomId(),
+                    restored.seatId() == null ? request.oldSeatId() : restored.seatId());
             return new LibraryReservationConfirmResponse(
                     "FAILED_RACE",
                     null,
-                    "Target seat became unavailable.");
-        } catch (RuntimeException exception) {
-            log.warn("confirm reservation swap: reserve failed seat={}", request.newSeatId(), exception);
-            actionService.completeAction(claimed, ActionService.OUTCOME_FAILURE_UPSTREAM, "Swap reserve failed.");
-            return new LibraryReservationConfirmResponse("FAILED_UPSTREAM", null, "Swap reserve failed.");
+                    "자리 변경에 실패했지만 기존 좌석은 다시 예약해 그대로 유지했어요. "
+                            + "다른 좌석으로 옮기려면 다시 시도해 주세요.");
+        } catch (RuntimeException compensationFailure) {
+            log.warn("confirm reservation swap: compensation re-reserve of original seat {} FAILED; "
+                            + "user now holds NO seat newSeat={}",
+                    request.oldSeatId(), request.newSeatId(), compensationFailure);
+            return partialSwapFailure(claimed);
         }
+    }
+
+    private LibraryReservationConfirmResponse partialSwapFailure(ActionAudit claimed) {
+        actionService.completeAction(claimed, ActionService.OUTCOME_PARTIAL_FAILURE,
+                "Swap discharge succeeded but new-seat reserve and original-seat restore both failed.");
+        return new LibraryReservationConfirmResponse(
+                "FAILED_UPSTREAM",
+                null,
+                "자리 변경에 실패했고 기존 좌석 복구도 실패했어요. 현재 예약된 좌석이 없으니 다시 예약해 주세요.");
     }
 
     private LibraryReservationPrepareResponse prepareReserve(String sessionKey, LibraryReservationPrepareRequest request) {
