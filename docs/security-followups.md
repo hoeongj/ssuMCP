@@ -78,7 +78,29 @@
 
 ## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N)
 
-- **무엇**: ssuAgent `/agent` 엔드포인트 인증을 **활성화**. opt-in 코드는 이미 머지됨(`AGENT_API_KEY` 설정 시에만 동작, 미설정=현행 → prod 안 깨짐, ssuAgent PR#12 `408a9e7`).
-- **왜 보류**: 활성화는 양쪽 배포에 env-var를 동시에 넣어야 한다 — 한쪽만 설정하면 호출이 깨진다.
-- **권장 접근**: `AGENT_API_KEY`를 **ssuAgent와 ssuAI 양쪽에 동일 값**으로 설정 → 동시 롤아웃.
-- **진행에 필요한 것**: 양쪽 env-var 설정(prod env-var 변경 = 사용자 확인 필요, 철칙 3), 동시 배포 윈도우.
+- **무엇**: ssuAgent `/agent` 엔드포인트 **API 키 인증을 활성화**. opt-in 코드 머지됨(`AGENT_API_KEY` 설정 시에만 동작, 미설정=현행, `408a9e7`).
+- **2026-06-23 갱신**: 비용/DoS 즉시 위험(무 rate-limit·무 크기상한·무 에러비노출·CORS `*`)은 **W4 `0dd88c2`(ADR0009)로 해소** — slowapi per-IP rate-limit + message 크기상한 + 에러 비노출 + CORS methods 축소. **남은 것은 API 키 인증 활성화뿐.**
+- **왜 보류**: 브라우저(ssuAI)가 `/agent/*`를 직접 호출하므로 키를 클라에 두면 노출됨. 안전하려면 **ssuAI Next Route Handler 프록시**(서버사이드 키 주입)가 선결 + 양쪽 동시 배포.
+- **권장 접근**: ssuAI에 `/api/agent/*` Route Handler 프록시 신설(서버에서만 `AGENT_API_KEY` 주입) → ssuAgent `AGENT_API_KEY` 설정 → 동시 롤아웃.
+- **진행에 필요한 것**: Next 프록시 구현 + 양쪽 env-var(prod 변경=사용자 확인, 철칙 3) + 동시 배포 윈도우.
+
+## 12. ssuAgent 대화 thread 인증 바인딩 (S4, 2026-06-23 신규)
+
+- **무엇**: ssuAgent `thread_id`(클라 제공)가 LangGraph 체크포인트 키인데 인증·소유권 바인딩이 없다(`main.py`). 대화 기밀성이 thread_id 비밀성 + TLS에만 의존.
+- **왜 보류**: 근본 차단은 `/agent` 인증(#11)이 활성화돼야 thread_id를 호출자 신원에 바인딩할 수 있다 → #11과 한 묶음. 완화: ssuAI가 `crypto.randomUUID()`(122bit)로 생성해 추측 난이도 높음.
+- **권장 접근**: #11 인증 활성화 시 thread_id를 호출자 신원(키/세션)에 바인딩 → IDOR 원천 차단. cf. ssuMCP는 #1에서 `(owner, conversationId)` 복합키로 해결.
+- **진행에 필요한 것**: #11 선행.
+
+## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규)
+
+- **무엇**: `RealNoticeConnector.connect()`가 임의 URL을 `Jsoup.connect()`로 fetch — `scatch.ssu.ac.kr` 등 학교 도메인 allowlist 없음. 외부 임의 http/https 도달 가능(서버를 요청 프록시로 악용·블라인드 포트스캔 오라클).
+- **왜 보류(부분 완화)**: 현 prod 배포에서 `file://`·메타데이터(169.254)·루프백·사설대역은 egress/컨테이너 격리로 차단됨(Critical 아님). 코드레벨 allowlist는 미적용.
+- **권장 접근**: `connect()`에서 host를 학교 도메인 strict allowlist(`ssu.ac.kr` 및 `.ssu.ac.kr` 서브도메인 — `host.equals(d) || host.endsWith("."+d)`)와 대조 후에만 fetch + 사설/링크로컬 대역 코드레벨 차단(defense-in-depth) + 리다이렉트 호스트 재검증.
+- **진행에 필요한 것**: 허용 도메인 목록 확정(공지 출처 enumerate).
+
+## 14. 도서관 debug/내부 카운터 노출 (M2, 2026-06-23 신규)
+
+- **무엇**: `get_library_seat_catalog(debug=true)`가 `captureNotes`(내부 백엔드명 Pyxis·미완 TODO·스크린샷 수집방법)를 누출 — `debug`가 public tool 파라미터라 누구나 true. `recommend_library_seats`가 `liveSeatItemsSeen` 등 내부 카운터 4종 상시 노출.
+- **왜 보류**: 저민감도(운영 시그널)지만 정보노출. 응답 record 필드 제거는 계약 변경(ssuAI 미사용 확인됨 → 안전하나 별도 검증 권장).
+- **권장 접근**: `debug`를 tool 파라미터에서 빼고 서버 env(`SSU_DEBUG`)로 게이팅 + `recommend_library_seats` 내부 카운터 4종을 응답에서 제거(`LibrarySeatRecommendationResponse`, ssuAI grep 사용처 0건 확인됨).
+- **진행에 필요한 것**: 없음(작은 변경) — 후속 배치에서 처리.
