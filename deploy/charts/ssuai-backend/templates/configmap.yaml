@@ -37,6 +37,8 @@ data:
   SSUAI_LLM_MAX_TOOL_CALLS: {{ .Values.env.llmMaxToolCalls | quote }}
   SSUAI_ACADEMIC_EMBEDDING_ENABLED: {{ .Values.env.academicEmbeddingEnabled | quote }}
   SSUAI_ACADEMIC_EMBEDDING_MODEL: {{ .Values.env.academicEmbeddingModel | quote }}
+  SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE: {{ .Values.env.academicEmbeddingBatchSize | quote }}
+  SSUAI_ACADEMIC_EMBEDDING_BATCH_INTERVAL_MS: {{ .Values.env.academicEmbeddingBatchIntervalMs | quote }}
   SSUAI_REDIS_HOST: {{ default (printf "%s-redis" (include "ssuai-backend.fullname" .)) .Values.env.redisHost | quote }}
   SSUAI_REDIS_PORT: {{ .Values.env.redisPort | quote }}
   SSUAI_REDIS_TIMEOUT: {{ .Values.env.redisTimeout | quote }}

@@ -60,15 +60,20 @@ env:
   # embedding API is unreachable.
   academicEmbeddingEnabled: "true"
   # Model choice (re-verified 2026-06-23 via direct OpenAI-compat /embeddings calls):
-  # - gemini-embedding-001: 96-input batch -> 200; 429 recovers in ~11s. The
-  #   2026-06-11 "quota stuck at 0" state had recovered by 2026-06-23, so with the
-  #   15s batch pacing + 30s retry backoff below the 216-chunk corpus embeds.
-  # - gemini-embedding-2-preview: tighter free-tier quota (value 100, 429 recovers
-  #   in ~52s) -> the corpus perpetually 429'd -> embeddingActive stayed false
-  #   (dormant hybrid RAG, the 2026-06-23 symptom).
+  # - gemini-embedding-001 (GA): the 2026-06-11 "quota stuck at 0" had recovered
+  #   by 2026-06-23. Free tier ~100 inputs/min, so the batch pacing (below) must
+  #   keep each window under that, or large batches 429.
+  # - gemini-embedding-2-preview: tighter quota (value 100, 429 recovers ~52s) ->
+  #   the corpus perpetually 429'd -> embeddingActive false (dormant hybrid RAG,
+  #   the 2026-06-23 symptom).
   # - text-embedding-004 -> 404 (deprecated); gemini-embedding-2 (no -preview) ->
   #   wrong model ID. See ADR 0065 / TROUBLESHOOTING 사건 19.
   academicEmbeddingModel: "gemini-embedding-001"
+  # Free-tier ~100 inputs/min: the default 96-input batches 15s apart send
+  # ~192/min -> 429 and the 216-chunk corpus never embeds. 72 x 3 batches paced
+  # 65s apart keeps each quota window under the limit so it actually embeds.
+  academicEmbeddingBatchSize: "72"
+  academicEmbeddingBatchIntervalMs: "65000"
   redisHost: ""
   redisPort: "6379"
   redisTimeout: 500ms
