@@ -4612,8 +4612,11 @@ prod pod에서 **96-input 배치**(prod batch-size)를 preview로 호출 → **H
 ### 핵심 파일 / 커밋
 `AcademicEmbeddingClient.java`(로깅)·`application.yml`·`deploy/charts/ssuai-backend/{values.yaml,templates/configmap.yaml}`(모델+배치). 커밋 `eafeaac`(W5) + `e94927e`(배치 페이싱). ADR 0065.
 
-### 검증 / 상태
-001 라이브 200 확인. 배포 후 retry 로직이 정상 작동(429 감지→백오프 재시도, 이전 generic 실패와 대비). **코퍼스 워밍은 깨끗한 quota 창 필요** — 당일 진단 호출과 반복 pod 워밍으로 free-tier quota가 일시 소진된 상태라, 워밍은 **클러스터의 6시간 스케줄 refresh가 quota 회복 시 자율 완성**(prod 클러스터는 로컬 머신과 무관하게 동작). 코드·설정은 배포 완료. lexical vs hybrid 검색품질 벤치는 코퍼스 워밍 후 docs에 기록 예정.
+### 검증 / 상태 (정직한 한계 — 미검증)
+001 단건 라이브 200 + retry 로직 정상 작동(429 감지→백오프, 이전 generic 실패와 대비) 확인. **그러나 코퍼스 워밍은 이 세션에서 검증하지 못했다 — prod는 현재 lexical-only이고 `embeddingUsed:true`를 한 번도 관측하지 못했다.** 당일 진단 호출 + 반복 pod 워밍으로 free-tier quota가 소진돼, 깨끗한 재시도(180s 대기 + pod 재시작) 2회 모두 429로 실패.
+- **중요 — all-or-nothing**: `AcademicEmbeddingClient.embed()`는 한 배치라도 재시도(3회)를 소진하면 216청크 refresh **전체가 빈 결과를 반환해 아무것도 영속하지 않는다**. 따라서 "다음 스케줄 refresh가 자율 워밍한다"는 **단일 refresh가 3배치를 모두 깨끗한 quota 창에 안착**시켜야 성립 — 가능성은 있으나 **미검증**이며 quota가 계속 빡빡하면 실패가 반복될 수 있다.
+- **검증/폴백(quota 리셋 후)**: `search_academic_policy_sources` → `embeddingUsed` 확인. 여전히 `false`면 자율 워밍이 안 되는 것 → 더 작은 배치 + **증분 영속**(배치 단위 부분 저장, 현재 all-or-nothing 구조 개선)이 필요. lexical vs hybrid 벤치는 워밍 성공 후로 보류.
+- 코드·설정 자체는 배포 완료(모델 001·페이싱·로깅). prod 기능은 lexical-only로 정상 동작 중(degrade이지 장애 아님).
 
 ### 포트폴리오 포인트
 - "조용히 죽은 헤드라인 기능"을 가설 4개(플래그/모델/egress/quota)를 **라이브로 하나씩 배제**해 quota로 특정. **관측성(예외 본문 로깅) 부재가 미진단의 직접 원인**이라 로깅을 함께 고침.
