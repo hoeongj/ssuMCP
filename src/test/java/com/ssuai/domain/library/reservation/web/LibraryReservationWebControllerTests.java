@@ -35,6 +35,7 @@ import com.ssuai.domain.library.recommendation.LibrarySeatRecommendationService;
 import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
+import com.ssuai.domain.library.reservation.LibrarySwapRequest;
 import com.ssuai.domain.library.reservation.intent.LibraryIntentSseRegistry;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
@@ -175,6 +176,57 @@ class LibraryReservationWebControllerTests {
 
         verify(actionService, never()).completeAction(any(), any(), any());
         verify(reservationConnector, never()).reserve(any(), any());
+    }
+
+    @Test
+    void confirmSwap_newSeatFails_compensatesByReReservingOriginalSeat() throws Exception {
+        // discharge(old) succeeds, reserve(new) fails → controller must re-reserve the ORIGINAL
+        // seat (compensation) so the user is not left holding no seat. Previously the web path
+        // returned failure without restoring the old seat.
+        ActionAudit pending = pendingAction("LIBRARY_SEAT_SWAP");
+        ActionAudit claimed = pendingAction("LIBRARY_SEAT_SWAP");
+        LibrarySwapRequest swap = new LibrarySwapRequest(999L, 3179L, 57, 3000L);
+
+        when(actionService.findPendingAction(anyString())).thenReturn(Optional.of(pending));
+        when(actionService.isExpired(pending)).thenReturn(false);
+        when(actionService.claimPendingAction(anyString())).thenReturn(claimed);
+        when(actionService.payload(claimed, LibrarySwapRequest.class)).thenReturn(swap);
+        when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3179L))))
+                .thenThrow(new RuntimeException("new seat reserve failed"));
+        when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3000L))))
+                .thenReturn(new LibraryReservationResult(111L, "6F", "A1", "10:00", "18:00", 57, 3000L));
+
+        mockMvc.perform(post("/api/library/reservations/confirm"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("FAILED_RACE"));
+
+        // Compensation actually re-reserved the original seat, and the audit reflects the race.
+        verify(reservationConnector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(3000L)));
+        verify(actionService).completeAction(eq(claimed), eq(ActionService.OUTCOME_FAILURE_RACE), anyString());
+    }
+
+    @Test
+    void confirmSwap_compensationAlsoFails_returnsPartialFailure() throws Exception {
+        // discharge(old) succeeds, reserve(new) fails, AND re-reserving the original seat fails →
+        // the user holds NO seat; the audit must record PARTIAL_FAILURE (distinct outcome).
+        ActionAudit pending = pendingAction("LIBRARY_SEAT_SWAP");
+        ActionAudit claimed = pendingAction("LIBRARY_SEAT_SWAP");
+        LibrarySwapRequest swap = new LibrarySwapRequest(999L, 3179L, 57, 3000L);
+
+        when(actionService.findPendingAction(anyString())).thenReturn(Optional.of(pending));
+        when(actionService.isExpired(pending)).thenReturn(false);
+        when(actionService.claimPendingAction(anyString())).thenReturn(claimed);
+        when(actionService.payload(claimed, LibrarySwapRequest.class)).thenReturn(swap);
+        when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3179L))))
+                .thenThrow(new RuntimeException("new seat reserve failed"));
+        when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3000L))))
+                .thenThrow(new RuntimeException("original seat restore failed"));
+
+        mockMvc.perform(post("/api/library/reservations/confirm"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("FAILED_UPSTREAM"));
+
+        verify(actionService).completeAction(eq(claimed), eq(ActionService.OUTCOME_PARTIAL_FAILURE), anyString());
     }
 
     @Test

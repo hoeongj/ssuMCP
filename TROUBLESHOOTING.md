@@ -4566,3 +4566,28 @@ Wave1~5(전부 main, hoengj): `a775777`(인코딩→CI복구)·`8000e32`(응답 
 1. 보안 리뷰 처방이 "맞아 보이지만 적용하면 시스템이 깨지는" 경우(SameSite=None→Lax)를 어떻게 사전에 판별했나?
 2. 같은 코드(`McpAuthHelper`)에 대해 한 관점은 오진(무조건 bind), 실제로는 다른 결함(해소 시점 불일치 미거부)이었다. 둘을 어떻게 분리해 올바른 수정만 했나?
 3. 자율로 ~15개 PR을 prod에 배포하면서 "절대 깨지면 안 되는 것"(인증·예약)을 어떤 게이트(테스트·하드리뷰·prod 헬스/pod·교차레포 순서·signoff)로 보호했나?
+
+## 사건 18: 좌석 swap 보상이 MCP엔 있고 웹엔 없던 비대칭 — 사용자가 두 좌석 다 잃는 경로 (2026-06-23)
+
+좌석 이석(swap)은 upstream에 원자적 API가 없어 `discharge(기존)` → `reserve(신규)` 2단계다. 2026-06-23 4종 AI 분석(Codex 단독발견)에서 두 진입점을 대조하다 발견: MCP 경로(`ConfirmActionMcpTool.compensateSwap`)는 reserve(신규) 실패 시 기존 좌석을 재예약하는 **보상**이 있는데, **웹 경로(`LibraryReservationWebController.executeSwap`)엔 없었다**.
+
+### 틀린 가설 → 실제
+- (초기 인상) "swap은 이미 #6(`6d3886f` fail-closed/swap)에서 고쳤다." → **실제**: 그 수정은 MCP `confirm_action` 경로에만 들어갔고, **웹 REST confirm 경로는 동일 동작을 중복 구현했는데 보상이 누락**됐다. 같은 도메인 동작이 두 곳에 있고 안전 로직이 한쪽에만 적용된 전형적 비대칭.
+
+### 실제 원인
+웹 `executeSwap`이 `discharge(old)` 성공 후 `reserve(new)` 실패 시 `FAILED_RACE`/`FAILED_UPSTREAM`만 반환하고 **기존 좌석을 복구하지 않음** → 사용자는 기존 좌석을 이미 잃었고 새 좌석도 못 얻어 **무좌석** 상태가 됨(실 데이터 손실). 웹 swap 경로엔 **테스트가 0건**이라 갭이 숨어 있었다.
+
+### 해결
+MCP의 `compensateSwap` 로직을 웹 컨트롤러로 미러: reserve(new) 실패 → 기존 좌석 재예약 시도. 성공 시 `OUTCOME_FAILURE_RACE` + `swapReserve(old)` 이벤트 재발행 + "기존 좌석 유지" 안내, 실패 시 `OUTCOME_PARTIAL_FAILURE` + "무좌석, 재예약" 안내(warn 로깅). 공용 executor 추출은 응답 타입(LLM 메시지 vs status 코드) 차이로 후속 분리(ADR 0064).
+
+### 핵심 파일 / 커밋
+`LibraryReservationWebController.executeSwap`/`compensateSwap`/`partialSwapFailure` (브랜치 `fix/library-web-swap-compensation`). 신규 @WebMvcTest 2건(보상 성공→FAILED_RACE, 보상도 실패→PARTIAL_FAILURE). ADR 0064.
+
+### 포트폴리오 포인트
+- 원자적 연산이 없는 외부 시스템에 **보상 트랜잭션(Saga compensating action)** 을 적용해 부분 실패에서 사용자 상태를 복원. 복원마저 실패하면 정직한 PARTIAL_FAILURE로 통지.
+- "중복 구현된 경로 중 한쪽만 안전 로직이 있는" 비대칭을 두 경로 대조로 발견. 교훈: 중복 경로는 공용화하거나 **동일 테스트로 양쪽을 묶어라**(웹 경로 테스트 부재가 갭을 숨겼다).
+
+### 예상 면접 질문
+1. 원자적 swap API가 없는 환경에서 일관성을 어떻게 보장했나? (보상 트랜잭션 + 보상 실패 시 명시적 통지)
+2. 같은 버그가 MCP엔 없고 웹엔 있던 이유와, 재발 방지책은? (중복 경로 / 공용화 / 양쪽 테스트)
+3. 보상까지 실패하면 사용자/시스템 상태를 어떻게 처리하나? (PARTIAL_FAILURE outcome·warn·재예약 유도, 좌석맵 이벤트 정합성)
