@@ -12,6 +12,7 @@
 - **왜 보류**: 오설정 시 backend↔postgres/redis/ingress 트래픽이 차단되어 **prod 전체 다운**. 클러스터 CNI가 NetworkPolicy를 강제하는지(예: Calico/Cilium)도 확인 필요하고, 자율 적용 후 안전 검증이 불가하다.
 - **권장 접근**: 최소 권한 egress/ingress 정책을 staging에서 먼저 검증 → label selector로 DB/Redis/ingress만 허용 → prod 롤아웃.
 - **진행에 필요한 것**: 클러스터 CNI가 NetworkPolicy enforce하는지 확인, staging 환경, 롤아웃 후 pod 연결성 점검 윈도우.
+- **2026-06-30 결정(egress 허용목록 버전 비현실적 → 미적용, Cilium 필요)**: 백엔드 egress 대상을 코드/설정에서 전수 추출한 결과 **외부 호스트 ~20개**(LLM 9곳: groq·mistral·cerebras·deepinfra·fireworks·sambanova·nscale·openrouter·huggingface + Gemini googleapis / 학교 11곳: saint·lms·canvas·oasis·scatch·rule·smartid·ssudorm·commons·ssu.ac.kr·ssufid + 기타 aladin·soongguri). 문제: ① **k3s 내장 NetworkPolicy 컨트롤러(kube-router)는 FQDN egress 규칙을 지원하지 않음**(IP/CIDR만). ② 위 20개는 전부 동적 CDN(Cloudflare 등) IP라 **CIDR allowlist는 IP 회전 때마다 깨져 기능이 조용히 사망**. ③ egress default-deny 시 9개 LLM + 11개 학교 시스템 호출이 전부 차단 = 앱 대부분 마비. → **egress 제한 NetworkPolicy는 적용하지 않는다.** **진짜 해법 = CNI를 Cilium으로 교체 후 FQDN/DNS-aware egress 정책**(별도 인프라 작업, 단일노드 포트폴리오엔 과투자). ingress-only NP(traefik만 허용)는 단일노드+staging無에서 kubelet health probe/selector 오타 시 prod 503 위험 대비 가치가 marginal이라 함께 보류. **면접 서사**: "쿠버네티스 NetworkPolicy로 egress를 왜 안 막았나" → CNI(kube-router)의 FQDN 미지원 + SaaS 동적 IP 현실을 설명하고 Cilium 대안을 제시(통제의 한계를 아는 것도 시스템 사고). cf. read-only rootfs(#2)·pod-security(ADR0062)는 적용 완료 — pod 레벨 하드닝은 했고 network 레벨은 CNI 제약으로 보류.
 
 ## 2. 컨테이너 read-only rootfs (#23 일부) — ✅ 차트 적용, live rusaint 검증 대기
 
