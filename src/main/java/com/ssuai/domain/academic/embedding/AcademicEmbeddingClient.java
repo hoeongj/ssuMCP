@@ -53,8 +53,15 @@ public class AcademicEmbeddingClient {
     }
 
     /**
-     * Embeds texts in batches. Returns an empty list if embeddings are disabled or
-     * any batch fails — callers treat an empty result as "fall back to lexical".
+     * Embeds texts in batches. Returns the successfully embedded <em>prefix</em>: as
+     * many leading vectors as could be embedded before a batch failed (or all of them
+     * on full success; empty if embeddings are disabled or the very first batch fails).
+     *
+     * <p>Returning the prefix instead of discarding everything is what lets a
+     * persistence-backed caller warm the corpus incrementally under the Gemini free
+     * tier's per-minute token (TPM) limit: a single corpus refresh can only fit a few
+     * batches before it 429s, so each refresh must keep the batches it got rather than
+     * throwing them away and re-embedding from scratch next time (prod 2026-06-29).
      */
     public List<float[]> embed(List<String> texts) {
         if (!properties.isUsable() || texts == null || texts.isEmpty()) {
@@ -63,17 +70,19 @@ public class AcademicEmbeddingClient {
         List<float[]> vectors = new ArrayList<>(texts.size());
         int batchSize = Math.max(1, properties.getBatchSize());
         for (int start = 0; start < texts.size(); start += batchSize) {
-            // Pace consecutive batches: the Gemini free tier allows only a few
-            // embedding requests per minute, and firing the corpus batches
-            // back-to-back 429'd everything after the first (prod 2026-06-11).
+            // Pace consecutive batches: the Gemini free tier caps embedding tokens per
+            // minute, and firing the corpus batches back-to-back 429'd everything after
+            // the first (prod 2026-06-11). Interruption stops the refresh but keeps the
+            // prefix embedded so far.
             if (start > 0 && !sleep(properties.getBatchIntervalMs())) {
-                return List.of();
+                return vectors;
             }
             List<String> batch = texts.subList(start, Math.min(texts.size(), start + batchSize));
             EmbeddingResponse response = embedBatchWithRetry(batch);
             if (response == null || response.data() == null || response.data().size() != batch.size()) {
-                log.warn("academic-embedding: batch failed or had unexpected size; falling back to lexical");
-                return List.of();
+                log.warn("academic-embedding: batch failed at offset {}/{}; returning {} embedded so far",
+                        start, texts.size(), vectors.size());
+                return vectors;
             }
             for (EmbeddingResponse.Item item : response.data()) {
                 vectors.add(normalizeAndTruncate(item.embedding(), properties.getDimensions()));

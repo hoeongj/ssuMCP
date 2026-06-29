@@ -96,6 +96,33 @@ class PersistentAcademicEmbeddingStoreTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void persistsSuccessfulPrefixThenDegradesWhenSomeMissesFail() {
+        AcademicEmbeddingProperties properties = properties();
+        // The client embeds only the first of two misses — a free-tier token cutoff
+        // mid-corpus — and returns that one-vector prefix (prod 2026-06-29).
+        AcademicEmbeddingClient partial = new AcademicEmbeddingClient(properties) {
+            @Override
+            public List<float[]> embed(List<String> texts) {
+                return List.of(new float[] {0.1f, 0.2f, 0.3f});
+            }
+        };
+        AcademicEmbeddingRepository repository = mock(AcademicEmbeddingRepository.class);
+        when(repository.findByModelAndChunkHashIn(anyString(), any())).thenReturn(List.of());
+        PersistentAcademicEmbeddingStore store =
+                new PersistentAcademicEmbeddingStore(partial, repository, properties);
+
+        List<float[]> vectors = store.embed(List.of("alpha", "beta"));
+
+        // This pass still degrades to lexical (not every chunk is ready) ...
+        assertThat(vectors).isEmpty();
+        // ... but the embedded prefix is persisted so the next refresh resumes from it.
+        ArgumentCaptor<List<AcademicEmbeddingEntity>> captor = ArgumentCaptor.forClass(List.class);
+        verify(repository).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSize(1);
+    }
+
+    @Test
     void degradesToEmptyWhenMissesCannotBeEmbedded() {
         AcademicEmbeddingProperties properties = properties();
         AcademicEmbeddingClient failing = new AcademicEmbeddingClient(properties) {

@@ -31,8 +31,15 @@ public class AcademicEmbeddingProperties {
     /** Matryoshka output dimensions. 768 keeps quality while cutting memory/cosine cost 4x vs 3072. */
     private int dimensions = 768;
 
-    /** Texts per embeddings request when embedding the corpus. */
-    private int batchSize = 96;
+    /**
+     * Texts per embeddings request when embedding the corpus. Kept small because the
+     * Gemini free tier limits embedding tokens per minute (~30k TPM): a 96-chunk batch
+     * of 700-char Korean regulation text is ~67k tokens and 429'd the very first request
+     * of every refresh, so the corpus never warmed (prod 2026-06-29). 8 chunks ≈ 6k
+     * tokens per request, and at the 15s batch interval ≈ 22k tokens/min stays under the
+     * limit while still warming the ~217-chunk corpus within a few scheduled refreshes.
+     */
+    private int batchSize = 8;
 
     /**
      * Pause between consecutive batch requests. The Gemini free tier allows only a

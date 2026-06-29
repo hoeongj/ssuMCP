@@ -4650,3 +4650,37 @@ prod pod에서 **96-input 배치**(prod batch-size)를 preview로 호출 → **H
 1. 테스트는 다 통과하는데 prod가 옛 버전이었다 — 어떻게 발견했고 왜 놓쳤었나? (머지 후 main 이미지 빌드 잡 실패를 추적, 머지≠배포)
 2. Dockerfile FROM 인라인 주석이 왜 빌드를 깨나? (라인 중간 주석 미지원 → 토큰이 인자로 파싱)
 3. 같은 사고를 막으려면? (이미지 빌드 실패 알림/배포 게이트, 배포 후 prod 헬스·이미지 태그 검증, digest 핀 시 태그는 ref에 두고 주석은 줄 위로)
+
+## 사건 21: 하이브리드 RAG 워밍 검증 — 사건 19의 "일일 quota" 진단이 틀렸고 진짜 한계는 분당 토큰(TPM)이었다 (2026-06-29)
+
+사건 19가 "model 001·배치 페이싱(72×3, 65s) 배포 완료, 자율 워밍은 미검증"으로 남긴 검증 항목을 quota 리셋 후(6일 경과) 실측. 결과: `search_academic_policy_sources` 여전히 `embeddingUsed:false, fusionMethod:lexical`. **자율 워밍 실패 확정.** pod 6일 가동 중 6h 주기 refresh ~24회 전부 첫 배치부터 즉시 429, `academic_embeddings` 0행 유지.
+
+### 틀린 가설 (사건 19가 내린 진단) → 라이브로 반증
+- **사건 19 진단**: "free tier ~100 **inputs**/min(요청·입력 개수 기준)이라 96배치가 초과 → 72×3배치를 65s 간격으로 띄우면 각 quota 창이 한도 아래로 들어가 임베딩된다."
+- **반증 1 — 단건은 항상 성공**: 시크릿 키로 직접 `/embeddings` 단건 호출 → **HTTP 200**(6일 내내 prod 로그도 단건 진단은 통과). 즉 일일 quota 소진도, 모델 불가도 아님.
+- **반증 2 — 한계는 입력 "개수"가 아니라 "토큰량"**: 같은 키로 배치 크기를 올려가며 재현. **압축 잘 되는 반복문자**("AAA…") 96배치는 200(토큰 적음), **실제 한글 규정문(700자)** 16배치=200 / **48배치=429 / 96배치=429**. 개수가 아니라 한글 토큰 총량이 변수 → free tier는 **TPM(분당 토큰)≈30k** 제한. 700자 한글 청크 ≈ 600~900토큰, 72~96배치 = ~50~67k 토큰 → 매 refresh 첫 요청이 한도 2배 초과로 즉시 429. 사건 19의 65s 간격은 "분당 요청 수" 모델이라 무의미했다(요청 1개라도 토큰이 넘으면 429).
+
+### 실제 원인
+free-tier 한계는 **요청 수가 아니라 분당 토큰(TPM)**. 배치(72)가 토큰 한도를 단일 요청에서 초과 → 시각·간격 무관하게 매 refresh 첫 배치 429. + **구조적 결함(사건 19에서 식별, 미수정)**: `AcademicEmbeddingClient.embed()`가 all-or-nothing이라 첫 배치 실패 시 전체 폐기, `PersistentAcademicEmbeddingStore`도 불완전하면 아무것도 영속 안 함 → 부분 진전조차 누적 불가.
+
+### 해결 (사건 19 처방 "더 작은 배치 + 증분 영속" 양쪽 모두 구현)
+1. **배치 축소**: batch-size 72/96 → **8**(≈6k 토큰/요청, 30k TPM 안전 마진), interval 65s → 15s(≈22k 토큰/min). application.yml 기본값 + chart values.yaml(prod 오버라이드) **둘 다** 수정 — 안 그러면 prod엔 chart 값(72)이 그대로 먹는다.
+2. **증분 영속**: `embed()`가 배치 실패 시 폐기 대신 **성공한 prefix 반환**, store가 그 prefix를 **즉시 영속** 후 불완전하면 이번 pass는 lexical degrade. misses는 LinkedHashMap 결정적 순서라 다음 refresh가 정확히 이어받음 → 6h refresh 몇 번에 걸쳐 217청크 완납 → 이후 steady-state는 전량 캐시히트(API 0회).
+
+### 핵심 파일 / 커밋
+`AcademicEmbeddingClient.java`(prefix 반환)·`PersistentAcademicEmbeddingStore.java`(prefix 영속)·`AcademicEmbeddingProperties.java`(기본 8)·`application.yml`·`deploy/charts/ssuai-backend/values.yaml`. 테스트: `AcademicEmbeddingClientTests`(prefix), `PersistentAcademicEmbeddingStoreTests`(prefix 영속). 커밋: (배포 시 기입). 연관 ADR 0065 / 사건 19.
+
+### 검증 / 상태
+- 단위 테스트 그린(prefix 반환·prefix 영속). 라이브 probe로 16=200·48=429 임계 확정.
+- **배포 후 검증 필요**: 머지→이미지 빌드→ArgoCD 배포 후, refresh 1~3회(6~18h) 경과 시 `academic_embeddings` 행수 증가 확인 → 완납되면 `search_academic_policy_sources`의 `embeddingUsed:true, fusionMethod:rrf` 관측. 그 전까지는 lexical-only degrade(장애 아님).
+- 완납 후 lexical vs hybrid 검색 품질 벤치는 후속.
+
+### 포트폴리오 포인트
+- **"문서에 적힌 진단을 1차 증거로 반증"의 2단계 사례**: 사건 19가 "model preview→001 + 배치 페이싱"으로 고쳤다고 기록했지만, 실측해보니 자율 워밍은 한 번도 안 됐고 **진단 자체("inputs/min")가 틀려** 처방(65s 간격)이 헛돌았다. rate-limit을 막연히 "요청 수"로 가정하지 말고 **TPM/RPM/RPD를 실측으로 구분**해야 함 — 압축 텍스트 vs 실제 한글로 토큰량을 변수 분리해 특정.
+- **all-or-nothing 배치의 함정**: 부분 성공을 버리면 quota가 빡빡한 환경에서 영원히 수렴 못 함. prefix 반환 + 증분 영속으로 "여러 번의 작은 진전이 누적"되게 설계.
+- prod 오버라이드(chart) vs 코드 기본값(application.yml) **양쪽을 다 고쳐야** 실제 반영됨 — 설정 우선순위를 모르면 "고쳤는데 안 바뀐다".
+
+### 예상 면접 질문
+1. rate-limit 429를 만났을 때 RPM·TPM·RPD를 어떻게 구분해 특정했나? (단건 200 + 배치 크기·텍스트 압축률을 변수로 분리해 토큰량이 진짜 변수임을 실증)
+2. 무료 tier에서 대형 코퍼스를 어떻게 끝까지 임베딩하나? (작은 배치로 TPM 아래 유지 + 배치 단위 증분 영속으로 여러 refresh에 걸쳐 누적, 결정적 청크 순서로 이어받기)
+3. "이미 고쳤다"고 기록된 걸 왜 다시 팠고 무엇이 문제였나? (검증 미완 항목을 실측 → 진단·처방 모두 오류 발견; 기록을 1차 증거로 재검증하는 습관)

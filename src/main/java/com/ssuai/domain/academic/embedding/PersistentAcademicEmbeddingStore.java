@@ -86,24 +86,33 @@ public class PersistentAcademicEmbeddingStore implements AcademicEmbeddingStore 
         if (!missTextByHash.isEmpty()) {
             List<String> missHashes = new ArrayList<>(missTextByHash.keySet());
             List<String> missTexts = new ArrayList<>(missTextByHash.values());
+            // fresh is the leading prefix of missTexts the client managed to embed before
+            // the free-tier token limit stopped it. Persist whatever came back — even a
+            // partial prefix — so the next refresh resumes from here instead of re-embedding
+            // the whole corpus. Under a TPM-capped free tier this is what lets the corpus
+            // warm across several scheduled refreshes (prod 2026-06-29).
             List<float[]> fresh = client.embed(missTexts);
+            if (!fresh.isEmpty()) {
+                List<AcademicEmbeddingEntity> toPersist = new ArrayList<>(fresh.size());
+                Instant now = Instant.now();
+                for (int i = 0; i < fresh.size(); i++) {
+                    float[] vector = fresh.get(i);
+                    byHash.put(missHashes.get(i), vector);
+                    toPersist.add(new AcademicEmbeddingEntity(
+                            missHashes.get(i), model, vector.length, AcademicVectorCodec.encode(vector), now));
+                }
+                repository.saveAll(toPersist);
+            }
             if (fresh.size() != missTexts.size()) {
-                // Misses could not be embedded (e.g. quota). Persist nothing; degrade.
-                log.warn("academic-embedding store: {} missing chunk(s) could not be embedded; using lexical-only",
-                        missTexts.size());
+                // Still missing chunks (e.g. quota). This pass degrades to lexical, but the
+                // prefix above is now persisted so the corpus keeps warming on later refreshes.
+                log.warn("academic-embedding store: embedded {}/{} missing chunk(s) this pass; "
+                        + "persisted progress, using lexical-only until the rest warm",
+                        fresh.size(), missTexts.size());
                 return List.of();
             }
-            List<AcademicEmbeddingEntity> toPersist = new ArrayList<>(missHashes.size());
-            Instant now = Instant.now();
-            for (int i = 0; i < missHashes.size(); i++) {
-                float[] vector = fresh.get(i);
-                byHash.put(missHashes.get(i), vector);
-                toPersist.add(new AcademicEmbeddingEntity(
-                        missHashes.get(i), model, vector.length, AcademicVectorCodec.encode(vector), now));
-            }
-            repository.saveAll(toPersist);
             log.debug("academic-embedding store: embedded {} new chunk(s), {} from cache",
-                    toPersist.size(), chunkTexts.size() - toPersist.size());
+                    fresh.size(), chunkTexts.size() - fresh.size());
         } else {
             log.debug("academic-embedding store: all {} chunk(s) from cache; no API calls", chunkTexts.size());
         }

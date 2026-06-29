@@ -156,11 +156,15 @@ ssuai:
       api-key: ${SSUAI_GEMINI_API_KEY:}
       model: ${SSUAI_ACADEMIC_EMBEDDING_MODEL:gemini-embedding-001}
       dimensions: ${SSUAI_ACADEMIC_EMBEDDING_DIMENSIONS:768}
-      batch-size: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE:96}
-      # Free-tier RPM protection (prod 429s, 2026-06-11): space out batch
-      # requests and retry rate-limited batches with exponential backoff
-      # (30s -> 60s -> 120s). Refresh runs off the startup path, so pacing
-      # never delays boot or readiness.
+      # Small batches: the Gemini free tier caps embedding TOKENS per minute (~30k),
+      # not request count. A 72-96 chunk batch of 700-char Korean regulation text is
+      # ~50-67k tokens and 429'd the first request of every refresh, so the corpus
+      # never warmed (prod 2026-06-29). 8 chunks ≈ 6k tokens/request stays well under.
+      batch-size: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_SIZE:8}
+      # Per-minute token budget: 8-chunk batches 15s apart ≈ 22k tokens/min, under the
+      # ~30k TPM cap. Rate-limited batches still retry with exponential backoff
+      # (30s -> 60s -> 120s). Refresh runs off the startup path, so pacing never
+      # delays boot or readiness; the persistent store warms the corpus incrementally.
       batch-interval-ms: ${SSUAI_ACADEMIC_EMBEDDING_BATCH_INTERVAL_MS:15000}
       retry-max-attempts: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_MAX_ATTEMPTS:3}
       retry-backoff-ms: ${SSUAI_ACADEMIC_EMBEDDING_RETRY_BACKOFF_MS:30000}

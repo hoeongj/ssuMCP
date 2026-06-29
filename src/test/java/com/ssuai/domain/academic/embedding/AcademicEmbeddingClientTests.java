@@ -99,6 +99,32 @@ class AcademicEmbeddingClientTests {
     }
 
     @Test
+    void returnsSuccessfulPrefixWhenALaterBatchFails() {
+        // One text per batch: first batch succeeds, the second 429s past its budget.
+        // The successful first vector must survive so a persistence-backed caller can
+        // warm the corpus incrementally instead of discarding progress (prod 2026-06-29).
+        AcademicEmbeddingProperties props = retryProps();
+        props.setBatchSize(1);
+        props.setRetryMaxAttempts(0); // give up on the first 429
+        AtomicInteger calls = new AtomicInteger();
+        AcademicEmbeddingClient client = new AcademicEmbeddingClient(props) {
+            @Override
+            EmbeddingResponse callEmbeddings(List<String> batch) {
+                if (calls.incrementAndGet() == 1) {
+                    return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0), 0)));
+                }
+                throw tooManyRequests();
+            }
+        };
+
+        List<float[]> vectors = client.embed(List.of("first", "second"));
+
+        assertThat(calls.get()).isEqualTo(2);
+        assertThat(vectors).hasSize(1);
+        assertThat(vectors.getFirst()).hasSize(2);
+    }
+
+    @Test
     void nonRateLimitFailureIsNotRetried() {
         AtomicInteger calls = new AtomicInteger();
         AcademicEmbeddingClient client = new AcademicEmbeddingClient(retryProps()) {
