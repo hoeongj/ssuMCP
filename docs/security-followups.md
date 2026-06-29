@@ -45,6 +45,7 @@
 
 - **무엇**: ssu-ai-service의 `/v1/embeddings`가 무인증 + Gemini 키가 URL `?key=`로 노출됨. 키를 `Authorization: Bearer` 헤더로 이동 + 호출자 인증 추가.
 - **왜 보류**: **이 서비스는 별도의 git 추적 안 되는(untracked) 저장소**라 ssuMCP에서 커밋·배포 불가.
+- **2026-06-30 갱신**: prod k3s 전체 네임스페이스 스캔 결과 **ssu-ai-service는 클러스터 어디에도 배포돼 있지 않음**(`kubectl get deploy,svc -A`에 embeddings/ai-service 0건). ssuMCP RAG는 Gemini를 직접 호출(이 서비스 미경유). 즉 현 시점 **노출면 없음**(미배포 유휴 서비스) → 보안 우선순위 사실상 N/A. 추후 git화하여 정식 운영할 경우에만 위 인증 보강 적용.
 - **권장 접근**: 키를 쿼리스트링에서 `Authorization` 헤더로 이동 + 엔드포인트에 호출자 인증 게이트.
 - **진행에 필요한 것**: **실제 ssu-ai-service 소스 저장소 위치**(사용자 제공 필요). 위치가 확인되면 권장 diff 적용 가능.
 
@@ -76,7 +77,9 @@
 - **권장 접근**: 클라(ssuAI/ssuAgent) 영향 확인 후 하위호환 유지하며 단계 적용, 또는 envelope 표준화 결정 시 일괄.
 - **진행에 필요한 것**: 클라 계약 영향 점검, 포맷 표준화 결정.
 
-## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N) — 🟢 프록시 배포 완료, env 활성화만 남음 (2026-06-30)
+## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N) — ✅ 활성화·검증 완료 (2026-06-30)
+
+> **✅ 종결(2026-06-30)**: 양쪽 `AGENT_API_KEY` 설정으로 **인증 강제 활성화 완료**. ssuAI(Vercel) env + ssuAgent k3s secret `ssuagent-secrets`에 동일 키 추가 → `ssu-agent` rollout restart(무중단, maxSurge1/maxUnavail0). **3중검증**: ① 키 없는 직접호출 `POST https://ssuagent.duckdns.org/agent/stream`→**401**(`Invalid or missing X-Agent-Key`) = 익명 접근 차단 = 강제 ON ② 올바른 키 직접호출→**422**(body 검증오류, 401아님) = 키 수락 ③ Vercel 프록시 `POST /api/agent/stream` 경유→**422**(401아님) = Vercel키↔k3s키 **E2E 일치**. 익명 `/agent` LLM 비용소진·DoS 벡터 차단 종결. k3s secret은 git-untracked(out-of-band)라 ArgoCD가 안 건드림. → **#12(thread 인증 바인딩) 선행조건 해제, 착수 가능.**
 
 > **진행(2026-06-30)**: Next 프록시 **구현·머지·배포 완료** — ssuAI PR #205 `feat(agent): proxy /agent SSE...` (`c891ba6`, **MERGED**, Vercel 배포). `app/api/agent/{stream,resume}/route.ts`가 서버사이드에서 `X-Agent-Key`(env `AGENT_API_KEY`)를 주입하고 SSE를 패스스루, 클라(`lib/api/agent.ts`)는 same-origin `/api/agent/*` 호출로 변경. **prod 스모크 확인**: `POST https://ssuai.vercel.app/api/agent/stream` 빈 body → 422(ssuAgent 검증오류가 프록시 통해 반환) = 라우트·프록시·패스스루 정상. **하위호환**: 키 미설정이라 현재 ssuAgent no-op(현행 동작 유지). **주의**: 브라우저→Vercel함수→ssuAgent 경로라 긴 SSE는 Vercel `maxDuration`(60s, Hobby max; Pro면 300 권장)에 걸릴 수 있음 — 인증된 세션으로 에이전트 멀티스텝 스트림 실측 권장(UI).
 > **남은 활성화 절차(사용자, 철칙3) = 인증 강제 켜기**: ① ssuAI(Vercel) env `AGENT_API_KEY`(+선택 `SSUAGENT_BASE_URL`) 설정 → 프록시가 키 전송 시작(ssuAgent 아직 no-op이라 무해) ② ssuAgent prod env `AGENT_API_KEY`를 **동일 값**으로 설정 → 인증 강제. 순서 중요(프록시가 키 보내기 시작한 뒤 ssuAgent 강제). 이후 #12(S4 thread 인증 바인딩) 진행 가능.
@@ -92,7 +95,8 @@
 - **무엇**: ssuAgent `thread_id`(클라 제공)가 LangGraph 체크포인트 키인데 인증·소유권 바인딩이 없다(`main.py`). 대화 기밀성이 thread_id 비밀성 + TLS에만 의존.
 - **왜 보류**: 근본 차단은 `/agent` 인증(#11)이 활성화돼야 thread_id를 호출자 신원에 바인딩할 수 있다 → #11과 한 묶음. 완화: ssuAI가 `crypto.randomUUID()`(122bit)로 생성해 추측 난이도 높음.
 - **권장 접근**: #11 인증 활성화 시 thread_id를 호출자 신원(키/세션)에 바인딩 → IDOR 원천 차단. cf. ssuMCP는 #1에서 `(owner, conversationId)` 복합키로 해결.
-- **진행에 필요한 것**: #11 선행.
+- **2026-06-30 갱신**: **#11 활성화 완료 → 선행조건 해제, 착수 가능.** 단 현 #11은 프록시가 **단일 공유 키**를 주입하는 구조라 "호출자별 신원"이 에이전트 계층에 없음 → thread_id 바인딩 설계는 (a) ssuAI 프록시가 per-user 식별자를 추가 주입해 namespace화 vs (b) randomUUID(122bit) + 위협모델 문서화로 수용 중 택1이 필요(철칙2 옵션 보고 대상).
+- **진행에 필요한 것**: ~~#11 선행~~✅완료. 위 (a)/(b) 설계 결정.
 
 ## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
 
