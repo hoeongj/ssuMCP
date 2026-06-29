@@ -76,7 +76,10 @@
 - **권장 접근**: 클라(ssuAI/ssuAgent) 영향 확인 후 하위호환 유지하며 단계 적용, 또는 envelope 표준화 결정 시 일괄.
 - **진행에 필요한 것**: 클라 계약 영향 점검, 포맷 표준화 결정.
 
-## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N)
+## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N) — 🟡 코드 완료, 활성화(env)만 남음 (2026-06-30)
+
+> **진행(2026-06-30)**: Next 프록시 선결 조건을 **구현 완료** — ssuAI PR #205 `feat(agent): proxy /agent SSE through a same-origin route`(미머지, 사용자 배포 결정 대기). `app/api/agent/{stream,resume}/route.ts`가 서버사이드에서 `X-Agent-Key`(env `AGENT_API_KEY`)를 주입하고 SSE를 패스스루, 클라(`lib/api/agent.ts`)는 same-origin `/api/agent/*` 호출로 변경. **하위호환**: 키 미설정 시 헤더 미전송→ssuAgent no-op(현행 유지). pnpm build/test/typecheck/lint 그린, Vercel Preview CI 통과. **주의**: 브라우저→Vercel함수→ssuAgent 경로라 긴 SSE는 Vercel `maxDuration`(60s, Hobby max; Pro면 300 권장)에 걸릴 수 있음 — 배포 후 에이전트 멀티스텝 스트림 정상 여부 실측 필요.
+> **남은 활성화 절차(사용자, 철칙3)**: ① ssuAI PR #205 머지(=Vercel 배포) 후 에이전트 스트림 정상 확인 ② ssuAI(Vercel) env `AGENT_API_KEY`(+선택 `SSUAGENT_BASE_URL`) 설정 → 프록시가 키 전송 시작(ssuAgent 아직 no-op이라 무해) ③ ssuAgent prod env `AGENT_API_KEY`를 **동일 값**으로 설정 → 인증 강제. 순서 중요(프록시가 키 보내기 시작한 뒤 ssuAgent 강제).
 
 - **무엇**: ssuAgent `/agent` 엔드포인트 **API 키 인증을 활성화**. opt-in 코드 머지됨(`AGENT_API_KEY` 설정 시에만 동작, 미설정=현행, `408a9e7`).
 - **2026-06-23 갱신**: 비용/DoS 즉시 위험(무 rate-limit·무 크기상한·무 에러비노출·CORS `*`)은 **W4 `0dd88c2`(ADR0009)로 해소** — slowapi per-IP rate-limit + message 크기상한 + 에러 비노출 + CORS methods 축소. **남은 것은 API 키 인증 활성화뿐.**
