@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientResponseException;
 
+import tools.jackson.databind.json.JsonMapper;
+
 class AcademicEmbeddingClientTests {
 
     /** Tiny timings so retry/pacing tests run instantly. */
@@ -70,7 +72,7 @@ class AcademicEmbeddingClientTests {
                 if (calls.incrementAndGet() <= 2) {
                     throw tooManyRequests();
                 }
-                return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0), 0)));
+                return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0))));
             }
         };
 
@@ -99,6 +101,25 @@ class AcademicEmbeddingClientTests {
     }
 
     @Test
+    void parsesEmbeddingResponseWhenFirstItemOmitsIndex() throws Exception {
+        // Gemini's OpenAI-compat endpoint omits "index" for the first item (index 0).
+        // A primitive `int index` in the record made Jackson 3 throw
+        // ("Cannot map null into type int") and discard the whole 200 response, so
+        // embeddings never decoded in prod (2026-06-29). The record must parse without it.
+        String json = "{\"object\":\"list\",\"data\":["
+                + "{\"object\":\"embedding\",\"embedding\":[0.1,0.2,0.3]},"
+                + "{\"object\":\"embedding\",\"index\":1,\"embedding\":[0.4,0.5,0.6]}"
+                + "],\"model\":\"gemini-embedding-001\"}";
+
+        AcademicEmbeddingClient.EmbeddingResponse response =
+                JsonMapper.builder().build().readValue(json, AcademicEmbeddingClient.EmbeddingResponse.class);
+
+        assertThat(response.data()).hasSize(2);
+        assertThat(response.data().getFirst().embedding()).containsExactly(0.1, 0.2, 0.3);
+        assertThat(response.data().get(1).embedding()).containsExactly(0.4, 0.5, 0.6);
+    }
+
+    @Test
     void returnsSuccessfulPrefixWhenALaterBatchFails() {
         // One text per batch: first batch succeeds, the second 429s past its budget.
         // The successful first vector must survive so a persistence-backed caller can
@@ -111,7 +132,7 @@ class AcademicEmbeddingClientTests {
             @Override
             EmbeddingResponse callEmbeddings(List<String> batch) {
                 if (calls.incrementAndGet() == 1) {
-                    return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0), 0)));
+                    return new EmbeddingResponse(List.of(new EmbeddingResponse.Item(List.of(3.0, 4.0))));
                 }
                 throw tooManyRequests();
             }

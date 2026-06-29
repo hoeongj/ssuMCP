@@ -203,8 +203,15 @@ public class AcademicEmbeddingClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record EmbeddingResponse(List<Item> data) {
 
+        // Only the embedding vector is consumed. The per-item "index" is intentionally
+        // absent: Gemini's OpenAI-compatible endpoint OMITS "index" for the first item
+        // (index 0) of every response, so a primitive `int index` made Jackson 3 throw
+        // MismatchedInputException ("Cannot map null into type int") and the whole 200
+        // response was discarded — embeddings never decoded in prod (2026-06-29). Vectors
+        // are matched to inputs by list position, which the endpoint preserves, so the
+        // index field is not needed anyway.
         @JsonIgnoreProperties(ignoreUnknown = true)
-        record Item(List<Double> embedding, int index) {
+        record Item(List<Double> embedding) {
         }
     }
 }
