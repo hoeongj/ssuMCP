@@ -51,9 +51,6 @@ class LibrarySeatRecommendationServiceTests {
                 10);
 
         assertThat(response.availabilitySource()).isEqualTo("live_per_seat");
-        assertThat(response.liveAvailableSeats()).isEqualTo(3);
-        assertThat(response.liveSeatItemsSeen()).isEqualTo(4);
-        assertThat(response.catalogMatchedAvailableSeats()).isEqualTo(3);
         assertThat(response.recommendations())
                 .extracting(LibrarySeatRecommendation::seatId)
                 .containsExactly("1", "2", "101");

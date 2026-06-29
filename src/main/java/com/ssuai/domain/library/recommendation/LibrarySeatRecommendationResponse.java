@@ -6,10 +6,10 @@ public record LibrarySeatRecommendationResponse(
         int floor,
         String floorLabel,
         int requestedLimit,
-        int liveAvailableSeats,
-        int liveSeatItemsSeen,
-        int catalogSeatsOnFloor,
-        int catalogMatchedAvailableSeats,
+        // Internal scan counters (liveAvailableSeats/liveSeatItemsSeen/catalogSeatsOnFloor/
+        // catalogMatchedAvailableSeats) were removed: they leaked operational signals and
+        // no client consumes them (ssuAI grep: 0). The natural-language `message` already
+        // conveys availability (security follow-up #14).
         String availabilitySource,
         String message,
         List<String> excludedRooms,

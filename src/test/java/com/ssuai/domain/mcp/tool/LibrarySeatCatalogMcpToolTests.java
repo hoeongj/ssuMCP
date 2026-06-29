@@ -15,7 +15,7 @@ class LibrarySeatCatalogMcpToolTests {
     @Test
     void returnsStaticCatalogWithoutAuthentication() {
         LibrarySeatRoomCatalogResponse response =
-                tool.getLibrarySeatCatalog("B1", null, true, null);
+                tool.getLibrarySeatCatalog("B1", null, true);
 
         assertThat(response.roomCount()).isEqualTo(1);
         assertThat(response.rooms().getFirst().roomCode()).isEqualTo("basement-reading-b1");
@@ -23,17 +23,17 @@ class LibrarySeatCatalogMcpToolTests {
     }
 
     @Test
-    void hidesInternalCaptureNotesByDefault() {
-        LibrarySeatRoomCatalogResponse response =
-                tool.getLibrarySeatCatalog("B1", null, false, null);
-
-        assertThat(response.rooms().getFirst().captureNotes()).isEmpty();
+    void neverExposesInternalCaptureNotesViaPublicTool() {
+        // The public tool no longer accepts a debug param, so captureNotes can never
+        // be requested by an MCP caller (security follow-up #14).
+        assertThat(tool.getLibrarySeatCatalog("B1", null, false)
+                .rooms().getFirst().captureNotes()).isEmpty();
     }
 
     @Test
-    void includesCaptureNotesOnlyInDebugMode() {
+    void captureNotesStillReachableViaServiceForInternalUse() {
         LibrarySeatRoomCatalogResponse response =
-                tool.getLibrarySeatCatalog("B1", null, false, true);
+                new LibrarySeatRoomCatalogService().catalog("B1", null, false, true);
 
         assertThat(response.rooms().getFirst().captureNotes()).isNotEmpty();
     }

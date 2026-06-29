@@ -91,14 +91,18 @@
 - **권장 접근**: #11 인증 활성화 시 thread_id를 호출자 신원(키/세션)에 바인딩 → IDOR 원천 차단. cf. ssuMCP는 #1에서 `(owner, conversationId)` 복합키로 해결.
 - **진행에 필요한 것**: #11 선행.
 
-## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규)
+## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
+
+> **해결**: `NoticeService.getNoticeDetail`에 호출자 제공 URL의 host allowlist 검증 추가 — scheme은 http(s)만, host는 `ssu.ac.kr` 또는 `.ssu.ac.kr` 서브도메인만 허용(공지 본문은 scatch.ssu.ac.kr). IP 리터럴·내부주소는 `.ssu.ac.kr`로 안 끝나므로 자동 차단(defense-in-depth). 위반 시 `IllegalArgumentException`(fetch 전 거부). 테스트 4건(외부host·내부IP·non-http scheme 거부 + ssu host 통과). **잔여**: Jsoup 리다이렉트 추종은 그대로 — 리다이렉트-경유 우회는 egress 격리로 완화(코드레벨 재검증은 추후).
 
 - **무엇**: `RealNoticeConnector.connect()`가 임의 URL을 `Jsoup.connect()`로 fetch — `scatch.ssu.ac.kr` 등 학교 도메인 allowlist 없음. 외부 임의 http/https 도달 가능(서버를 요청 프록시로 악용·블라인드 포트스캔 오라클).
 - **왜 보류(부분 완화)**: 현 prod 배포에서 `file://`·메타데이터(169.254)·루프백·사설대역은 egress/컨테이너 격리로 차단됨(Critical 아님). 코드레벨 allowlist는 미적용.
 - **권장 접근**: `connect()`에서 host를 학교 도메인 strict allowlist(`ssu.ac.kr` 및 `.ssu.ac.kr` 서브도메인 — `host.equals(d) || host.endsWith("."+d)`)와 대조 후에만 fetch + 사설/링크로컬 대역 코드레벨 차단(defense-in-depth) + 리다이렉트 호스트 재검증.
 - **진행에 필요한 것**: 허용 도메인 목록 확정(공지 출처 enumerate).
 
-## 14. 도서관 debug/내부 카운터 노출 (M2, 2026-06-23 신규)
+## 14. 도서관 debug/내부 카운터 노출 (M2, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
+
+> **해결**: ① `get_library_seat_catalog`에서 `debug` 파라미터 제거 → public tool로 `captureNotes`(내부 백엔드명·TODO·스크린샷 방법) 요청 불가. captureNotes는 service 4-arg 오버로드로 내부/테스트에서만 접근. ② `LibrarySeatRecommendationResponse`에서 내부 카운터 4종(`liveAvailableSeats`·`liveSeatItemsSeen`·`catalogSeatsOnFloor`·`catalogMatchedAvailableSeats`) 제거 — ssuAI grep 0건, LLM은 자연어 `message`로 가용성 파악. 테스트 갱신.
 
 - **무엇**: `get_library_seat_catalog(debug=true)`가 `captureNotes`(내부 백엔드명 Pyxis·미완 TODO·스크린샷 수집방법)를 누출 — `debug`가 public tool 파라미터라 누구나 true. `recommend_library_seats`가 `liveSeatItemsSeen` 등 내부 카운터 4종 상시 노출.
 - **왜 보류**: 저민감도(운영 시그널)지만 정보노출. 응답 record 필드 제거는 계약 변경(ssuAI 미사용 확인됨 → 안전하나 별도 검증 권장).

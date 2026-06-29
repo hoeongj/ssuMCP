@@ -28,11 +28,12 @@ public class LibrarySeatCatalogMcpTool {
             @ToolParam(description = "Optional roomCode filter, such as open-reading-2f.", required = false)
             String room_code,
             @ToolParam(description = "Whether to include compact textLayout lines. Default false.", required = false)
-            Boolean include_layout,
-            @ToolParam(description = "Include internal captureNotes (data-collection TODOs). Default false.",
-                    required = false)
-            Boolean debug
+            Boolean include_layout
     ) {
-        return roomCatalogService.catalog(floor_code, room_code, include_layout, debug);
+        // No public "debug" param: it exposed internal captureNotes (backend name,
+        // data-collection TODOs/screenshot method) to any caller. captureNotes stay
+        // reachable only via the service's 4-arg overload for internal/test use
+        // (security follow-up #14).
+        return roomCatalogService.catalog(floor_code, room_code, include_layout);
     }
 }

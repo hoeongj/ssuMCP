@@ -82,7 +82,6 @@ public class LibrarySeatRecommendationService {
         int liveAvailable = (int) statusByLabel.values().stream()
                 .filter("available"::equals)
                 .count();
-        int catalogSeatsOnFloor = catalogService.entriesFor(floor).size();
 
         Set<String> excludedRooms = new LinkedHashSet<>();
         List<LibrarySeatRecommendation> allRecommendations = statusByLabel.entrySet().stream()
@@ -116,10 +115,6 @@ public class LibrarySeatRecommendationService {
                 floor.code(),
                 floor.displayLabel(),
                 limit,
-                liveAvailable,
-                liveSeatItemsSeen,
-                catalogSeatsOnFloor,
-                allRecommendations.size(),
                 source,
                 messageFor(liveSeatItemsSeen, liveAvailable, allRecommendations, effectivePreference, excludedRooms),
                 List.copyOf(excludedRooms),

@@ -20,6 +20,7 @@ import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
 import com.ssuai.domain.notice.repository.NoticeIndexRepository;
+import com.ssuai.global.exception.ConnectorParseException;
 
 @ExtendWith(MockitoExtension.class)
 class NoticeServiceTests {
@@ -45,6 +46,34 @@ class NoticeServiceTests {
 
         assertThat(response.items()).hasSize(3);
         assertThat(response.currentPage()).isEqualTo(1);
+    }
+
+    @Test
+    void getNoticeDetailRejectsNonSoongsilHost() {
+        // SSRF guard (#13): a caller-supplied URL outside ssu.ac.kr must be refused before fetch.
+        assertThatThrownBy(() -> service.getNoticeDetail("https://evil.example.com/notice"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getNoticeDetailRejectsInternalAddress() {
+        assertThatThrownBy(() -> service.getNoticeDetail("http://169.254.169.254/latest/meta-data/"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getNoticeDetailRejectsNonHttpScheme() {
+        assertThatThrownBy(() -> service.getNoticeDetail("file:///etc/passwd"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getNoticeDetailAllowsSoongsilHostThroughToConnector() {
+        // A scatch.ssu.ac.kr URL passes the allowlist and reaches the connector, which then
+        // rejects this unknown fixture URL — proving the host check let a Soongsil host through
+        // (ConnectorParseException, not the IllegalArgumentException the allowlist would raise).
+        assertThatThrownBy(() -> service.getNoticeDetail("https://scatch.ssu.ac.kr/공지사항/unknown-00000/"))
+                .isInstanceOf(ConnectorParseException.class);
     }
 
     @Test
