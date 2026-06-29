@@ -21,7 +21,12 @@ public record OpenAiChatCompletionResponse(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Choice(
-            int index,
+            // No "index": it is unused (only message() is read) and OpenAI-compatible
+            // providers omit it for the first choice (index 0), exactly as Gemini omits
+            // the first embedding item's index. A primitive `int index` made Jackson 3
+            // throw MismatchedInputException and discard the whole chat response, breaking
+            // chat for any such provider — the same latent bug fixed for embeddings
+            // (TROUBLESHOOTING 사건 22, 2026-06-29).
             Message message,
             @JsonProperty("finish_reason")
             String finishReason

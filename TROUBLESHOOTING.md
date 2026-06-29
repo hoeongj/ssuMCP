@@ -4718,7 +4718,7 @@ Caused by: tools.jackson.databind.exc.MismatchedInputException
 ### 포트폴리오 포인트
 - **"tests green but prod broken"의 교과서**: 모든 단위 테스트는 통과하는데, **prod의 성공-경로가 한 번도 실행된 적 없어** 잠복한 디코딩 버그. 상류 버그(TPM 429)가 하류 버그(디코딩)를 6주간 가려, 상류를 고치자 비로소 드러남.
 - **외부 API의 비표준 응답**: OpenAI 스펙은 `index`를 항상 주지만 Gemini 호환 레이어는 index 0을 생략 → 외부 계약을 스펙 신뢰 말고 **실제 응답으로 검증**. 안 쓰는 필드는 DTO에서 빼는 게 견고(역직렬화 표면 최소화).
-- **Jackson 3 마이그레이션 함정**: record + primitive 필드 + 누락 필드 = `FAIL_ON_NULL_FOR_PRIMITIVES`로 폐기. Spring Boot 4 전환 시 OpenAI-호환 DTO 전반 점검 필요(후속: `OpenAiCompatibleProvider` DTO의 primitive 필드 grep).
+- **Jackson 3 마이그레이션 함정**: record + primitive 필드 + 누락 필드 = `FAIL_ON_NULL_FOR_PRIMITIVES`로 폐기. Spring Boot 4 전환 시 OpenAI-호환 DTO 전반 점검 필요. **후속 grep 결과(2026-06-29): 채팅 레이어 `OpenAiChatCompletionResponse.Choice`에 동일 잠복 버그 발견** — `int index`(미사용, `firstMessage()`는 `message()`만 읽음)에 provider가 choice index 0을 생략하면 채팅 응답 전체 폐기. 임베딩과 같은 부류라 선제 수정(unused `index` 제거 + 회귀 테스트). 헤드라인 챗봇이 특정 provider에서 조용히 깨질 위험을 prod 발현 전에 차단.
 - **진단 방법론**: curl → JDK HttpClient → 로컬 gradle 실호출로 **레이어를 한 겹씩 벗겨** "raw는 되는데 Spring만 실패"를 특정하고 전체 스택트레이스를 확보. 추측 배포 사이클을 피함.
 
 ### 예상 면접 질문
