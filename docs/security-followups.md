@@ -13,12 +13,11 @@
 - **권장 접근**: 최소 권한 egress/ingress 정책을 staging에서 먼저 검증 → label selector로 DB/Redis/ingress만 허용 → prod 롤아웃.
 - **진행에 필요한 것**: 클러스터 CNI가 NetworkPolicy enforce하는지 확인, staging 환경, 롤아웃 후 pod 연결성 점검 윈도우.
 
-## 2. 컨테이너 read-only rootfs (#23 일부)
+## 2. 컨테이너 read-only rootfs (#23 일부) — ✅ 차트 적용, live rusaint 검증 대기
 
 - **무엇**: pod `securityContext.readOnlyRootFilesystem: true` + 쓰기 필요 경로만 emptyDir/volume로 마운트.
-- **왜 보류**: 앱·JVM·rusaint FFI가 런타임에 쓰는 경로(tmp, 캐시, native lib unpack 등)를 전부 식별하지 못하면 부팅·요청 처리 중 크래시. seccompProfile·automountSAToken·권한상승 차단은 이미 적용됨(ADR 0062).
-- **권장 접근**: 쓰기 경로를 로그·strace로 열거 → 해당 경로만 writable volume → `readOnlyRootFilesystem: true` 적용을 staging에서 검증.
-- **진행에 필요한 것**: 런타임 쓰기 경로 목록, staging 검증.
+- **반영**: `deploy/charts/ssuai-backend`에서 backend rootfs를 read-only로 전환하고 `/tmp`를 항상 `emptyDir`로 마운트했다. LMS export ZIP은 기존처럼 `/data/lms-export` PVC에 쓰며, JVM/JNA scratch는 `-Djava.io.tmpdir=/tmp -Djna.tmpdir=/tmp`로 `/tmp` emptyDir에 고정한다(ADR 0066).
+- **남은 검증**: merge·배포 후 새 pod Ready 확인 + authenticated u-SAINT/rusaint 호출 성공 확인. 이 호출이 JNA `jnidispatch` 추출과 rusaint FFI 로드를 함께 검증한다.
 
 ## 3. DB 무결성·보존 정책 (#27)
 

@@ -59,11 +59,13 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.persistence.lmsExport.enabled }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.persistence.lmsExport.enabled }}
             - name: lms-export
               mountPath: {{ .Values.persistence.lmsExport.mountPath }}
-          {{- end }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.readiness.path }}
@@ -82,9 +84,11 @@ spec:
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-      {{- if .Values.persistence.lmsExport.enabled }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.persistence.lmsExport.enabled }}
         - name: lms-export
           persistentVolumeClaim:
             claimName: {{ include "ssuai-backend.fullname" . }}-lms-export
-      {{- end }}
+        {{- end }}

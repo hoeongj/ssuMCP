@@ -37,7 +37,7 @@ env:
   # not shared across replicas.
   lmsExportTempDir: /data/lms-export
   tavilyMcpUrl: ""
-  javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+  javaOpts: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp -Djna.tmpdir=/tmp"
   connectorMeal: real
   connectorDormMeal: real
   connectorLibraryBook: real
@@ -186,9 +186,9 @@ containerSecurityContext:
   runAsNonRoot: true
   runAsUser: 1001
   allowPrivilegeEscalation: false
-  # readOnlyRootFilesystem intentionally left false: the LMS export worker
-  # writes temp files to the local filesystem before streaming the ZIP.
-  readOnlyRootFilesystem: false
+  # LMS export writes go to the /data/lms-export PVC. JVM/JNA scratch is
+  # pinned to a writable /tmp emptyDir, so the root filesystem can be read-only.
+  readOnlyRootFilesystem: true
   seccompProfile:
     type: RuntimeDefault
   capabilities:
