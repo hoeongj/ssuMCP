@@ -4864,3 +4864,41 @@ Boot 4.1.x 재시도 전에는 `jjwt`를 Jackson 3 호환 구성으로 바꾸거
 1. 브라우저 쿠키가 정상 전송되는데도 refresh가 401이면 어떤 순서로 원인을 좁히나?
 2. Spring Boot minor bump가 직접 의존이 아닌 `jjwt-jackson`을 어떻게 깨뜨릴 수 있나?
 3. trailing `\r`가 있는 secret을 왜 즉시 원인으로 단정하지 않았고, 어떤 hardening이 필요한가?
+
+---
+
+## 사건 27: LMS single-use 다운로드에서 `ResponseEntity<?>`가 `StreamingResponseBody`를 메시지 변환기로 보내 500이 난 문제 (2026-06-30)
+
+LMS export 다운로드 토큰을 1회용으로 바꾸면서 READY 바이너리 응답만 `StreamingResponseBody`로 교체했다. 첫 구현은 기존 컨트롤러 시그니처 `ResponseEntity<?>`를 유지하고 READY branch의 body만 `StreamingResponseBody`로 바꾸는 형태였다. 그러나 MockMvc 집중 테스트에서 모든 바이너리 경로가 `HttpMessageNotWritableException`으로 500을 반환했다.
+
+### 틀린 가설
+
+`ResponseEntity<?>`라도 런타임 body 인스턴스가 `StreamingResponseBody`이면 Spring MVC가 streaming return-value handler를 선택할 것이라고 봤다. 즉 "branch별 body 타입만 바꿔도 streaming 처리된다"는 가정이었다.
+
+### 실제 원인
+
+Spring WebMVC 7의 `StreamingResponseBodyReturnValueHandler.supportsReturnType`는 런타임 body가 아니라 **컨트롤러 메서드의 선언 return type**을 본다. `ResponseEntity<StreamingResponseBody>`처럼 generic이 `StreamingResponseBody`로 해석될 때만 streaming handler가 선택된다. `ResponseEntity<?>`는 generic이 wildcard라 지원 대상이 아니고, `HttpEntityMethodProcessor`가 일반 message converter로 body를 쓰려고 하다가 `StreamingResponseBody`를 JSON으로 변환하지 못해 500이 났다.
+
+### 해결
+
+컨트롤러 메서드 선언을 `ResponseEntity<StreamingResponseBody>`로 바꾸고, 기존 JSON/HTML 응답도 같은 선언 타입 안에서 작은 streaming helper로 작성한다. 단, 토큰 소비는 READY 바이너리 branch의 파일 복사 완료 후에만 수행한다. `format=json` 폴링과 HTML 페이지는 같은 응답 내용만 stream으로 쓰며 `markDownloaded`를 호출하지 않는다.
+
+### 핵심 파일 / 커밋
+
+- `src/main/java/com/ssuai/domain/lms/controller/LmsExportController.java`
+- `src/test/java/com/ssuai/domain/lms/controller/LmsExportControllerTests.java`
+- 커밋: `feat/lms-single-use-token` 단일 PR 커밋
+
+### 검증
+
+`./gradlew test --tests com.ssuai.domain.lms.controller.LmsExportControllerTests` 통과. 테스트가 첫 바이너리 다운로드 후 `DOWNLOADED` 전이, `DOWNLOADED` 재요청 410, `format=json` 비소비, stream 예외 시 비소비를 모두 확인한다.
+
+### 포트폴리오 포인트
+
+프레임워크 return handler가 런타임 값이 아니라 선언된 generic type으로 선택된다는 점을 테스트 실패와 `javap` 확인으로 특정했다. 파일 스트리밍 같은 저수준 응답은 "컴파일되는 branch"만으로 충분하지 않고, MVC return-value handler 선택 규칙까지 검증해야 한다는 사례다.
+
+### 예상 면접 질문
+
+1. 왜 `ResponseEntity<?>` 안에 `StreamingResponseBody`를 넣으면 streaming handler가 아니라 message converter가 동작했나?
+2. JSON/HTML 상태 응답까지 stream helper로 감싼 이유는 무엇이고, 소비 대상 branch와 어떻게 분리했나?
+3. 이 문제가 prod에 나가기 전에 어떤 테스트가 잡았나?

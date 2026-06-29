@@ -5,5 +5,6 @@ public enum LmsExportStatus {
     BUILDING,
     READY,
     FAILED,
-    EXPIRED
+    EXPIRED,
+    DOWNLOADED
 }

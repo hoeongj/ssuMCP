@@ -3,6 +3,7 @@ package com.ssuai.domain.lms.controller;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -12,8 +13,6 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,7 +23,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssuai.domain.lms.export.LmsExportJob;
 import com.ssuai.domain.lms.export.LmsExportJobRepository;
 import com.ssuai.domain.lms.export.LmsExportProperties;
@@ -35,6 +37,7 @@ import com.ssuai.domain.lms.export.LmsExportStatus;
 public class LmsExportController {
 
     private static final Logger log = LoggerFactory.getLogger(LmsExportController.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final LmsExportJobRepository jobRepository;
     private final LmsExportProperties properties;
@@ -148,7 +151,7 @@ public class LmsExportController {
             """;
 
     @GetMapping("/{jobId}/download")
-    public ResponseEntity<?> download(
+    public ResponseEntity<StreamingResponseBody> download(
             @PathVariable("jobId") String jobId,
             @RequestParam("token") String token,
             @RequestParam(value = "format", required = false) String format,
@@ -195,45 +198,41 @@ public class LmsExportController {
         if (wantsHtml) {
             // charset=UTF-8 in the header (not just the <meta> tag) so the Korean copy
             // renders correctly — without it the body is decoded as ISO-8859-1 → mojibake.
-            return ResponseEntity.ok()
-                    .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
-                    .body(DOWNLOAD_PAGE_HTML);
+            return html(DOWNLOAD_PAGE_HTML);
+        }
+
+        LmsExportStatus status = job.getStatus();
+        if (status == LmsExportStatus.DOWNLOADED) {
+            return json(HttpStatus.GONE, Map.of("status", "DOWNLOADED", "message", "이미 다운로드된 1회용 링크입니다. 다시 내보내기 해주세요."));
         }
 
         Instant now = Instant.now();
         if (now.isAfter(job.getExpiresAt())) {
             log.info("LMS export download expired: jobId={} expiresAt={}", jobId, job.getExpiresAt());
-            return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다. (유효시간 " + properties.getDownloadTtl().toMinutes() + "분)"));
+            return json(HttpStatus.GONE, Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다. (유효시간 " + properties.getDownloadTtl().toMinutes() + "분)"));
         }
 
-        LmsExportStatus status = job.getStatus();
         if (status == LmsExportStatus.QUEUED || status == LmsExportStatus.BUILDING) {
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(Map.of("status", "BUILDING", "message", "압축 파일을 만들고 있어요. 약 5분 정도 걸릴 수 있어요. 이 페이지를 열어두면 완료되는 대로 자동으로 다운로드됩니다."));
+            return json(HttpStatus.ACCEPTED, Map.of("status", "BUILDING", "message", "압축 파일을 만들고 있어요. 약 5분 정도 걸릴 수 있어요. 이 페이지를 열어두면 완료되는 대로 자동으로 다운로드됩니다."));
         }
 
         if (status == LmsExportStatus.FAILED) {
             String reason = job.getFailureReason() != null ? job.getFailureReason() : "내보내기 생성 실패";
-            return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("status", "FAILED", "message", "파일 생성 실패: " + reason));
+            return json(HttpStatus.GONE, Map.of("status", "FAILED", "message", "파일 생성 실패: " + reason));
         }
 
         if (status == LmsExportStatus.EXPIRED) {
-            return ResponseEntity.status(HttpStatus.GONE)
-                    .body(Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다."));
+            return json(HttpStatus.GONE, Map.of("status", "EXPIRED", "message", "다운로드 링크가 만료되었습니다."));
         }
 
         if (status == LmsExportStatus.READY) {
             if (job.getFilePath() == null) {
-                return ResponseEntity.status(HttpStatus.GONE)
-                        .body(Map.of("status", "FAILED", "message", "파일 경로를 찾을 수 없습니다."));
+                return json(HttpStatus.GONE, Map.of("status", "FAILED", "message", "파일 경로를 찾을 수 없습니다."));
             }
 
             File file = new File(job.getFilePath());
             if (!file.exists()) {
-                return ResponseEntity.status(HttpStatus.GONE)
-                        .body(Map.of("status", "FAILED", "message", "파일이 삭제되었거나 존재하지 않습니다."));
+                return json(HttpStatus.GONE, Map.of("status", "FAILED", "message", "파일이 삭제되었거나 존재하지 않습니다."));
             }
 
             // Path-traversal guard: resolve the canonical real paths of the served file and the
@@ -248,11 +247,18 @@ public class LmsExportController {
 
             // Page poll (format=json): report readiness without consuming the one-shot stream.
             if (wantsJsonStatus) {
-                return ResponseEntity.ok(Map.of("status", "READY", "message", "다운로드 준비가 완료되었습니다."));
+                return json(HttpStatus.OK, Map.of("status", "READY", "message", "다운로드 준비가 완료되었습니다."));
             }
 
-            Resource resource = new FileSystemResource(file);
             String contentDisposition = "attachment; filename=\"lms-materials-" + jobId + ".zip\"";
+            StreamingResponseBody stream = outputStream -> {
+                Files.copy(file.toPath(), outputStream);
+                outputStream.flush();
+                int updated = jobRepository.markDownloaded(jobId, Instant.now());
+                if (updated == 0) {
+                    log.info("LMS export download completed after token was already consumed or no longer ready: jobId={}", jobId);
+                }
+            };
 
             // The capability token rides in the URL query string (browser-download constraint).
             //  - Referrer-Policy: no-referrer → the token URL is never sent as a Referer to any
@@ -266,10 +272,32 @@ public class LmsExportController {
                     .header(HttpHeaders.PRAGMA, "no-cache")
                     .contentType(MediaType.parseMediaType("application/zip"))
                     .contentLength(file.length())
-                    .body(resource);
+                    .body(stream);
         }
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+    }
+
+    private ResponseEntity<StreamingResponseBody> json(HttpStatus status, Map<String, String> body) {
+        byte[] bytes = jsonBytes(body);
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(outputStream -> outputStream.write(bytes));
+    }
+
+    private ResponseEntity<StreamingResponseBody> html(String body) {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
+                .body(outputStream -> outputStream.write(bytes));
+    }
+
+    private static byte[] jsonBytes(Map<String, String> body) {
+        try {
+            return OBJECT_MAPPER.writeValueAsBytes(body);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize LMS export download response", e);
+        }
     }
 
     /**

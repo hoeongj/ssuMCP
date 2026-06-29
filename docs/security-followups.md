@@ -35,12 +35,12 @@
 - **권장 접근**: 멀티 레플리카 전환을 결정하면, outbox/export claim에 SKIP LOCKED + lease 타임아웃, rate-limit은 Redis 기반 분산 카운터로 묶어 한 번에.
 - **진행에 필요한 것**: 멀티 레플리카 전환 결정(트래픽 근거), 부하/동시성 테스트.
 
-## 5. LMS capability 토큰 1회성 (#16 일부)
+## 5. LMS capability 토큰 1회성 (#16 일부) — ✅ 적용 (2026-06-30)
 
 - **무엇**: LMS export 다운로드 capability 토큰을 단기 TTL뿐 아니라 **1회 사용 후 무효화**(single-use).
-- **왜 보류**: 현재 단기 TTL이지만 TTL 내 재사용 가능. 1회성은 다운로드 완료 시점 write-back(상태 저장)이 필요한 후속 작업이다. 이미 부분 완화: 응답에 no-referrer/no-store/no-cache + 단기 토큰(Bundle C1 `39ad2d9`, #16 부분).
-- **권장 접근**: 토큰 사용 시 atomic하게 "consumed" 마킹(행 락 또는 Redis SETNX) → 재사용 거부.
-- **진행에 필요한 것**: 다운로드 완료 판정 시점 정의(스트림 종료 vs 첫 바이트), 토큰 상태 저장소.
+- **반영**: `LmsExportStatus.DOWNLOADED` terminal state를 추가하고, READY 바이너리 다운로드만 `StreamingResponseBody`로 전환했다. 파일 복사와 flush가 예외 없이 완료된 뒤에만 `markDownloaded(jobId, now)`를 호출한다. repository는 `where status = READY` 조건부 UPDATE로 원자적 `READY -> DOWNLOADED` 전이를 수행한다. 상세 설계는 [ADR 0067](adr/0067-lms-single-use-download-token.md).
+- **부분 완화 유지**: 기존 no-referrer/no-store/no-cache + 단기 토큰(Bundle C1 `39ad2d9`, #16 부분)은 그대로 유지한다. 이번 변경은 여기에 성공 다운로드 후 replay 차단을 추가한다.
+- **잔여**: 거의 동시에 시작된 두 READY 스트림은 둘 다 파일을 받을 수 있지만, 완료 후 전이는 하나만 성공한다. post-download replay 차단이 목표라 수용한다.
 
 ## 6. ssu-ai-service `/v1/embeddings` 인증 (#20)
 
@@ -63,6 +63,7 @@
 - **왜 보류**: 저보안가치 + 대규모 diff 고위험. 보안 remediation 범위가 아니다.
 - **권장 접근**: 별도 refactor 작업으로 책임 단위 추출(ADR 0051/0052의 dispatcher/evaluator 분리 패턴 연장), 회귀 테스트로 보호.
 - **진행에 필요한 것**: 별도 일정, 충분한 테스트 커버리지 확보.
+- **2026-06-30 결정(스킵)**: 포트폴리오 가치 판정 결과 스킵. 책임 분리 리팩터 역량은 이미 ADR 0051/0052(dispatcher/evaluator 분리)로 입증됐다. 같은 패턴 반복은 새 면접 서사 가치 0에 가깝고, 대규모 diff 회귀 위험만 크다. 진짜 필요해지면 별도 전용 세션에서 테스트 커버리지를 먼저 확보한 뒤 진행한다.
 
 ## 9. Dependabot 보안 후속 bump #110–114, #132–135
 
@@ -80,6 +81,7 @@
 - **왜 보류**: 클라이언트 계약 변경 위험 + 저가치. 통합 envelope 전면 채택 여부는 Rule 2 결정 사항.
 - **권장 접근**: 클라(ssuAI/ssuAgent) 영향 확인 후 하위호환 유지하며 단계 적용, 또는 envelope 표준화 결정 시 일괄.
 - **진행에 필요한 것**: 클라 계약 영향 점검, 포맷 표준화 결정.
+- **2026-06-30 결정(스킵)**: 스킵. 날짜 포맷 통일·dedup 등은 면접 서사가 되지 않고(포트폴리오 가치 ~0), 클라이언트 계약 변경 위험만 있다. 통합 envelope 표준화를 따로 결정하면 그때 일괄 처리한다.
 
 ## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N) — ✅ 활성화·검증 완료 (2026-06-30)
 
