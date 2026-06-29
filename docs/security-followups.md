@@ -63,12 +63,12 @@
 - **권장 접근**: 별도 refactor 작업으로 책임 단위 추출(ADR 0051/0052의 dispatcher/evaluator 분리 패턴 연장), 회귀 테스트로 보호.
 - **진행에 필요한 것**: 별도 일정, 충분한 테스트 커버리지 확보.
 
-## 9. Dependabot 메이저 PR #109–114
+## 9. Dependabot 보안 후속 bump #110–114, #132–135
 
-- **무엇**: 메이저 버전 bump(예: 2.0.0) PR들 검토·반영.
-- **왜 보류**: 메이저 bump는 breaking change 가능성이 있어 검토 필요. 의존성 bump는 자율 머지 금지(철칙 3).
-- **권장 접근**: PR별 changelog/breaking change 확인 → 로컬 테스트 → 사용자 확인 후 머지.
-- **진행에 필요한 것**: 각 PR 영향 분석, 사용자 확인.
+- **배경**: Dependabot PR의 원본 커밋은 bot author라 그대로 fast-forward merge하면 main의 authorship 철칙 1을 위반한다. 따라서 안전한 bump도 PR branch 커밋을 병합하지 않고, 변경 파일만 가져와 `ghdtjdwn <seongjuice999@gmail.com>` 로컬 authored/committed commit으로 재작성해야 한다.
+- **2026-06-30 반영**: #110 server minor/patch group(Spring Boot 4.0.6→4.1.0, Kotlin 2.3.21→2.4.0, Gradle wrapper 9.5.1→9.6.1, Redisson 4.5.0→4.6.1, Resilience4j 2.3.0→2.4.0, OkHttp 5.3.2→5.4.0, JNA 5.18.1→5.19.1 등)과 #132 setup-java 5.3.0→5.4.0, #133 setup-node 4.4.0→6.4.0, #134 action-gh-release 2.6.2→3.0.1, #135 checkout 6.0.3→7.0.0을 한 로컬 commit으로 재작성 반영한다.
+- **종결 처리**: #111, #112, #114의 standalone MCP SDK 2.0 bump는 `spring-ai-bom 1.1.7`이 고정하는 MCP SDK 1.x 계열과 충돌해 단독 반영 시 컴파일 실패 위험이 크므로 superseded로 닫는다.
+- **보류**: #113 spring-ai 2.0 / Jackson 2→3 전환은 약 80개 `com.fasterxml.jackson` 참조, MCP SDK 2.0 API 변화, annotation package 이동을 동반하는 breaking migration이다. 보안 후속 routine bump로 섞지 않고 전용 migration branch에서 설계·테스트한다.
 
 ## 10. cosmetic 응답 포맷 (경미)
 
