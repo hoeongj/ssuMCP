@@ -4725,3 +4725,60 @@ Caused by: tools.jackson.databind.exc.MismatchedInputException
 1. 단위 테스트가 다 통과하는데 prod에서만 깨졌다 — 원인과 발견 과정은? (성공-경로 미실행 잠복 버그, 상류 429가 하류 디코딩을 가림; curl→JDK클라→로컬 실호출로 레이어 분리)
 2. 외부 API DTO를 설계할 때 무엇을 신뢰하면 안 되나? (스펙 문서보다 실제 응답 — Gemini가 index 0 생략; 안 쓰는 필드는 빼서 역직렬화 표면 축소)
 3. Jackson 3/Spring Boot 4에서 record DTO의 primitive 필드가 왜 위험한가? (누락/null 필드 → FAIL_ON_NULL_FOR_PRIMITIVES로 전체 응답 폐기; nullable 박싱형 또는 필드 제거)
+
+## 사건 23: ssuAgent thread 소유권 바인딩 후 ssuAI가 로그아웃에서 thread/session을 재사용하던 교차 세션 잔류 (2026-06-30)
+
+ssuAgent가 `thread_id`를 생성한 `mcp_session_id`에 바인딩하도록 강화되면서, 프론트엔드도 로그아웃 시 에이전트 대화 단위를 끊어야 한다. 그런데 ssuAI `ChatPanel`은 `sessionStorage["ssuagent_thread_id"]`를 최초 1회만 읽고 state setter가 없었으며, `mcpSessionId`도 로그인 후 한 번 교환되면 로그아웃에서 지우지 않았다. 같은 탭에서 A가 로그아웃하고 B가 로그인하면, 화면과 요청이 A의 thread/session 잔여 상태를 이어받을 수 있었다.
+
+### 틀린 가설 → 실제
+- **틀린 가설**: 서버가 thread 소유권을 검사하므로 프론트엔드의 기존 thread 재사용은 403으로 막히기만 하고 보안상 충분하다.
+- **실제**: 서버 403은 마지막 방어선일 뿐, 클라이언트가 이전 사용자의 대화 화면·pending interrupt·에러·stream buffer를 그대로 보여주거나, 새 로그인에서 이전 session이 소유한 thread를 다시 보내는 것은 같은 탭 사용자 전환에서 명확한 session bleed다. 서버 강화와 클라이언트 reset이 함께 있어야 UX와 보안 경계가 일치한다.
+
+### 실제 원인
+- `threadId`가 `useState(getOrCreateThreadId)`의 읽기 전용 state라 로그아웃에서 교체할 수 없었다.
+- `mcpSessionId` 교환 effect가 `mcpSessionId` 존재 시 조기 반환하지만, 로그아웃에서 `setMcpSessionId(null)`을 하지 않아 다음 로그인에서도 stale 세션이 남을 수 있었다.
+- 대화 상태(`messages`, `streamingContent`, `pendingInterrupt`, `error`)가 인증 상태 전환과 독립이라 이전 사용자의 대화가 화면에 남았다.
+
+### 해결
+- `threadId`에 setter를 추가하고, 로그아웃 true→false 전환에서만 `mcpSessionId`와 대화 상태를 비운다.
+- `sessionStorage["ssuagent_thread_id"]`를 제거한 뒤 새 `thread_id`를 생성해 같은 저장 경로로 다시 저장한다. 초기 익명 mount는 reset하지 않아 익명 사용자의 기존 대화 연속성은 유지한다.
+- 로그인 후 `accessToken → mcp_session_id` 교환 effect는 그대로 두어, reset 이후 새 로그인은 새 MCP 세션을 받고 새 thread 소유권을 시작한다.
+
+### 핵심 파일 / 커밋
+`ssuAI/components/chat/ChatPanel.tsx`, `ssuAI/components/chat/ChatPanel.test.tsx`, `ssuAI/docs/adr/0001-agent-sse-chat-hitl.md` / 커밋: ssuAI `272dd42`.
+
+### 포트폴리오 포인트
+- 서버의 authorization hardening만으로 끝내지 않고, 브라우저 state lifecycle까지 같은 trust boundary로 맞춘 사례다.
+- 같은 탭 사용자 전환이라는 현실적인 운영 시나리오에서 session/thread bleed를 차단하고, 실패 모드(403) 자체를 사용자가 만나지 않도록 클라이언트 상태 전이를 설계했다.
+
+### 예상 면접 질문
+1. 서버가 이미 thread 소유권을 403으로 막는데 왜 프론트엔드 reset도 필요한가? (보안 경계와 UX 상태 경계가 달라서, 이전 사용자 대화 노출과 stale 요청을 클라이언트에서 먼저 제거해야 함)
+2. 왜 초기 익명 mount에서는 reset하지 않았나? (익명 사용자는 sessionStorage thread로 대화 연속성을 유지해야 하며, true→false 전환만 logout 의미를 가짐)
+3. logout reset 후 재로그인에서 새 MCP 세션 교환이 깨지지 않는 이유는? (`mcpSessionId`를 null로 내려 effect guard를 다시 열고, 새 thread를 저장해 서버 소유권 바인딩과 맞춤)
+
+---
+
+## 사건 24: ssuAI pre-commit secret scan이 코드가 아니라 로컬 gitleaks 미설치로 실패 (2026-06-30)
+
+ssuAI #12 logout reset 커밋 생성 중 lefthook pre-commit이 `gitleaks protect --staged --redact --config .gitleaks.toml`을 실행하려다 `sh: gitleaks: command not found`로 중단됐다. 테스트·lint·typecheck·build는 모두 통과했지만, secret scan 실행 파일이 없어 커밋 게이트를 통과하지 못했다.
+
+### 틀린 가설
+"pre-commit이 실패했으니 staged 변경에 secret leak이 있거나 hook 설정이 깨졌다."
+
+### 실제 원인
+`lefthook.yml`과 `.gitleaks.toml`은 정상 존재했다. 문제는 로컬 PATH에 `gitleaks` 바이너리가 설치되어 있지 않은 실행 환경 결손이었다.
+
+### 해결
+Homebrew로 `gitleaks`를 설치한 뒤 같은 lefthook pre-commit을 다시 실행한다. hook을 우회하지 않고 secret scan 결과를 커밋 게이트로 유지한다.
+
+### 핵심 파일 / 커밋
+`ssuAI/lefthook.yml`, `ssuAI/.gitleaks.toml` / 코드 커밋 없음(로컬 도구 설치 문제).
+
+### 포트폴리오 포인트
+- 커밋 hook 실패를 "코드 실패"로 단정하지 않고, hook 설정·config·실행 파일 존재를 분리해 원인을 좁힌 사례다.
+- 보안 scan이 로컬 의존성에 묶여 있으면 새 실행 환경에서 커밋이 막힐 수 있으므로, CI와 개발 환경 모두에서 도구 설치 경로를 명시해야 한다.
+
+### 예상 면접 질문
+1. pre-commit 실패가 secret leak인지 도구 환경 문제인지 어떻게 구분했나?
+2. 왜 `--no-verify`로 우회하지 않았나? (보안 게이트 자체가 요구사항이므로 동일 hook을 통과해야 함)
+3. 이런 로컬 도구 누락을 재발 방지하려면? (README/환경 bootstrap, CI secret scan, hook 설치 확인)
