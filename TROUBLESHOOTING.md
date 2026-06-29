@@ -4711,9 +4711,9 @@ Caused by: tools.jackson.databind.exc.MismatchedInputException
 ### 핵심 파일 / 커밋
 `AcademicEmbeddingClient.java`(Item 레코드)·`AcademicEmbeddingClientTests.java`(회귀+기존 Item 생성자 정리). 커밋: (배포 시 기입). 연관 사건 19/21, ADR 0065.
 
-### 검증 / 상태
+### 검증 / 상태 (✅ 완료)
 - 단위 테스트 그린 + 실제 API로 embed() 8벡터 확정.
-- **배포 후 검증(이번엔 진짜 게이트)**: 새 pod에서 refresh 후 `academic_embeddings` 행수 0→>0, `search_academic_policy_sources`가 `embeddingUsed:true, fusionMethod:rrf`. 행수가 217 미만이어도 >0이면 메커니즘 정상(TPM로 일부만 차면 6h refresh에 걸쳐 증분 완납).
+- **배포 후 prod 게이트 통과(2026-06-29 14:38 UTC)**: 새 pod(`a2c8758`) startup refresh가 **단일 패스로 `academic_embeddings` 0→217 완납**(`embeddingActive=true chunks=217`), `search_academic_policy_sources` → **`embeddingUsed:true, fusionMethod:rrf`**. 검색 품질도 lexical(일반 안내페이지)→학칙시행세칙 제48조(복수전공 이수학점)·다전공 36학점 등 실제 조항 반환으로 개선. batch=8/15s가 TPM 아래로 통과해 한 번에 완납(증분 영속은 안전망으로 잔존). **사건 19→21→22로 이어진 하이브리드 RAG 휴면 최종 종결.**
 
 ### 포트폴리오 포인트
 - **"tests green but prod broken"의 교과서**: 모든 단위 테스트는 통과하는데, **prod의 성공-경로가 한 번도 실행된 적 없어** 잠복한 디코딩 버그. 상류 버그(TPM 429)가 하류 버그(디코딩)를 6주간 가려, 상류를 고치자 비로소 드러남.
