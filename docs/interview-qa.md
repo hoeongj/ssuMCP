@@ -3,6 +3,8 @@
 > 범위: ssuMCP · ssuAgent 아키텍처 결정의 "왜"를 설명하는 Q&A.
 > 목적: 면접에서 즉답할 수 있도록 근거와 트레이드오프를 미리 정리.
 > 작성일: 2026-06-19
+>
+> 보안 관련: **폴리글랏 3-서비스 보안 일관화(A1)** 서사·매트릭스·Q&A는 별도 문서 [`security-consistency.md`](security-consistency.md) 참조. 배포된 보안 제어 색인은 [`security.md` §14-1](security.md).
 
 ---
 
