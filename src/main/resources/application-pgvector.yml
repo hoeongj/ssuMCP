@@ -1,0 +1,7 @@
+# Optional `pgvector` profile — adds the pgvector Flyway location on top of the default
+# vendor migrations and activates PgVectorAnnIndex. NOT active in prod (prod has no `vector`
+# extension; the default in-memory cosine store stays primary). Used for the Testcontainers
+# ANN proof (PgVectorAnnIndexIT) and any deployment that does provision pgvector. See ADR 0070.
+spring:
+  flyway:
+    locations: classpath:db/migration/V*__*.sql,classpath:db/migration/{vendor},classpath:db/migration/pgvector
