@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'jacoco'
     id 'org.jetbrains.kotlin.jvm' version '2.3.21'
     id 'org.jetbrains.kotlin.plugin.spring' version '2.3.21'
     id 'org.springframework.boot' version '4.0.6'
@@ -26,6 +27,11 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom 'org.springframework.ai:spring-ai-bom:1.1.7'
+        // Pin the Testcontainers module versions (junit-jupiter, postgresql). The Spring Boot
+        // 4.0.6 platform does not manage the standalone testcontainers artifacts, so without
+        // this BOM they resolve to an empty version. Kept in the 1.20.x line that
+        // com.redis:testcontainers-redis:2.2.2 is built against.
+        mavenBom 'org.testcontainers:testcontainers-bom:1.20.6'
     }
 }
 
@@ -88,6 +94,16 @@ dependencies {
     testImplementation 'com.squareup.okhttp3:okhttp:5.3.2'
     testImplementation 'com.squareup.okhttp3:mockwebserver:5.3.2'
     testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
+
+    // Integration testing against prod-equivalent backing services (Postgres, Redis)
+    // instead of H2/embedded — catches dialect/type drift the in-memory fakes miss.
+    // The container ITs self-skip when no Docker daemon is present (disabledWithoutDocker),
+    // so the default local `./gradlew test` stays green offline; CI (Docker present) runs them.
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'com.redis:testcontainers-redis:2.2.2'   // not in the Spring BOM -> pinned
+
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -100,5 +116,63 @@ tasks.withType(JavaCompile).configureEach {
 tasks.named('test') {
     useJUnitPlatform()
     systemProperty 'spring.profiles.active', 'test'
+    finalizedBy 'jacocoTestReport'
+}
+
+// --- Coverage measurement + regression ratchet (SET B) ---
+// Gate philosophy: start the LINE floor just below the current measured ratio so the
+// build never goes red on existing code, then ratchet the floor up as coverage rises.
+// The point is to block regressions, not to chase a vanity number.
+jacoco {
+    toolVersion = '0.8.13'
+}
+
+// Exclude generated FFI bindings, config/DTO/bootstrap classes from the coverage
+// denominator — generated code and trivial holders would otherwise distort the signal.
+def jacocoExcludes = [
+        'dev/eatsteak/rusaint/**',
+        '**/*Config*',
+        '**/dto/**',
+        '**/*Application*'
+]
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('test')
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                // Measured LINE coverage = 0.738 (offline, container ITs excluded; CI with
+                // Docker is >= that). Floor set just below to block regressions; ratchet up later.
+                minimum = 0.70
+            }
+        }
+    }
+}
+
+// Apply the class-directory exclusions once the source sets are realised. A top-level
+// afterEvaluate is required: configuring this inside the lazy task blocks above runs
+// after project evaluation, where afterEvaluate(...) is illegal.
+afterEvaluate {
+    def applyExcludes = { jacocoTask ->
+        jacocoTask.classDirectories.setFrom(files(jacocoTask.classDirectories.files.collect {
+            fileTree(dir: it, exclude: jacocoExcludes)
+        }))
+    }
+    applyExcludes(tasks.named('jacocoTestReport').get())
+    applyExcludes(tasks.named('jacocoTestCoverageVerification').get())
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
 }
 
