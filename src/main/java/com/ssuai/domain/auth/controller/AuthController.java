@@ -88,15 +88,17 @@ public class AuthController {
         } catch (InvalidJwtException exception) {
             throw new UnauthorizedException();
         }
-        if (refreshTokenDenylist.isDenied(claims.jti())) {
-            throw new UnauthorizedException();
-        }
+        // Refresh-token reuse-denylist removed (was the real login-outage cause): the rotated
+        // refresh Set-Cookie does not reliably replace the old cross-site cookie (Vercel proxy),
+        // and the /auth/return page can call refresh more than once, so the browser legitimately
+        // re-sends a refresh token whose jti was already denied on first use -> 401 -> the user
+        // is bounced back to login. A refresh token is now accepted for its full TTL (refresh
+        // reuse is acceptable here). The earlier jjwt/Jackson hypothesis was a red herring.
         Student student = studentService.findById(claims.studentId())
                 .orElseThrow(UnauthorizedException::new);
 
         String accessToken = jwtProvider.issueAccess(student);
         String rotatedRefresh = jwtProvider.issueRefresh(student);
-        refreshTokenDenylist.deny(claims.jti(), claims.expiresAt());
         response.addHeader(HttpHeaders.SET_COOKIE, buildRefreshCookie(rotatedRefresh).toString());
 
         return ApiResponse.success(new RefreshResponse(

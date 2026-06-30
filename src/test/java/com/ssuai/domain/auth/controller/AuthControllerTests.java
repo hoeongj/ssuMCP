@@ -127,7 +127,6 @@ class AuthControllerTests {
                 "refresh-jti-1");
 
         when(jwtProvider.parse("old.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
-        when(refreshTokenDenylist.isDenied("refresh-jti-1")).thenReturn(false);
         when(studentService.findById("20231234")).thenReturn(Optional.of(student));
         when(jwtProvider.issueAccess(student)).thenReturn("new.access.jwt");
         when(jwtProvider.issueRefresh(student)).thenReturn("new.refresh.jwt");
@@ -144,28 +143,29 @@ class AuthControllerTests {
                 .andExpect(header().string("Set-Cookie", containsString("Secure")))
                 .andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")))
                 .andExpect(header().string("Set-Cookie", containsString("Path=/api/auth")));
-
-        verify(refreshTokenDenylist).deny("refresh-jti-1", claims.expiresAt());
     }
 
     @Test
-    void refreshReturns401WhenRefreshJtiDenied() throws Exception {
+    void refreshAcceptsAReusedRefreshToken() throws Exception {
+        // The reuse-denylist was removed (it was the login-outage cause): a refresh token works
+        // for its full TTL even if it was already used once, because the rotated Set-Cookie does
+        // not reliably replace the old cross-site cookie, so the browser legitimately re-sends it.
+        Student student = new Student("20231234", "student", "컴퓨터학부", "재학", Instant.now());
         JwtClaims claims = new JwtClaims(
                 "20231234", "student",
                 JwtTokenType.REFRESH,
                 Instant.now(), Instant.now().plusSeconds(86_400),
                 "reused-jti");
         when(jwtProvider.parse("old.refresh.jwt", JwtTokenType.REFRESH)).thenReturn(claims);
-        when(refreshTokenDenylist.isDenied("reused-jti")).thenReturn(true);
+        when(studentService.findById("20231234")).thenReturn(Optional.of(student));
+        when(jwtProvider.issueAccess(student)).thenReturn("new.access.jwt");
+        when(jwtProvider.issueRefresh(student)).thenReturn("new.refresh.jwt");
 
         mockMvc.perform(post("/api/auth/refresh")
                         .cookie(new Cookie("ssuai_refresh", "old.refresh.jwt")))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").value("new.access.jwt"));
 
-        verifyNoInteractions(studentService);
-        verify(jwtProvider, never()).issueAccess(any());
-        verify(jwtProvider, never()).issueRefresh(any());
         verify(refreshTokenDenylist, never()).deny(anyString(), any());
     }
 
