@@ -147,6 +147,24 @@ class JwtProviderTests {
                 .hasMessageContaining("32 bytes");
     }
 
+    @Test
+    void secretWithTrailingCarriageReturnDerivesTheSameKey() {
+        // A trailing \r (Windows env-var artifact) must not change the derived signing key.
+        // Before the .strip() hardening it broke base64 decode -> raw-bytes fallback -> a
+        // different key, so a token issued with the clean secret failed to parse.
+        JwtProvider clean = new JwtProvider(properties(), FIXED_CLOCK);
+        JwtProperties withCr = properties();
+        withCr.setSecret(BASE64_SECRET + "\r");
+        JwtProvider crProvider = new JwtProvider(withCr, FIXED_CLOCK);
+
+        Student student = new Student("20210001", "홍길동", "컴퓨터학부", "재학", NOW);
+        String token = clean.issueAccess(student);
+
+        JwtClaims claims = crProvider.parse(token, JwtTokenType.ACCESS);
+        assertThat(claims.studentId()).isEqualTo("20210001");
+        assertThat(claims.type()).isEqualTo(JwtTokenType.ACCESS);
+    }
+
     private static JwtProperties properties() {
         JwtProperties props = new JwtProperties();
         props.setSecret(BASE64_SECRET);

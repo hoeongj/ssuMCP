@@ -71,7 +71,11 @@ dependencies {
     implementation 'org.jsoup:jsoup:1.22.2'
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+    // GSON serializer (not jackson): jjwt's claim (de)serialization no longer depends on
+    // Jackson, so a Spring Boot bump that swaps managed Jackson 2 -> 3 cannot break JWT
+    // parsing (the b923464 login-outage root cause). jjwt auto-selects GsonSerializer from
+    // the classpath; no code change needed. This unblocks a safe Boot 4.1.x retry.
+    runtimeOnly 'io.jsonwebtoken:jjwt-gson:0.13.0'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
     implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
     implementation 'org.springframework.ai:spring-ai-starter-mcp-client'
