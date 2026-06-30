@@ -2,7 +2,7 @@
 
 > 범위: ssuMCP(Spring Boot, Java/Kotlin) · ssuAgent(FastAPI, Python) · ssuAI(Next.js, TypeScript) 세 서비스에 동일한 보안 통제를 일관 적용한 과정과 근거.
 > 목적: "보안을 **어디까지 일관되게** 적용했는가"라는 시스템-사고 면접 질문에 before/after를 코드로 답하기 위한 기록.
-> 작성일: 2026-06-30. 단일 분석 소스: `../../IMPROVEMENT_ANALYSIS_2026-06-23.md` §A1, 배포 제어 색인: `security.md` §14-1.
+> 작성일: 2026-06-30. 배포 제어 색인: `security.md` §14-1.
 
 ---
 
@@ -10,7 +10,7 @@
 
 2026-06 보안 remediation(Wave 1~5)으로 **ssuMCP 코어는 두텁게 하드닝**됐다(rate-limit·챗 read-only·에러 비노출·CSRF·OAuth 소유권 가드·fail-closed 좌석락 등, `security.md` §14-1).
 
-그런데 직후 4종 AI(Claude·Claude2·Codex·AGY)에 전체 코드를 주고 받은 통합 triage(2026-06-23)에서 **새로 발견된 약점이 거의 전부 "주변부"에 몰려 있었다** — 형제 서비스(ssuAgent)와 운영용 엔드포인트(`/api/admin/*`), 클라이언트(ssuAI). 즉:
+그런데 직후 여러 독립적인 보안 리뷰를 통합한 triage(2026-06-23)에서 **새로 발견된 약점이 거의 전부 "주변부"에 몰려 있었다** — 형제 서비스(ssuAgent)와 운영용 엔드포인트(`/api/admin/*`), 클라이언트(ssuAI). 즉:
 
 > 코어에 적용한 통제가 **같은 시스템의 다른 서비스에는 안 옮겨진** 전형적 패턴.
 

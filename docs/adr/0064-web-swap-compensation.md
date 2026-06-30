@@ -5,13 +5,13 @@
 | 날짜 | 2026-06-23 |
 | 상태 | Accepted — 구현(브랜치 `fix/library-web-swap-compensation`) |
 | 범위 | `LibraryReservationWebController.executeSwap`(+`compensateSwap`/`partialSwapFailure`) |
-| 연관 | `ConfirmActionMcpTool.compensateSwap`(MCP 경로 원본 보상 로직) · `mp/IMPROVEMENT_ANALYSIS_2026-06-23.md`(Codex 단독발견) |
+| 연관 | `ConfirmActionMcpTool.compensateSwap`(MCP 경로 원본 보상 로직) · 내부 분석에서 발견 |
 
 ---
 
 ## 배경 — 무슨 문제
 
-좌석 이석(swap)은 upstream(Pyxis)에 **원자적 swap API가 없어** 2단계로 구현된다: ① 기존 좌석 discharge(반납) → ② 새 좌석 reserve(예약). MCP 경로(`ConfirmActionMcpTool`)는 ②가 실패하면 **기존 좌석을 재예약하는 보상(compensation)** 으로 사용자 상태를 복구한다(ADR/Codex #12). 그러나 **웹 컨트롤러(`LibraryReservationWebController.executeSwap`)에는 그 보상이 없었다** — ① 성공 후 ② 실패 시 `FAILED_RACE`/`FAILED_UPSTREAM`만 반환하고 끝. 결과: 사용자가 **기존 좌석도 잃고 새 좌석도 못 얻는** 실제 데이터 손실. "코어/MCP엔 적용했는데 형제 경로(웹)엔 미이식"의 전형.
+좌석 이석(swap)은 upstream(Pyxis)에 **원자적 swap API가 없어** 2단계로 구현된다: ① 기존 좌석 discharge(반납) → ② 새 좌석 reserve(예약). MCP 경로(`ConfirmActionMcpTool`)는 ②가 실패하면 **기존 좌석을 재예약하는 보상(compensation)** 으로 사용자 상태를 복구한다(ADR · 외부 리뷰 #12). 그러나 **웹 컨트롤러(`LibraryReservationWebController.executeSwap`)에는 그 보상이 없었다** — ① 성공 후 ② 실패 시 `FAILED_RACE`/`FAILED_UPSTREAM`만 반환하고 끝. 결과: 사용자가 **기존 좌석도 잃고 새 좌석도 못 얻는** 실제 데이터 손실. "코어/MCP엔 적용했는데 형제 경로(웹)엔 미이식"의 전형.
 
 ## 결정
 

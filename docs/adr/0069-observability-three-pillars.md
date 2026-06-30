@@ -5,7 +5,7 @@
 | 날짜 | 2026-06-30 |
 | 상태 | Accepted — 앱 계측 적용(prod inert), Tempo/Loki prod 배포는 보류 |
 | 범위 | `build.gradle`, `application.yml`, `logback-spring.xml`, `TraceIdFilter`, `ApiResponse`, `LlmProviderChain`, `load-tests/`(tempo/loki/promtail/grafana) |
-| 연관 문서 | ADR 0061(rate-limit·메트릭), ADR 0047/0048(좌석 락·intent SSE), `IMPROVEMENT_SPEC_JOB_DRIVEN_2026-06-30.md` §SET A |
+| 연관 문서 | ADR 0061(rate-limit·메트릭), ADR 0047/0048(좌석 락·intent SSE), 내부 스펙 문서 §SET A |
 
 > 스펙 초안은 0066으로 적었으나 0066은 read-only rootfs가 점유 → 0069로 재배정.
 

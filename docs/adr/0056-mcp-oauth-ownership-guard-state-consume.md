@@ -12,11 +12,11 @@
 
 ## 배경 — 무슨 문제
 
-5종 AI(Claude·ChatGPT·Gemini·AGY·Codex)에 전체 코드를 주고 받은 보안 분석을 통합·검증하는 과정에서 `McpAuthHelper`(MCP private 도구 세션 해소 지점)를 두고 **서로 다른 세 가지 지적**이 나왔다. 이를 코드로 대조해 진짜 결함만 추렸다.
+여러 독립적인 보안 리뷰를 통합·검증하는 과정에서 `McpAuthHelper`(MCP private 도구 세션 해소 지점)를 두고 **서로 다른 세 가지 지적**이 나왔다(이하 리뷰 A/B/C). 이를 코드로 대조해 진짜 결함만 추렸다.
 
-### (a) ChatGPT "최우선 P0: 가짜 mcp_session_id 우회" — 오진
+### (a) 리뷰 A "최우선 P0: 가짜 mcp_session_id 우회" — 오진
 
-ChatGPT는 로그인 세션으로 테스트한 뒤, 가짜 `mcp_session_id="invalid-..."`로 `get_my_schedule`·`get_my_lms_terms`·`prepare/confirm_lms_material_export`가 전부 `status:OK` + 실데이터/다운로드 URL을 반환했다며 "인증 우회"로 단정했다. 응답 형태는 `{"status":"OK","provider":null,"mcpSessionId":"invalid-...","data":{실값}}`였다.
+리뷰 A는 로그인 세션으로 테스트한 뒤, 가짜 `mcp_session_id="invalid-..."`로 `get_my_schedule`·`get_my_lms_terms`·`prepare/confirm_lms_material_export`가 전부 `status:OK` + 실데이터/다운로드 URL을 반환했다며 "인증 우회"로 단정했다. 응답 형태는 `{"status":"OK","provider":null,"mcpSessionId":"invalid-...","data":{실값}}`였다.
 
 코드 3곳 추적 결과 **우회가 아니었다**:
 
@@ -24,17 +24,17 @@ ChatGPT는 로그인 세션으로 테스트한 뒤, 가짜 `mcp_session_id="inva
 2. `McpPrivateToolResponse.ok(mcpSessionId, data)`가 **입력 인자를 그대로 echo**하고 있었다 → 응답의 `mcpSessionId`가 "가짜 id가 먹혔다"는 착시를 만들었다.
 3. `ok()`가 `provider`를 **null로 하드코딩**하고 있었다 → 어느 provider가 응답했는지 알 수 없어 착시를 강화했다.
 
-미인증(JWT·transport 모두 없음) + 가짜 인자뿐이면 Tier3 `find()`가 empty → `AUTH_REQUIRED`. 반환된 데이터는 ChatGPT 자기 계정 것이다. ADR 0039가 이미 같은 계열의 "임의 세션 id로 남의 데이터" 보고를 교차연결 누수 부재로 규명했고, 이번에도 동일하다.
+미인증(JWT·transport 모두 없음) + 가짜 인자뿐이면 Tier3 `find()`가 empty → `AUTH_REQUIRED`. 반환된 데이터는 리뷰어 본인 계정 것이다. ADR 0039가 이미 같은 계열의 "임의 세션 id로 남의 데이터" 보고를 교차연결 누수 부재로 규명했고, 이번에도 동일하다.
 
-ChatGPT 처방 `requireProviderSession`(인자가 DB 세션에 없으면 무조건 거부)은 정당한 Tier1/2 해소를 깨뜨려 ChatGPT 무한 `AUTH_REQUIRED` 루프(사건 9 재발) + 인증 회귀를 일으킨다 → **적용 거부.**
+리뷰 A가 제안한 `requireProviderSession`(인자가 DB 세션에 없으면 무조건 거부)은 정당한 Tier1/2 해소를 깨뜨려 ChatGPT 무한 `AUTH_REQUIRED` 루프(사건 9 재발) + 인증 회귀를 일으킨다 → **적용 거부.**
 
-### (b) Gemini ① "bind 무검증으로 세션 고정/권한 상승" — 전제는 부분 오류, 결함은 실재
+### (b) 리뷰 B ① "bind 무검증으로 세션 고정/권한 상승" — 전제는 부분 오류, 결함은 실재
 
-Gemini는 "`bindOauthSubject`가 기존 바인딩 일치 검사 없이 수행된다"고 했으나, `bindOauthSubject`는 **이미 "stored sub == null일 때만 bind"**였다(transport 다중매칭 무해화 ADR 0042 이후 코드). 전제는 틀렸다.
+리뷰 B는 "`bindOauthSubject`가 기존 바인딩 일치 검사 없이 수행된다"고 했으나, `bindOauthSubject`는 **이미 "stored sub == null일 때만 bind"**였다(transport 다중매칭 무해화 ADR 0042 이후 코드). 전제는 틀렸다.
 
 그러나 **진짜 결함은 같은 파일의 다른 지점**에 실재했다: `resolveSession`의 Tier2/3는 transport id 또는 opaque id만 일치하면 세션을 반환하면서, **그 세션에 이미 바인딩된 oauth_subject와 현재 호출자의 JWT `sub`가 다른지 검사하지 않았다.** 공격자가 피해자의 transport id(이전엔 SDK CORS GHSA-hv2w-8mjj-jw22로 유출 가능, #107에서 bump) 또는 opaque id(응답 echo로 노출되는 capability)를 얻고 **자기 JWT를 실으면**, 피해자 세션이 Tier2/3로 해소되어 데이터가 반환된다. → 권한 경계 우회(진짜 P0).
 
-### (c) OAuth state 1회용 토큰의 find-then-delete 레이스 (Codex #11)
+### (c) OAuth state 1회용 토큰의 find-then-delete 레이스 (리뷰 C #11)
 
 `McpAuthStateStore`가 state를 "조회 후 삭제"하는 비원자 패턴이라, 동시 콜백 두 건이 같은 state를 각각 소비할 수 있는 TOCTOU 윈도가 있었다.
 
@@ -64,7 +64,7 @@ OK 응답이 입력 인자가 아니라 **해소된 canonical 세션 id**를 싣
 
 ## 대안과 기각 이유
 
-- **ChatGPT `requireProviderSession`(인자 미발견 시 거부)**: 정당한 Tier1/2 해소를 깨 ChatGPT 무한 루프(사건 9) + 인증 회귀. 기각.
+- **`requireProviderSession`(인자 미발견 시 거부, 리뷰 A 처방)**: 정당한 Tier1/2 해소를 깨 ChatGPT 무한 루프(사건 9) + 인증 회귀. 기각.
 - **명시 `mcp_session_id`를 transport보다 우선**: ADR 0039 대안 A — ChatGPT 턴경계 드랍을 transport로 복원하는 설계를 깨므로 기각.
 - **Tier2/3 자체 제거(인자 세션만 신뢰)**: PR#73의 ChatGPT 지원 존재 이유 삭제. 기각.
 - **state를 in-memory Set으로 dedup**: 멀티포드·재시작에 취약. DB 행수 claim이 단일 진실원천. 기각.

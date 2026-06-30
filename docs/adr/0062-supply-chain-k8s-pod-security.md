@@ -11,7 +11,7 @@
 
 ## 배경 — 무슨 문제
 
-두 부류의 공급망·런타임 하드닝이 빠져 있었다(Codex #22 공급망, #23 k8s):
+두 부류의 공급망·런타임 하드닝이 빠져 있었다(외부 리뷰 #22 공급망, #23 k8s):
 
 - **CI 재현성**: GitHub Actions를 `@v6` 같은 mutable tag로 참조 → 태그가 가리키는 커밋이 바뀌면 빌드가 조용히 달라지거나 악성 코드가 주입될 수 있다(태그는 재지정 가능). Gradle wrapper jar에 checksum 검증 없음. Docker base image를 mutable tag로 FROM.
 - **k8s blast radius**: pod가 기본 ServiceAccount 토큰을 마운트(앱은 k8s API를 호출하지 않음), seccomp 미적용, privilege escalation 미차단.

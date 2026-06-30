@@ -5,21 +5,21 @@
 | 날짜 | 2026-06-18 |
 | 상태 | Accepted |
 | 연관 ADR | [ADR 0036](0036-mcp-auth-optin-two-mode.md) (3-tier 세션 해석), [ADR 0038](0038-chatgpt-mcp-oauth-auth0-dcr.md) (OAuth DCR) |
-| 트리거 | ChatGPT·Claude Desktop 두 외부 MCP 클라이언트의 ssuMCP 전수 테스트 리뷰 |
+| 트리거 | ChatGPT·Claude Desktop 두 외부 MCP 클라이언트로 ssuMCP 도구를 전수 호출하며 진행한 점검 |
 
 ---
 
 ## 배경 — 무엇이 보고되었나
 
-외부 MCP 클라이언트 두 개(ChatGPT, Claude Desktop)가 ssuMCP 도구를 전수 호출하며 작성한 리뷰가 **P0 보안 취약점**을 지목했다:
+외부 MCP 클라이언트 두 개(ChatGPT, Claude Desktop)로 ssuMCP 도구를 전수 호출하던 중, 한 클라이언트의 응답이 **P0 보안 취약점**으로 의심되는 패턴을 보였다:
 
 > "`mcp_session_id`에 임의 UUID를 넣었는데도 `get_my_assignments`가 `AUTH_REQUIRED`/`INVALID_SESSION`이 아니라 **OK + 실제 LMS 과제 데이터**를 반환했다. 도구 인자의 세션 ID를 검증하지 않고 **현재 컨텍스트 / 전역 세션 / 마지막 활성 세션 / 쿠키 세션으로 fallback**하는 구조로 보인다."
 
-ChatGPT는 이를 "private tool이 전역/최근 세션으로 폴백한다"는 **교차 사용자 데이터 누수**로 해석했다.
+이 관측은 "private tool이 전역/최근 세션으로 폴백한다"는 **교차 사용자 데이터 누수**로 해석될 여지가 있었다.
 
-### 결정적 단서: 두 리뷰가 서로 모순됐다
+### 결정적 단서: 두 클라이언트의 관측이 서로 모순됐다
 
-같은 도구(`get_auth_status`)를 두고 두 리뷰의 관측이 **엇갈렸다**:
+같은 도구(`get_auth_status`)를 두고 두 클라이언트의 관측이 **엇갈렸다**:
 
 - **ChatGPT**: 위조/임의 세션 ID → `OK` 반환 (취약 신호로 해석)
 - **Claude Desktop**: 위조 세션 ID → `INVALID_SESSION` 정상 반환 (격리 정상으로 관측)

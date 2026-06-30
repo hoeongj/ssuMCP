@@ -1,7 +1,7 @@
 # ADR 0045 — private tool 응답 메시지를 userMessage / developerMessage로 분리
 
 - 상태: 채택 (2026-06-19)
-- 관련: `McpPrivateToolResponse`, 외부 MCP 클라이언트(ChatGPT·Claude Desktop) 전수 리뷰 후속(③)
+- 관련: `McpPrivateToolResponse`, 외부 MCP 클라이언트(ChatGPT·Claude Desktop) 전수 호출 점검 후속(③)
 
 ## 배경 (무엇이 문제였나)
 
@@ -10,7 +10,7 @@
 - **사용자(UI)**: 챗 화면에 그대로 노출되는 텍스트
 - **에이전트(LLM)**: 다음에 무엇을 할지 알려주는 절차/지시문
 
-특히 `AUTH_REQUIRED` 메시지는 *"이 raw loginUrl을 브라우저에서 열어라 / URL을 PlayMCP 페이지로 치환하지 마라 / mcp_session_id로 재시도하라"* 같은 **장황한 영어 절차문**이다. 이는 에이전트에겐 필요하지만 사용자에게 그대로 보이면 UX가 나쁘다. 외부 리뷰(ChatGPT/Claude Desktop)에서 "응답 스키마 일관화 + 사용자/개발자 메시지 분리" 필요가 지적되었다.
+특히 `AUTH_REQUIRED` 메시지는 *"이 raw loginUrl을 브라우저에서 열어라 / URL을 PlayMCP 페이지로 치환하지 마라 / mcp_session_id로 재시도하라"* 같은 **장황한 영어 절차문**이다. 이는 에이전트에겐 필요하지만 사용자에게 그대로 보이면 UX가 나쁘다. 전수 호출 점검에서 "응답 스키마 일관화 + 사용자/개발자 메시지 분리" 필요가 드러났다.
 
 ## 결정
 
