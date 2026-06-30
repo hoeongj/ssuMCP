@@ -5,9 +5,9 @@
 | 날짜 | 2026-06-30 |
 | 상태 | Accepted — 적용 |
 | 범위 | `build.gradle`, `.github/workflows/ci.yml`, `src/test/java/com/ssuai/support/AbstractPostgresIT.java`, `AcademicEmbeddingPostgresIT`, `LibrarySeatRedisIT` |
-| 연관 문서 | ADR 0020(평문 임베딩 테이블), ADR 0047(좌석 분산 락), `IMPROVEMENT_SPEC_JOB_DRIVEN_2026-06-30.md` §SET B |
+| 연관 문서 | ADR 0020(평문 임베딩 테이블), ADR 0047(좌석 분산 락), 내부 스펙 문서 §SET B |
 
-> 스펙 초안(`IMPROVEMENT_SPEC`)은 이 ADR 번호를 0067로 적었으나, 0067은 LMS 1회용 토큰(ADR 0067)이 먼저 점유해 0068로 재배정했다.
+> 스펙 초안은 이 ADR 번호를 0067로 적었으나, 0067은 LMS 1회용 토큰(ADR 0067)이 먼저 점유해 0068로 재배정했다.
 
 ---
 

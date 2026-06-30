@@ -4,10 +4,10 @@
 |---|---|
 | 날짜 | 2026-06-18 |
 | 상태 | Accepted |
-| 연관 ADR | [ADR 0033](0033-lms-material-zip-export.md) (LMS ZIP export), [ADR 0039](0039-mcp-session-isolation-review.md) (같은 외부 리뷰의 보안 항목) |
-| 트리거 | ChatGPT·Claude Desktop 외부 MCP 클라이언트 전수 테스트 리뷰의 P1 데이터 품질 지적 |
+| 연관 ADR | [ADR 0033](0033-lms-material-zip-export.md) (LMS ZIP export), [ADR 0039](0039-mcp-session-isolation-review.md) (같은 점검의 보안 항목) |
+| 트리거 | ChatGPT·Claude Desktop 외부 MCP 클라이언트 전수 호출 점검에서 드러난 P1 데이터 품질 문제 |
 
-> 외부 리뷰가 지적한 다수 항목 중 **코드만으로 원인을 확정·재현할 수 있는** 3건을 수정한다. scraper 셀렉터/라이브 페치 의존 항목(B1 `get_academic_policy_brief` live 크래시, B4 `get_notice_detail` 메타데이터 공백)과 **스펙 변경이 필요한 설계 항목**(응답 스키마 통일, 장학 판정 분리, 임베딩 하이브리드, 좌석 wait 안전성)은 본 ADR 범위 밖 — 사용자 확정/실측 후속이다(철칙 2).
+> 전수 점검에서 드러난 다수 항목 중 **코드만으로 원인을 확정·재현할 수 있는** 3건을 수정한다. scraper 셀렉터/라이브 페치 의존 항목(B1 `get_academic_policy_brief` live 크래시, B4 `get_notice_detail` 메타데이터 공백)과 **스펙 변경이 필요한 설계 항목**(응답 스키마 통일, 장학 판정 분리, 임베딩 하이브리드, 좌석 wait 안전성)은 본 ADR 범위 밖 — 사용자 확정/실측 후속이다(철칙 2).
 
 ---
 

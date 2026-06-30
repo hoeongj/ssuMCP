@@ -5,7 +5,7 @@
 | 날짜 | 2026-06-30 |
 | 상태 | Accepted — 현행 유지 결정(코드 변경 없음, 근거 자산화) |
 | 범위 | 좌석/예약 이벤트 전파(Redisson `RTopic`, PG `LISTEN/NOTIFY`), 예약 intent SSE fan-out |
-| 연관 문서 | ADR 0047(좌석 분산 락), ADR 0048(intent SSE·Redis fan-out), ADR 0055(confirm 상태머신), `IMPROVEMENT_SPEC_JOB_DRIVEN_2026-06-30.md` §SET D |
+| 연관 문서 | ADR 0047(좌석 분산 락), ADR 0048(intent SSE·Redis fan-out), ADR 0055(confirm 상태머신), 내부 스펙 문서 §SET D |
 
 > 스펙 초안은 0069로 적었으나 번호 충돌로 0071로 재배정(0069=관측성, 0070=pgvector).
 

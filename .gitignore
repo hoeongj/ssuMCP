@@ -42,3 +42,12 @@ weekly-meals-*.json
 
 # Locally rendered emergency deployment manifests
 /deploy/generated/
+
+# AI-assistant local config (not part of the project)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.claude/
+.codex/
+# Raw cumulative debugging log kept locally; curated highlights live in docs/
+TROUBLESHOOTING.md

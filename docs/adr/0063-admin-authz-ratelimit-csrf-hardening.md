@@ -6,13 +6,13 @@
 | 상태 | Accepted — 구현(브랜치 `fix/security-admin-ratelimit-csrf`) |
 | 범위 | `global.admin`(`AdminResilienceController`/신규 `AdminAccessProperties`) · `global.security`(`RateLimitFilter`/`RateLimitProperties`/`RateLimitFilterConfig`/`CsrfOriginGuardFilter`) · `global.exception`(신규 `ForbiddenException`+`ErrorCode.FORBIDDEN`) · `application.yml`(`ssuai.admin`) |
 | 연관 ADR | [0061](0061-per-ip-rate-limit-input-caps.md)(per-IP rate limit 도입 — 본 ADR이 경로 확장) · [0036](0036-mcp-oauth-resource-server.md)(인증 모델) |
-| 연관 분석 | `mp/IMPROVEMENT_ANALYSIS_2026-06-23.md` S2·E (4종 AI 통합 triage) |
+| 연관 분석 | 여러 독립 보안 리뷰 통합 triage (S2·E) |
 
 ---
 
 ## 배경 — 무슨 문제
 
-2026-06-23 4종 AI 분석에서 ssuMCP 코어는 견고하나 **운영 엔드포인트·엣지 통제에 갭**이 드러났다:
+2026-06-23 여러 독립 보안 리뷰를 통합한 분석에서 ssuMCP 코어는 견고하나 **운영 엔드포인트·엣지 통제에 갭**이 드러났다:
 
 1. **S2 — `/api/admin/resilience` 무인증**: 서킷브레이커 상태/실패율을 반환하는데 `@AuthUser`·토큰·역할 체크가 **전혀 없었다**. 사설 컨트롤러 전수대조 결과 이 컨트롤러만 유일하게 무게이트 → 누구나 인프라 운영 시그널(어떤 LLM provider가 죽었는지 등)을 읽을 수 있었다. 데이터 민감도는 낮지만 **구조적 약점**: 인가가 "컨트롤러마다 `@AuthUser`를 붙이는" 규약 기반(allow-by-default, `McpOAuthSecurityConfig`의 `.anyRequest().permitAll()`)이라 **하나만 빠뜨리면 조용히 열린다**. 이게 바로 그 사례.
 2. **E(rate-limit) — 보호 경로 부족**: ADR 0061의 per-IP 제한이 `login`·`chat`에만. 실좌석을 reserve/cancel/swap하는 **write 경로(`/api/library/reservations/confirm`)** 와 토큰 `refresh`는 무제한이었다.

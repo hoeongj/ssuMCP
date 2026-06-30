@@ -1,6 +1,6 @@
 # ADR 0046 — 잡설계 robustness 폴리시 (⑦): 파라미터 경계검증 · 도서 썸네일 절대경로
 
-- 상태: 채택 (2026-06-19, Claude solo — codex usage limit 중)
+- 상태: 채택 (2026-06-19)
 - 관련: 외부 리뷰 후속 ⑦ 묶음
 
 ## 배경
@@ -17,7 +17,7 @@
 
 ## 검토한 대안과 기각/보류
 
-- **학사일정 기간형 startDate/endDate (9)** — **보류.** `AcademicCalendarEvent`(public record)에 컴포넌트를 추가하면 Real/Mock 커넥터·서비스·MCP 도구·ToolResultCompactor·테스트 등 다수 호출부가 깨지고, 원문에서 날짜 **범위 파싱** 로직이 필요하다. 솔로(토큰 제약) 폴리시 PR로는 침습/위험이 커서 별도 작업으로 분리(codex 복귀 후 또는 전용 PR).
+- **학사일정 기간형 startDate/endDate (9)** — **보류.** `AcademicCalendarEvent`(public record)에 컴포넌트를 추가하면 Real/Mock 커넥터·서비스·MCP 도구·ToolResultCompactor·테스트 등 다수 호출부가 깨지고, 원문에서 날짜 **범위 파싱** 로직이 필요하다. 이번 폴리시 PR로는 침습/위험이 커서 별도 작업으로 분리(전용 PR).
 - **전역 날짜 ISO-8601 통일** — 보류(광범위·교차절단). 학사일정 범위 작업과 함께 다루는 게 맞다.
 - **빈결과 신호 / 공지 compact 응답** — ADR 0045(응답 메시지 분리)와 응답 엔벨로프가 겹쳐 충돌 위험. 별도.
 - **좌석 wait 자동예약 안전장치, 식단 closures 코너 스키마** — 설계급(철칙2). 이 PR 범위 아님.

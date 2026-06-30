@@ -12,7 +12,7 @@
 
 ## 배경 — 무슨 문제
 
-보안 분석에서 두 가지가 함께 지적됐다: ① Spring CSRF 토큰 보호가 전역 disable + `/api/**` permitAll ② refresh 쿠키 `SameSite=None`. 외부 리뷰(AGY P1-P)는 "SameSite를 Lax로 바꾸면 CSRF가 자동 완화된다"고 처방했다.
+보안 분석에서 두 가지가 함께 지적됐다: ① Spring CSRF 토큰 보호가 전역 disable + `/api/**` permitAll ② refresh 쿠키 `SameSite=None`. 외부 리뷰(P1-P)는 "SameSite를 Lax로 바꾸면 CSRF가 자동 완화된다"고 처방했다.
 
 **그 처방은 오진이다.** prod 프론트(`ssuai.vercel.app`)와 백엔드(`ssumcp.duckdns.org`)는 **등록 가능한 도메인이 다른 cross-site**다. 프론트의 `fetchJson`은 same-origin rewrite가 아니라 `getApiBaseUrl()`(cross-site 백엔드 URL)로 직접 호출하고, `application-prod.yml`은 refresh 쿠키를 **의도적으로 `SameSite=None`으로 설정**(주석에 명시)한다. `SameSite=Lax`로 바꾸면 `POST /api/auth/refresh`에서 브라우저가 쿠키를 드랍 → 401 "세션 갱신 실패" → **auth refresh 전면 장애**. 따라서 SameSite는 None을 유지해야 한다.
 
@@ -34,7 +34,7 @@
 
 ## 대안과 기각 이유
 
-- **SameSite=None → Lax (AGY P1-P 처방)**: 오진. cross-site refresh 쿠키 드랍 → auth 장애. 기각(사건 17).
+- **SameSite=None → Lax (외부 리뷰 P1-P 처방)**: 오진. cross-site refresh 쿠키 드랍 → auth 장애. 기각(사건 17).
 - **Spring 토큰 CSRF(synchronizer token)**: cross-site 프론트는 토큰 쿠키를 same-site로 읽지 못하거나 모든 요청에 토큰을 심어야 해 SPA + cross-site 구조와 충돌. Double-submit도 cross-site 쿠키 가독성 문제 동일. 기각.
 - **상태변경을 전부 Bearer로 전환**: refresh 흐름은 본질적으로 쿠키 기반이라 전환 불가. 기각.
 - **Origin 없을 때 거부(deny by default)**: 정당한 비브라우저 클라이언트·일부 SSO redirect를 막아 회귀. CSRF는 브라우저에서만 성립하므로 헤더 부재 = CSRF 불가로 보고 허용. 채택.

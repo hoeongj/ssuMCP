@@ -6,7 +6,7 @@
 | 상태 | Accepted — 구현(브랜치 `fix/rag-embedding-model-and-logging`) |
 | 범위 | `AcademicEmbeddingClient`(진단 로깅) · `application.yml`(임베딩 모델 기본값) · `deploy/charts/ssuai-backend/values.yaml`(prod 모델) |
 | 연관 ADR | [0020](0020-academic-policy-hybrid-rag.md)(하이브리드 RAG) · [0062](0062-supply-chain-k8s-pod-security.md)(이 ADR의 자매 발견 = Dockerfile 빌드 중단) |
-| 연관 분석 | `mp/IMPROVEMENT_ANALYSIS_2026-06-23.md` I1 |
+| 연관 분석 | 내부 보안 분석 I1 |
 
 ---
 
@@ -36,7 +36,7 @@
 
 ## 동작 방식 / 검증
 
-- 배포 후: corpus refresh가 001로 216 청크 임베딩 → `academic_embeddings` 행 > 0, 로그 `embeddingActive=true chunks>0`, 라이브 `search_academic_policy_sources`가 `embeddingUsed:true, fusionMethod` 하이브리드. lexical vs hybrid 검색 품질 수치 기록(IMPROVEMENT_ANALYSIS / docs).
+- 배포 후: corpus refresh가 001로 216 청크 임베딩 → `academic_embeddings` 행 > 0, 로그 `embeddingActive=true chunks>0`, 라이브 `search_academic_policy_sources`가 `embeddingUsed:true, fusionMethod` 하이브리드. lexical vs hybrid 검색 품질 수치 기록(docs).
 - 재시도 로깅: 429 시 `status=429 body={...quota...}`가 로그에 남아 다음 quota 이슈는 즉시 진단 가능.
 - 단위테스트: 기존 `AcademicEmbeddingClientTests`(callEmbeddings 오버라이드로 실패/페이싱 검증) 그린 유지.
 
