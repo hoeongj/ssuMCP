@@ -22,14 +22,24 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92  # v6
-      - name: Test
-        run: ./gradlew test
+      - name: Test + coverage
+        # Testcontainers (Postgres, Redis) run here because ubuntu-latest ships a Docker
+        # daemon; the same ITs self-skip on machines without one (disabledWithoutDocker).
+        # jacocoTestCoverageVerification fails the build if LINE coverage drops below the floor.
+        run: ./gradlew test jacocoTestReport jacocoTestCoverageVerification
       - name: Upload test report on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: backend-test-report
           path: build/reports/tests/test
+          retention-days: 7
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: jacoco-coverage-report
+          path: build/reports/jacoco/test/html
           retention-days: 7
 
   image-build:
