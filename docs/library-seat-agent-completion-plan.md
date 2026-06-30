@@ -85,35 +85,30 @@
 - [x] `README.md`: 도구 목록 최신화
 - [ ] swap·cancel E2E 완료 후 이 문서 완성 표시
 
-### P1. 좌석 단위 정확도 개선
+### P1. 좌석 단위 정확도 개선 — ✅ 완료
 
-현재 `recommend_library_seats`는 room-level availability + 정적 `ROOM_SEAT_CODES`를 결합한다.
-`get_library_available_seats`·`get_room_available_seats`가 이미 per-seat 데이터를 제공하므로,
-recommend도 이 데이터를 source of truth로 사용하도록 개선할 수 있다.
-
-필요 작업:
-- `LibraryAvailableSeatsService.getRoomAvailableSeats()`를 `RecommendLibrarySeatsService`에서 호출하도록 변경
-- 정적 `ROOM_SEAT_CODES` fallback을 제거하거나 live data가 없을 때만 사용
-- `recommend_library_seats`가 실제 available 좌석 ID만 추천하도록 수정
+`recommend_library_seats`(`LibrarySeatRecommendationService`)는 `LibraryAvailableSeatsService.getRoomAvailableSeats()`로
+**라이브 per-seat 데이터**를 source of truth로 사용해 실제 available 좌석만 랭킹·추천한다(응답 `source: live_per_seat`).
+정적 `ROOM_SEAT_CODES`는 라이브 데이터가 없을 때만 쓰는 카탈로그 폴백으로만 남겼다.
 
 ### P1. B1/특수 열람실 확장
 
 현재 roomId: 15(B1F), 53(숭실스퀘어ON), 54(오픈열람실), 57(마루열람실), 58(대학원열람실), 59(리클라이너), 60(숭실멀티라운지) 7개를 지원.
 
-### P1. Frontend 제품 UX
+### P1. Frontend 제품 UX — ✅ 완료 (ssuAI)
 
-- 좌석 추천 카드 또는 챗봇 action panel 추가
-- 현재 예약 좌석 표시, 이석/반납 버튼
+- `SeatRecommendationPanel`(추천 좌석 + 좌석별 예약 버튼) · `ReservationConfirmModal`(prepare 요약 → 사용자 확정 → confirm, SUCCESS/PROCESSING/실패 분기) · `WaitStatusCard`(대기 intent 상태·취소) 구현.
+- 챗봇 경로는 `HitlCard` 승인 카드로 동일한 2단계 확인을 제공한다.
 
-### P2. 감사/운영 관측 강화
+### P2. 감사/운영 관측 강화 — ✅ 완료
 
-- action audit 상태별 metric: prepared, confirmed, succeeded, failed, expired
-- Grafana 패널에 도서관 action 성공률/실패율 추가
+- `ActionService`가 `library.action` 카운터(태그 `action_type`·`status`)를 Prometheus 레지스트리로 emit하고, `LibraryReservationIntentMetrics`가 intent depth/outbox gauge를 노출한다.
+- Grafana RED 대시보드(`grafana-dashboard-red.yaml`)에 Action Prepared/Success/Expired(5m rate) + Action Audit Timeline + Pyxis·LLM 서킷브레이커 패널을 포함한다.
 
-## 다음 작업 추천 순서
+## 남은 작업 (현장 전용)
 
-1. `get_my_library_seat` 수정 배포 완료 후 swap → cancel E2E 검증 (P0 완료 목표)
-2. `recommend_library_seats` per-seat live data 전환 (P1)
-3. E2E 성공 transcript를 TROUBLESHOOTING.md에 추가
-4. Frontend 추천/예약 UX 구현 (P1)
-5. action metrics / Grafana 패널 추가 (P2)
+P1·P2(per-seat 추천 · Frontend UX · action metrics · Grafana)는 모두 구현 완료다. 남은 것은 **물리적 체크인 상태에서만 재현 가능한** 검증뿐:
+
+1. swap → cancel happy-path E2E 재검증 — Pyxis가 미입실 좌석의 discharge/cancel을 거부해 현장에서만 가능
+2. "운영 시간 외 예약" 실패 케이스 검증 (P0 매트릭스 ⏳)
+3. 위 두 E2E 성공 transcript를 트러블슈팅 하이라이트에 추가
