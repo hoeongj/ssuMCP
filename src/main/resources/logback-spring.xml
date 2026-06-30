@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty name="appName" source="spring.application.name" defaultValue="ssuai"/>
+
+    <!--
+      JSON stdout logging is gated behind the `json-logs` profile so the default prod
+      deploy keeps the current Spring Boot console format (a true no-op until enabled).
+      Promtail/Alloy scrapes this JSON into Loki; traceId/spanId come from Micrometer's
+      MDC, requestId from TraceIdFilter, enabling trace<->log correlation in Grafana.
+      Enable with SPRING_PROFILES_ACTIVE including `json-logs` (see load-tests compose).
+    -->
+    <springProfile name="json-logs">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>spanId</includeMdcKeyName>
+                <includeMdcKeyName>requestId</includeMdcKeyName>
+                <customFields>{"service":"${appName}"}</customFields>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+    <!-- Default (incl. prod without the flag, local, test): Spring Boot console base. -->
+    <springProfile name="!json-logs">
+        <include resource="org/springframework/boot/logging/logback/base.xml"/>
+    </springProfile>
+</configuration>

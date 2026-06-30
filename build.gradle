@@ -61,6 +61,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+    // Distributed tracing: Micrometer Observation -> OTel bridge -> OTLP exporter (versions
+    // BOM-managed). Metrics stay on Prometheus above; OTel here is traces only (no metric dup).
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    // Structured JSON logs to stdout (Promtail/Alloy -> Loki); traceId/spanId pulled from MDC.
+    implementation 'net.logstash.logback:logstash-logback-encoder:8.1'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.jsoup:jsoup:1.22.2'
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'

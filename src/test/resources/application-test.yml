@@ -1,6 +1,10 @@
 server:
   port: 0
 
+management:
+  tracing:
+    enabled: false   # tests never reach an OTLP exporter
+
 logging:
   level:
     root: WARN

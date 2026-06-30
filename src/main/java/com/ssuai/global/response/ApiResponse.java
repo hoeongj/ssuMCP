@@ -10,7 +10,9 @@ public record ApiResponse<T>(
         String traceId
 ) {
 
-    private static final String TRACE_ID_KEY = "traceId";
+    // Sourced from TraceIdFilter's per-request MDC value (key "requestId"); the JSON field
+    // stays named traceId. Micrometer owns the "traceId"/"spanId" MDC keys for log correlation.
+    private static final String TRACE_ID_KEY = "requestId";
 
     public static <T> ApiResponse<T> success(T data) {
         return new ApiResponse<>(data, null, currentTraceId());

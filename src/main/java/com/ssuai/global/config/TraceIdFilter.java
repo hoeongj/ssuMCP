@@ -14,7 +14,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class TraceIdFilter extends OncePerRequestFilter {
 
-    public static final String TRACE_ID_KEY = "traceId";
+    // MDC key is "requestId" (not "traceId") so Micrometer Tracing owns the "traceId"/"spanId"
+    // MDC keys for log<->trace correlation. The X-Trace-Id response header and the API
+    // envelope's traceId field keep sourcing this per-request id (value unchanged).
+    public static final String TRACE_ID_KEY = "requestId";
     public static final String TRACE_ID_HEADER = "X-Trace-Id";
     private static final int MAX_TRACE_ID_LENGTH = 128;
 

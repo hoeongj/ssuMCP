@@ -62,6 +62,38 @@ services:
       - "3001:3000"
     depends_on:
       - prometheus
+      - tempo
+      - loki
+
+  # SET A — distributed tracing backend. Single-binary, tight footprint (single-node story).
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "3200:3200"   # Tempo API (Grafana datasource)
+      - "4317:4317"   # OTLP grpc
+      - "4318:4318"   # OTLP http (backend exports here)
+
+  # SET A — central logs. Single-binary, filesystem storage.
+  loki:
+    image: grafana/loki:3.2.0
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+    ports:
+      - "3100:3100"
+
+  # SET A — scrapes container stdout (JSON) -> Loki, promoting traceId to a label.
+  promtail:
+    image: grafana/promtail:3.2.0
+    command: ["-config.file=/etc/promtail/promtail-config.yaml"]
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
 
   k6:
     image: grafana/k6:1.0.0
@@ -101,6 +133,11 @@ services:
       # only registered when the chat connector is llm. No LLM key needed —
       # providers are constructed lazily and chat is not load-tested here.
       SSUAI_CONNECTOR_CHAT: llm
+      # SET A — emit JSON logs (json-logs profile, scraped by promtail->loki) and export
+      # traces to Tempo at full sampling so the 3-pillars demo shows trace<->log correlation.
+      SPRING_PROFILES_ACTIVE: "dev,json-logs"
+      TRACING_SAMPLE_RATE: "1.0"
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
     ports:
       - "8080:8080"
     depends_on:

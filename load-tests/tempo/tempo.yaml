@@ -1,0 +1,31 @@
+# Single-binary Tempo — tight footprint for a single-node demo. Receives OTLP from the
+# backend (grpc 4317 / http 4318), stores traces on local disk. Not for prod scale.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 1h   # demo retention; keep disk bounded
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+usage_report:
+  reporting_enabled: false

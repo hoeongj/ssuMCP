@@ -14,6 +14,8 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,24 +40,28 @@ public class LlmProviderChain {
     private final Map<String, LlmProvider> providersByName;
     private final LlmChatProperties properties;
     private final LlmProviderCbRegistry circuitBreakers;
+    private final ObservationRegistry observationRegistry;
 
     @Autowired
     public LlmProviderChain(
             Map<String, LlmProvider> providersByName,
             LlmChatProperties properties,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            ObservationRegistry observationRegistry
     ) {
         this.providersByName = providersByName.values()
                 .stream()
                 .collect(Collectors.toUnmodifiableMap(LlmProvider::name, Function.identity()));
         this.properties = properties;
         this.circuitBreakers = new LlmProviderCbRegistry(meterRegistry);
+        this.observationRegistry = observationRegistry;
     }
 
     LlmProviderChain(List<LlmProvider> providers, LlmChatProperties properties) {
         this(providers.stream().collect(Collectors.toUnmodifiableMap(LlmProvider::name, Function.identity())),
                 properties,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(),
+                ObservationRegistry.NOOP);
     }
 
     public LlmCompletionResult complete(LlmCompletionRequest request) {
@@ -70,8 +76,14 @@ public class LlmProviderChain {
             for (ProviderAttempt attempt : attempts) {
                 CircuitBreaker circuitBreaker = circuitBreakers.circuitBreaker(attempt.provider().name());
                 try {
-                    return circuitBreaker.executeSupplier(() ->
-                            attempt.provider().complete(withPrivacyMode(request, attempt.privacyMode())));
+                    // One span per provider attempt: the fallback chain (provider1 fail ->
+                    // provider2 success) shows up as a sequence in the trace timeline. No-op
+                    // overhead when tracing is off (NOOP registry / sampling 0).
+                    return Observation.createNotStarted("llm.provider.call", observationRegistry)
+                            .lowCardinalityKeyValue("provider", attempt.provider().name())
+                            .lowCardinalityKeyValue("privacy_mode", attempt.privacyMode().name())
+                            .observe(() -> circuitBreaker.executeSupplier(() ->
+                                    attempt.provider().complete(withPrivacyMode(request, attempt.privacyMode()))));
                 } catch (CallNotPermittedException exception) {
                     log.info("llm provider short-circuited: provider={} privacyMode={} pass={} state={}",
                             attempt.provider().name(), attempt.privacyMode(), pass, circuitBreaker.getState());
