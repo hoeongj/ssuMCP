@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 날짜 | 2026-06-30 |
-| 상태 | Accepted — 차트 적용, live u-SAINT/rusaint 검증 대기 |
+| 상태 | Accepted — 적용·prod 검증 완료 (read-only rootfs prod 실측, 로그인 인시던트 pod 로그로 JNA/rusaint FFI 동작 확인) |
 | 범위 | `deploy/charts/ssuai-backend` |
 | 연관 문서 | ADR 0062, `docs/security-followups.md` #2 |
 
@@ -77,10 +77,10 @@ PR 단계:
 - `helm lint deploy/charts/ssuai-backend`
 - `helm template`으로 `readOnlyRootFilesystem: true`, `/tmp` `emptyDir`, `/tmp` volumeMount, 기존 `lms-export` PVC mount가 모두 렌더링되는지 확인한다.
 
-배포 후:
+배포 후 (검증 완료, 2026-06-30):
 
-- 새 backend pod가 Ready 상태인지 확인한다.
-- authenticated u-SAINT/rusaint 호출이 read-only rootfs 환경에서도 성공하는지 확인한다. 이 호출이 JNA `jnidispatch` 추출과 `/usr/local/lib/librusaint_ffi.so` 로드를 함께 검증한다.
+- 새 backend pod `ssuai-backend-9f8f879-bkfr6`가 Ready(maxUnavailable0 무중단)임을 확인했다. rootfs 쓰기 차단(`touch /test_rootfs`→Read-only), `/tmp` emptyDir 쓰기 가능, `java.io.tmpdir`/`jna.tmpdir` 양쪽 `/tmp`, `librusaint_ffi.so` 읽기 정상, health UP을 실측했다.
+- 이후 로그인 인시던트 pod 로그에서 authenticated u-SAINT/rusaint 호출이 성공(`saint rusaint session stored`)해 JNA `jnidispatch`가 `/tmp` emptyDir에서 추출·로드되고 rusaint FFI가 read-only rootfs에서 동작함을 확정했다. 이 호출이 JNA `jnidispatch` 추출과 `/usr/local/lib/librusaint_ffi.so` 로드를 함께 검증한다.
 
 ## 예상 면접 질문
 

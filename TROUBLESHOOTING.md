@@ -4844,11 +4844,15 @@ u-SAINT SSO 로그인은 성공하고 브라우저에 refresh cookie도 저장·
 
 Boot 4.1.x 재시도 전에는 `jjwt`를 Jackson 3 호환 구성으로 바꾸거나, `jjwt` claim 역직렬화 경로에 Jackson 2를 명시적으로 pin하는 설계를 먼저 검증해야 한다. 단순 minor/patch dependency bump처럼 보이는 변경도 managed transitive dependency가 바뀌면 인증 런타임을 깨뜨릴 수 있다.
 
+### 복구 확인 (2026-06-30)
+
+계획대로 revert 커밋 `95834be`(Spring Boot 4.0.6 복구)가 main에 머지되고 배포까지 완료됐다. prod pod는 `ghcr.io/ghdtjdwn/ssumcp:sha-95834be`로 교체됐고, Ready 상태에 restart 0회, health 엔드포인트는 UP을 반환했다. 인증 엔드포인트는 더 이상 500이 아니라 정상 401을 반환했고(파서 런타임 호환성 회귀 해소), pod 로그에도 `InvalidJwtException` 스택트레이스가 더 이상 찍히지 않았다. 즉 `b923464` 회귀가 완전히 해소되어 로그인 refresh 경로가 정상 복구됐다.
+
 ### 핵심 파일 / 커밋
 
 - `build.gradle` — Spring Boot 4.1.0→4.0.6, Kotlin 2.4.0→2.3.21 및 관련 server dependency rollback
 - `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/security.yml` — `b923464`에 같이 묶인 Actions pin bump rollback
-- `src/main/java/com/ssuai/global/security/JwtProvider.java` — `parseSignedClaims()` 실패가 401로 이어지는 지점, secret `.strip()` hardening 후속 후보
+- `src/main/java/com/ssuai/global/auth/JwtProvider.java` — `parseSignedClaims()` 실패가 401로 이어지는 지점, secret `.strip()` hardening 후속 후보
 - `src/main/java/com/ssuai/domain/auth/saint/SaintSsoCallbackController.java` — 선행 핫픽스(`abe13db`)는 유지
 - 유발 커밋: `b923464` (`build(deps): bump server minor/patch group + setup-java/setup-node/checkout/action-gh-release`)
 - 선행 핫픽스: `abe13db` (`fix(auth): attach SSO refresh cookie to the response entity so Boot 4.1.0 preserves it`)

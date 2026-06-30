@@ -14,11 +14,11 @@
 - **진행에 필요한 것**: 클러스터 CNI가 NetworkPolicy enforce하는지 확인, staging 환경, 롤아웃 후 pod 연결성 점검 윈도우.
 - **2026-06-30 결정(egress 허용목록 버전 비현실적 → 미적용, Cilium 필요)**: 백엔드 egress 대상을 코드/설정에서 전수 추출한 결과 **외부 호스트 ~20개**(LLM 9곳: groq·mistral·cerebras·deepinfra·fireworks·sambanova·nscale·openrouter·huggingface + Gemini googleapis / 학교 11곳: saint·lms·canvas·oasis·scatch·rule·smartid·ssudorm·commons·ssu.ac.kr·ssufid + 기타 aladin·soongguri). 문제: ① **k3s 내장 NetworkPolicy 컨트롤러(kube-router)는 FQDN egress 규칙을 지원하지 않음**(IP/CIDR만). ② 위 20개는 전부 동적 CDN(Cloudflare 등) IP라 **CIDR allowlist는 IP 회전 때마다 깨져 기능이 조용히 사망**. ③ egress default-deny 시 9개 LLM + 11개 학교 시스템 호출이 전부 차단 = 앱 대부분 마비. → **egress 제한 NetworkPolicy는 적용하지 않는다.** **진짜 해법 = CNI를 Cilium으로 교체 후 FQDN/DNS-aware egress 정책**(별도 인프라 작업, 단일노드 포트폴리오엔 과투자). ingress-only NP(traefik만 허용)는 단일노드+staging無에서 kubelet health probe/selector 오타 시 prod 503 위험 대비 가치가 marginal이라 함께 보류. **면접 서사**: "쿠버네티스 NetworkPolicy로 egress를 왜 안 막았나" → CNI(kube-router)의 FQDN 미지원 + SaaS 동적 IP 현실을 설명하고 Cilium 대안을 제시(통제의 한계를 아는 것도 시스템 사고). cf. read-only rootfs(#2)·pod-security(ADR0062)는 적용 완료 — pod 레벨 하드닝은 했고 network 레벨은 CNI 제약으로 보류.
 
-## 2. 컨테이너 read-only rootfs (#23 일부) — ✅ 차트 적용, live rusaint 검증 대기
+## 2. 컨테이너 read-only rootfs (#23 일부) — ✅ 적용·prod 검증 완료 (2026-06-30)
 
 - **무엇**: pod `securityContext.readOnlyRootFilesystem: true` + 쓰기 필요 경로만 emptyDir/volume로 마운트.
 - **반영**: `deploy/charts/ssuai-backend`에서 backend rootfs를 read-only로 전환하고 `/tmp`를 항상 `emptyDir`로 마운트했다. LMS export ZIP은 기존처럼 `/data/lms-export` PVC에 쓰며, JVM/JNA scratch는 `-Djava.io.tmpdir=/tmp -Djna.tmpdir=/tmp`로 `/tmp` emptyDir에 고정한다(ADR 0066).
-- **남은 검증**: merge·배포 후 새 pod Ready 확인 + authenticated u-SAINT/rusaint 호출 성공 확인. 이 호출이 JNA `jnidispatch` 추출과 rusaint FFI 로드를 함께 검증한다.
+- **검증 완료(2026-06-30)**: merge `dc7df68` → ArgoCD 배포 후 새 backend pod `ssuai-backend-9f8f879-bkfr6` Ready(maxUnavailable0 무중단), rootfs 쓰기 차단(`touch /test_rootfs`→Read-only)·`/tmp` emptyDir 쓰기 가능·`java.io.tmpdir`/`jna.tmpdir` 양쪽 `/tmp`·`librusaint_ffi.so` 읽기 정상·health UP을 실측했다. 이후 로그인 인시던트 pod 로그에서 authenticated u-SAINT/rusaint 호출이 성공(`saint rusaint session stored`)해 JNA `jnidispatch`가 `/tmp` emptyDir에서 추출·로드되고 rusaint FFI가 read-only rootfs에서 동작함을 확정했다.
 
 ## 3. DB 무결성·보존 정책 (#27)
 
@@ -81,7 +81,7 @@
 - **왜 보류**: 클라이언트 계약 변경 위험 + 저가치. 통합 envelope 전면 채택 여부는 Rule 2 결정 사항.
 - **권장 접근**: 클라(ssuAI/ssuAgent) 영향 확인 후 하위호환 유지하며 단계 적용, 또는 envelope 표준화 결정 시 일괄.
 - **진행에 필요한 것**: 클라 계약 영향 점검, 포맷 표준화 결정.
-- **2026-06-30 결정(스킵)**: 스킵. 날짜 포맷 통일·dedup 등은 면접 서사가 되지 않고(포트폴리오 가치 ~0), 클라이언트 계약 변경 위험만 있다. 통합 envelope 표준화를 따로 결정하면 그때 일괄 처리한다.
+- **2026-06-30 결정(스킵)**: 스킵. 날짜 포맷 통일·dedup 등은 면접 서사가 되지 않고(포트폴리오 가치 ~0), 클라이언트 계약 변경(외부 파서) 위험만 있다. 의미 있는 응답 신호인 빈 결과 표시는 이미 ADR 0053(공개 목록 응답에 `empty`/`note` additive 추가, 하위호환)으로 처리됐다. 통합 envelope 표준화를 따로 결정하면 그때 일괄 처리한다.
 
 ## 11. ssuAgent `/agent` opt-in 인증 활성화 (P1-N) — ✅ 활성화·검증 완료 (2026-06-30)
 

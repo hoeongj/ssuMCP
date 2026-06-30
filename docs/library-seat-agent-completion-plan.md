@@ -74,10 +74,10 @@
 | 도서관 세션 없음 | `AUTH_REQUIRED` + loginUrl | ✅ |
 | 도서관 세션 만료 | 저장 세션 정리 + 재로그인 안내 | ✅ |
 | 이미 점유된 좌석 예약 | "좌석이 이미 선점됐습니다" | ✅ |
-| 현재 예약 없음 상태에서 이석/반납 | 예약 없음 안내 | ⏳ |
+| 현재 예약 없음 상태에서 이석/반납 | 예약 없음 안내 | ✅ (prepare cancel/swap가 현재 charge 없으면 "현재 예약된 좌석이 없습니다" 반환) |
 | 운영 시간 외 예약 | 운영 시간/예약 불가 안내 | ⏳ |
-| Pyxis 4xx/5xx/timeout | 외부 시스템 오류 안내 | ⏳ |
-| `confirm_action` 중복 호출 | 같은 action 재실행 방지 | ⏳ |
+| Pyxis 4xx/5xx/timeout | 외부 시스템 오류 안내 | ✅ (ADR 0021 Resilience4j 서킷브레이커 + timeout/unavailable→"학교 서버가 불안정합니다" 안내) |
+| `confirm_action` 중복 호출 | 같은 action 재실행 방지 | ✅ (ADR 0055 prepare supersede + 행 락 claim — 동시 confirm 시 패자는 PENDING 행을 못 찾음) |
 
 ### P0. 문서와 MCP client 계약 최신화
 
