@@ -112,12 +112,17 @@ public class JwtProvider {
                     + "Set SSUAI_JWT_SECRET for any non-dev environment.");
             return Keys.hmacShaKeyFor(random);
         }
+        // Strip leading/trailing whitespace (incl. a Windows CRLF \r that can ride along in an
+        // env var) BEFORE deriving the key, so the signing key is stable no matter how the
+        // secret was pasted. A trailing \r previously broke base64 decoding and forced the
+        // raw-bytes fallback, deriving the key from different bytes than intended.
+        String secret = base64Secret.strip();
         byte[] decoded;
         try {
-            decoded = Base64.getDecoder().decode(base64Secret);
+            decoded = Base64.getDecoder().decode(secret);
         } catch (IllegalArgumentException ignored) {
             // Allow plain (non-base64) secret as a dev convenience.
-            decoded = base64Secret.getBytes(StandardCharsets.UTF_8);
+            decoded = secret.getBytes(StandardCharsets.UTF_8);
         }
         if (decoded.length < 32) {
             throw new IllegalStateException(
