@@ -90,9 +90,15 @@ management:
     # TRACING_SAMPLE_RATE is raised (e.g. 0.1). Local/load-tests set 1.0 via env.
     sampling:
       probability: ${TRACING_SAMPLE_RATE:0.0}
-  otlp:
+  # Spring Boot 4 renamed the OTLP trace-exporter key: the Boot 3 property
+  # `management.otlp.tracing.endpoint` is silently ignored (no error, zero spans
+  # exported), so traces must use the `management.opentelemetry.tracing.export.otlp.*`
+  # path. Metrics keep their own `management.otlp.metrics.export.*` namespace.
+  opentelemetry:
     tracing:
-      endpoint: ${OTLP_TRACING_ENDPOINT:http://tempo:4318/v1/traces}
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACING_ENDPOINT:http://tempo:4318/v1/traces}
   endpoint:
     health:
       show-details: never
