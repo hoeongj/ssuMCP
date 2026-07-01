@@ -1,0 +1,54 @@
+# grafana/tempo — single-binary (monolithic) mode for the single-node Oracle ARM64 k3s.
+# Applied by the ArgoCD Application in deploy/argocd/application-tempo.yaml.
+# Receives OTLP traces from ssuai-backend (management.otlp.tracing.endpoint ->
+# http://tempo.monitoring.svc.cluster.local:4318/v1/traces) and stores them on a
+# local-path PVC. Read back by Grafana's Tempo datasource (monitoring/values.yaml).
+# ADR 0069 §활성화 절차 ①.
+
+tempo:
+  # Anonymous usage reporting off (matches load-tests/tempo/tempo.yaml).
+  reportingEnabled: false
+  # Compactor block_retention — short 72h window keeps disk + memory bounded on the
+  # shared 24GB node (ADR 0069 single-node memory budget).
+  retention: 72h
+  # The chart's default 1024Mi Go ballast alone would exceed the 512Mi limit and
+  # OOM-kill the pod at startup. Disable it for this low-volume, sampled workload.
+  memBallastSizeMbs: 0
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+  # Only the OTLP receivers the backend uses. Drop jaeger/opencensus/zipkin to keep
+  # the listener surface and footprint minimal.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Persist trace blocks across pod restarts on the node-local provisioner.
+persistence:
+  enabled: true
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+
+service:
+  type: ClusterIP
+
+# Tempo self-metrics are not needed for this demo — keep the scrape surface small.
+serviceMonitor:
+  enabled: false
