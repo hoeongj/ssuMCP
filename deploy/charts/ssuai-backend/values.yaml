@@ -7,7 +7,12 @@ image:
 nameOverride: ""
 fullnameOverride: ""
 env:
-  springProfilesActive: prod
+  # pgvector profile ON. ⚠ PREREQUISITE: prod Postgres MUST have the `vector` extension
+  # available first (switch to a pgvector-enabled image / install the extension) — otherwise
+  # Flyway V14 (`CREATE EXTENSION vector`) fails on startup and the backend will not boot.
+  # Note: at the current ~200-chunk corpus the in-memory cosine store is already instant,
+  # so this adds ANN capability with no latency benefit yet. See ADR 0070 + activation checklist.
+  springProfilesActive: prod,pgvector
   frontendOrigin: https://ssuai.vercel.app
   dbUrl: "jdbc:postgresql://postgres-service:5432/ssuai"
   dbUsername: "ssuai"
