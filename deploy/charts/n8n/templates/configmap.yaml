@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "n8n.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "n8n.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  N8N_HOST: {{ .Values.env.host | quote }}
+  N8N_PROTOCOL: {{ .Values.env.protocol | quote }}
+  WEBHOOK_URL: {{ .Values.env.webhookUrl | quote }}
+  N8N_PORT: {{ .Values.env.port | quote }}
+  GENERIC_TIMEZONE: {{ .Values.env.timezone | quote }}
+  # n8n 2.x removed basic auth -> user management. The instance owner is
+  # provisioned declaratively at first boot; the bcrypt password hash + JWT
+  # secret are in n8n-secrets.
+  N8N_INSTANCE_OWNER_MANAGED_BY_ENV: {{ .Values.env.ownerManagedByEnv | quote }}
+  N8N_INSTANCE_OWNER_EMAIL: {{ .Values.env.ownerEmail | quote }}
+  N8N_INSTANCE_OWNER_FIRST_NAME: {{ .Values.env.ownerFirstName | quote }}
+  N8N_INSTANCE_OWNER_LAST_NAME: {{ .Values.env.ownerLastName | quote }}
+  SSUAI_API_BASE: {{ .Values.env.ssuaiApiBase | quote }}
+  N8N_RUNNERS_ENABLED: {{ .Values.env.runnersEnabled | quote }}
+  N8N_BLOCK_ENV_ACCESS_IN_NODE: {{ .Values.env.blockEnvAccessInNode | quote }}

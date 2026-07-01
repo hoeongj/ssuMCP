@@ -1,0 +1,7 @@
+apiVersion: v2
+name: n8n
+description: n8n workflow automation for SSU campus ops (notice + weekly report -> Discord)
+type: application
+version: 0.1.0
+# Tracks the pinned n8n image tag in values.yaml. Verify latest stable before merge.
+appVersion: "1.70.0"

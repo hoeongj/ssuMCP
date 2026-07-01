@@ -62,13 +62,22 @@
     },
     {
       "parameters": {
-        "webhookUri": "={{ $env.DISCORD_WEBHOOK_URL }}",
-        "content": "={{ $json.report }}"
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL_WEEKLY }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ $json.report }}" }
+          ]
+        },
+        "options": {}
       },
       "id": "discord-weekly",
       "name": "Discord 주간 리포트",
-      "type": "n8n-nodes-base.discord",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1140, 300]
     }
   ],
