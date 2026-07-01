@@ -144,3 +144,24 @@
   - HTTP 클라이언트의 "투명한 redirect 추적"이 쿠키 수집 관점에서 불투명한 이유는?
   - `Redirect.NEVER` + 수동 추적이 필요한 경우와 자동 redirect가 안전한 경우를 어떻게 구분하나?
   - 증상(ECC 403)이 실제 원인(phase 2 쿠키 누락)과 멀리 떨어져 있을 때 어떻게 범위를 좁혔나?
+
+---
+
+## 9. 로컬에선 되던 관측성 스택이 prod k3s에서 침묵 — Boot 4 OTLP autoconfig 이관 + 배포 함정
+
+- **증상 / 배경**: 3-pillars(메트릭·트레이스·로그)를 로컬 docker compose에선 전부 증명해 뒀는데, prod k3s에 켜니 **메트릭만 되고 트레이스·로그가 안 떴다**. 특히 트레이스는 Tempo span 0인데 백엔드 로그에 exporter 오류·초기화 흔적이 **하나도** 없어(오류조차 없는 침묵) 원인 위치 특정이 가장 어려웠다.
+- **틀린 가설 (3겹, 트레이스)**:
+  1. 백엔드(ns `ssuai-prod`)와 Tempo(ns `monitoring`)가 갈라져 있으니 **크로스-네임스페이스 DNS 실패**일 것. → 틀림. chart가 이미 FQDN(`tempo.monitoring.svc.cluster.local`)을 주입했고 pod env에서도 확인됨.
+  2. **의존성 누락**(`micrometer-tracing-bridge-otel`/`opentelemetry-exporter-otlp`). → 틀림. 둘 다 존재.
+  3. exporter가 **연결 실패로 조용히 재시도** 중. → 틀림. 그러면 반복 오류 로그가 남아야 하는데 흔적 0 = exporter가 애초에 생성 안 됨.
+- **실제 원인 (2단계)**:
+  1. **프로퍼티 키 rename** — Spring Boot 4가 OTLP 트레이스 키를 바꿨다. Boot 3 `management.otlp.tracing.endpoint`는 Boot 4에서 **조용히 무시**(바인딩 오류도 없음)되고 정식 키는 `management.opentelemetry.tracing.export.otlp.endpoint`. 고쳤지만 여전히 span 0.
+  2. **autoconfig 모듈 이관(진짜 원인)** — Boot 4가 OTLP tracing auto-configuration을 새 **`spring-boot-starter-opentelemetry`**(내부 `spring-boot-opentelemetry` 모듈)로 옮겼다. 우리가 쓰던 Boot 3식 저수준 의존성만으론 **autoconfig glue가 없어 exporter/tracer가 생성조차 안 됐다**(span 0 + 로그 0의 정체). `gradle dependencies`로 런타임 클래스패스를 확인해 `spring-boot-opentelemetry` 모듈 부재를 입증 → 스타터로 교체해 해결. (부작용: 스타터가 데려온 `micrometer-registry-otlp`가 OTLP 메트릭을 localhost로 자동 push하려 함 → `management.otlp.metrics.export.enabled=false`로 차단.)
+- **로그 함정 (별도 2건)**: Loki `reject_old_samples`가 기본 on이라 첫 배포 백로그 로그를 400으로 거부(→ `false`) / k3s는 컨테이너 로그를 `/var/lib/rancher/k3s`에 두고 `/var/log/pods`는 그 심링크라, 그 트리를 promtail에 마운트 안 하면 링크가 파일시스템 밖으로 해석돼 아무것도 못 읽음(→ hostPath 마운트).
+- **검증 함정**: loki/tempo/promtail은 **distroless라 `wget`/`sh`가 없어** `kubectl exec ... wget` probe가 항상 빈 결과(false-negative). 노드에서 `curl`→ClusterIP로 쳐야 실제 상태가 보였다. 이 함정 때문에 한동안 "로그도 안 된다"고 오판했으나, 노드 curl로 보니 Loki엔 이미 수천 라인이 쌓여 있었다.
+- **해결·검증**: application.yml 프로퍼티 + build.gradle 스타터 교체 + 로그 파이프라인 2건 수정. 배포 후 트래픽을 흘려 Tempo `tempo_distributor_push_duration_seconds_count>0`, TraceQL `service.name=ssuai`로 실제 trace(root span `http get /api/meals/today` 등) 확인. **3-pillars 전부 prod 라이브.**
+- **포인트**: "로컬 OK, prod NG"는 거의 항상 런타임 환경 차이다. 프레임워크 메이저 업그레이드(Boot 3→4)에서 **설정 키 rename + autoconfig 모듈 이관**이라는 두 겹의 조용한 회귀를, 로그·설정으로 안 잡히자 **의존성 그래프까지 내려가** 규명한 게 핵심. "전송 실패(반복 오류 로그)"와 "미생성(흔적 0)"을 구분한 것이 방향을 갈랐다.
+- **예상 면접 질문**:
+  - 트레이스 span이 0인데 오류 로그조차 없다. "전송 실패"와 "exporter 미생성"을 어떻게 구분하고, 후자면 어디를 보나? (→ `gradle dependencies`로 autoconfig 모듈 존재 확인)
+  - Spring Boot 메이저 업그레이드에서 기능이 조용히 사라질 때 방어법은? (properties-migrator, 릴리스 노트 마이그레이션 표, 스타터 vs 저수준 라이브러리, span export 스모크 테스트)
+  - 왜 저수준 라이브러리 대신 Boot 스타터를 써야 했나? (스타터 = 라이브러리 + autoconfiguration + 기본값; Boot 4에서 OTLP autoconfig가 스타터로 이관)

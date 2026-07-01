@@ -63,8 +63,10 @@ flowchart TD
         MEAL_S[학식 scatch]
     end
 
-    subgraph Observability["관측성"]
-        PROM[Prometheus]
+    subgraph Observability["관측성 3-pillars (prod 라이브, ADR 0069)"]
+        PROM[Prometheus 메트릭]
+        TEMPO[Tempo 분산추적]
+        LOKI[Loki 중앙로그]
         GRAF[Grafana]
     end
 
@@ -86,7 +88,11 @@ flowchart TD
     CONN --> LMS_SYS
     CONN --> MEAL_S
     ssuMCP -->|metrics| PROM
+    ssuMCP -->|OTLP traces| TEMPO
+    ssuMCP -->|JSON logs → Promtail| LOKI
     PROM --> GRAF
+    TEMPO --> GRAF
+    LOKI --> GRAF
     ssuAgent --> CKPT
 ```
 

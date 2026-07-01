@@ -2,9 +2,9 @@
 
 | 항목 | 내용 |
 |---|---|
-| 날짜 | 2026-06-30 |
-| 상태 | Accepted — 앱 계측 적용(prod inert), Tempo/Loki prod 배포는 보류 |
-| 범위 | `build.gradle`, `application.yml`, `logback-spring.xml`, `TraceIdFilter`, `ApiResponse`, `LlmProviderChain`, `load-tests/`(tempo/loki/promtail/grafana) |
+| 날짜 | 2026-06-30 (prod 활성화·검증 2026-07-01) |
+| 상태 | Accepted — **prod 라이브**: 3-pillars(메트릭·트레이스·로그) 전부 배포·검증 완료(2026-07-01). 활성화 중 Boot 4 OTLP gotcha 2건 등 해소 → §"활성화 함정 & 검증(prod)". |
+| 범위 | `build.gradle`(→ `spring-boot-starter-opentelemetry`), `application.yml`, `logback-spring.xml`, `TraceIdFilter`, `ApiResponse`, `LlmProviderChain`, `deploy/charts/{tempo,loki,promtail}` + `deploy/argocd/application-{tempo,loki,promtail}.yaml`, `load-tests/`(로컬 데모) |
 | 연관 문서 | ADR 0061(rate-limit·메트릭), ADR 0047/0048(좌석 락·intent SSE), 내부 스펙 문서 §SET A |
 
 > 스펙 초안은 0066으로 적었으나 0066은 read-only rootfs가 점유 → 0069로 재배정.
@@ -22,7 +22,7 @@
 - **추적**: Micrometer **Observation 브리지 → OTel → OTLP exporter → Tempo**. 메트릭은 기존 Prometheus 유지(OTel 메트릭 중복 안 씀, 추적만).
 - **로그**: `logback`이 stdout에 **JSON(LogstashEncoder)** → Promtail/Alloy 스크레이프 → Loki. `traceId`/`spanId`(Micrometer MDC)·`requestId`(TraceIdFilter) 필드 포함 → Grafana에서 **trace ↔ logs 상호이동**.
 - **LLM provider 스팬**: `LlmProviderChain.complete()`의 provider 시도마다 `llm.provider.call` 스팬(`provider`/`privacy_mode` 속성). **10-provider 자동 페일오버가 추적 타임라인에 그대로**(provider1 실패→provider2 성공) 보인다 — 핵심 면접 포인트.
-- **prod 안전(inert) 기본값**: 샘플링 `TRACING_SAMPLE_RATE` 기본 **0.0**(스팬 미샘플 → exporter 미접속), JSON 로그는 **`json-logs` 프로파일 게이트**(prod 기본은 기존 콘솔 로그 그대로). 즉 **prod 배포는 동작 무변(no-op)** — 계측만 심고 비활성. 로컬/load-tests는 샘플링 1.0 + `json-logs`로 전체 파이프라인 증명.
+- **안전 기본값(off) → prod에서 env로 ON**: 코드 기본은 샘플링 `TRACING_SAMPLE_RATE` **0.0**(스팬 미샘플) + JSON 로그 `json-logs` 프로파일 게이트라 **계측만 심고 비활성**으로 배포 가능. prod에서는 chart env(`SPRING_PROFILES_ACTIVE=prod,json-logs`, `TRACING_SAMPLE_RATE=0.1`, `OTLP_TRACING_ENDPOINT`)로 켜서 **현재 라이브**(§활성화). 로컬/load-tests는 샘플링 1.0 + `json-logs`로 전체 파이프라인 증명.
 
 ## 대안과 기각 이유
 
@@ -40,14 +40,15 @@
 
 1. 요청 진입 → `TraceIdFilter`가 `requestId`(UUID/X-Trace-Id) MDC 설정 → Micrometer 서버 observation이 `traceId`/`spanId` MDC 설정.
 2. RestClient/HTTP/LLM 호출이 W3C trace context 전파 → OTLP로 Tempo 전송(샘플링 비율 적용).
-3. 로그는 JSON으로 stdout → Promtail이 `traceId` 라벨로 Loki push.
+3. 로그는 JSON으로 stdout → Promtail이 Loki push(k8s 라벨만 부여; `traceId`는 라벨로 승격하지 않고 Grafana 쿼리 시점에 본문 regex로 추출 — §③, 고카디널리티 회피).
 4. Grafana: Tempo 스팬 → `tracesToLogsV2`로 같은 traceId Loki 로그, Loki 로그 → `derivedFields`로 Tempo 스팬.
 
-## 보류·후속 (prod 적용은 사용자 확인)
+## 활성화 완료 (prod 라이브, 2026-07-01)
 
-- **Tempo/Loki prod(k3s/ArgoCD) 배포는 보류** — 단일 Oracle ARM 노드 메모리 예산(가드레일) + prod 인프라 변경은 사용자 확인(철칙3). 앱 계측은 inert로 이미 배포 가능.
-- **활성화 절차**(아침 결정): ① Tempo/Loki ArgoCD 앱 추가(경량 single-binary) ② ssuMCP env `SPRING_PROFILES_ACTIVE`에 `json-logs` + `TRACING_SAMPLE_RATE=0.1` + `OTLP_TRACING_ENDPOINT`(클러스터 tempo svc) ③ Grafana에 Tempo/Loki 데이터소스.
-- **model-level 스팬**: 현재 provider-level. provider 내부 model 폴백까지 자식 스팬으로 넣는 것은 후속(있으면 좋은 디테일).
+- **Tempo/Loki/Promtail prod(k3s/ArgoCD) 배포 완료** — 아래 §"SET A"의 매니페스트를 배포. ArgoCD 앱 3개 전부 Synced/Healthy(namespace `monitoring`). 단일 Oracle ARM 노드 예산 내(≈+1.5GB).
+- **백엔드 emit ON**: chart env로 `SPRING_PROFILES_ACTIVE=prod,json-logs` + `TRACING_SAMPLE_RATE=0.1` + `OTLP_TRACING_ENDPOINT`(클러스터 tempo svc FQDN) 주입, 무중단 롤(`maxUnavailable:0`).
+- **검증**: Loki에 ssuai-prod 실로그 수집 확인, Tempo에 `service.name=ssuai` trace 저장 확인(§"활성화 함정 & 검증").
+- **후속(선택)**: model-level 스팬(현재 provider-level) · 알림 룰(트레이스 기반 에러율) — 있으면 좋은 디테일, 필수 아님.
 
 ## 검증
 
@@ -59,11 +60,11 @@
 
 1. 분산추적을 왜 도입했고, javaagent 대신 Micrometer Observation 브리지를 쓴 이유는? (코드 레벨 제어 → LLM provider 커스텀 스팬 같은 도메인 의미 부여)
 2. 10-provider LLM 페일오버를 추적에서 어떻게 보나? (`LlmProviderChain`의 provider별 `llm.provider.call` 스팬이 타임라인에 폴백 시퀀스로 표시)
-3. 단일 노드에서 관측성 스택 비용을 어떻게 통제했나? (샘플링 10%·single-binary Tempo/Loki·prod 기본 inert(샘플링 0/json-logs 게이트)로 켜기 전까지 0 오버헤드)
+3. 단일 노드에서 관측성 스택 비용을 어떻게 통제했나? (single-binary Tempo/Loki·retention 72h·**코드 기본값 off**(샘플링 0/json-logs 게이트)로 켜기 전까지 0 오버헤드, prod에서 켠 뒤엔 샘플링 10%로 제한 — 24GB 노드에 ~+1.5GB)
 
-## SET A 활성화 (prod ON) — branch `feat/observability-tempo-loki`
+## SET A 활성화 (prod ON) — 배포 완료
 
-위 "보류·후속"의 활성화 절차 ①②③을 실제 배포 매니페스트로 구현한 브랜치(미머지, 리뷰 대기).
+위 활성화 절차 ①②③을 실제 배포 매니페스트로 구현·**prod 배포 완료**. 관련 커밋: `dd417a2`(Tempo/Loki 배포 + 백엔드 emit ON), `a097174`·`a15ae21`(로그 파이프라인 함정 수정), `8a446b5`·`0f73728`(Boot 4 OTLP 트레이스 수정).
 
 **① Tempo/Loki/수집기 배포** — 기존 monitoring 패턴(업스트림 차트 + 리포 values 파일 + ArgoCD Application) 그대로 미러:
 - `deploy/argocd/application-tempo.yaml` + `deploy/charts/tempo/values.yaml` — `grafana/tempo` 1.24.4 **single-binary(monolithic)**, local(filesystem) 백엔드, block_retention 72h. 차트 기본 `memBallastSizeMbs: 1024`는 512Mi limit을 단독으로 초과해 기동 OOM → **0으로 비활성**(핵심 함정).
@@ -84,4 +85,27 @@
 
 **대안 기각(수집기 라벨링)**: promtail 전역 JSON 파이프라인으로 traceId 라벨 승격 △ — 비-JSON 파드(grafana/prometheus/tempo 등) 로그에 파싱 에러 + 고카디널리티. 채택: 수집기는 k8s 라벨만(cri 파이프라인 기본), traceId 상관은 Grafana 쿼리 시점 regex로. 앱↔Loki 디커플 원칙과도 일관.
 
-**리뷰 주의(머지 전)**: (a) `kubectl top nodes`로 노드 메모리 여유 먼저 확인 — Tempo+Loki+Promtail이 24GB 노드에 ~1.5GB 추가. (b) 단일 파드 앱에서 분산추적 ROI는 낮음(ADR 0069) → SET A는 선택적. (c) 차트 버전 핀은 배포 시점 재확인.
+**배포 시 확인(완료)**: (a) 노드 메모리 여유 확인 — Tempo+Loki+Promtail 24GB 노드에 ~1.5GB 추가(예산 내). (b) 단일 파드 앱에서 분산추적 ROI는 낮으나 포트폴리오·트러블슈팅 서사로 채택. (c) 차트 버전 핀 배포 시점 재확인.
+
+---
+
+## 활성화 함정 & 검증 (prod, 2026-07-01)
+
+로컬 compose에서 증명된 파이프라인을 prod k3s에 켜는 과정에서 **로컬에선 안 드러난 함정 5건**을 만나 해소했다. (전부 "인프라/프레임워크가 기대와 다르게 동작" — 트러블슈팅 서사의 핵심.)
+
+**트레이스 (Boot 4 OTLP — 2단계):**
+1. **프로퍼티 키 rename** — Boot 3 `management.otlp.tracing.endpoint`가 Boot 4에서 조용히 무시됨(바인딩 오류 없음). 정식 키 `management.opentelemetry.tracing.export.otlp.endpoint`. 고쳐도(`8a446b5`) span 0 유지.
+2. **autoconfig 모듈 이관(진짜 원인)** — Boot 4가 OTLP tracing auto-configuration을 새 **`spring-boot-starter-opentelemetry`**(내부 `spring-boot-opentelemetry` + `spring-boot-micrometer-tracing-opentelemetry`)로 옮김. 저수준 의존성(`micrometer-tracing-bridge-otel`+`opentelemetry-exporter-otlp`)만으론 autoconfig glue 부재로 **exporter가 생성조차 안 됨**(span 0 + 로그 흔적 0). `gradle dependencies`로 모듈 부재를 입증 → 스타터로 교체(`0f73728`)해 해결.
+3. **부작용 차단** — 스타터가 `micrometer-registry-otlp`도 데려와 방치 시 OTLP 메트릭을 localhost:4318로 자동 push(오류 소음 + Prometheus 중복) → `management.otlp.metrics.export.enabled=false`.
+
+**로그 (Loki/Promtail):**
+4. **Loki `reject_old_samples`** — 기본 on(+168h window)이라 첫 배포 시 백로그 로그를 400으로 거부해 Loki가 비어 보임 → `reject_old_samples:false`(`a097174`).
+5. **Promtail k3s 심볼릭링크** — k3s는 컨테이너 로그를 `/var/lib/rancher/k3s/...`에 저장하고 `/var/log/pods`는 그리로의 심링크. 이 트리를 마운트 안 하면 promtail이 링크를 자기 파일시스템 밖 경로로 해석해 아무것도 못 읽음 → hostPath 마운트 추가(`a15ae21`).
+
+**검증 함정 (distroless):** loki/tempo/promtail 컨테이너는 distroless라 `sh`/`wget`이 없어 `kubectl exec ... wget` probe가 false-negative(빈 결과). **노드에서 `curl`→ClusterIP**로 검증해야 실제 상태가 보임.
+
+**검증 결과:** Loki에 ssuai-prod 실로그 수집(수천 라인). Tempo `tempo_distributor_push_duration_seconds_count>0`, TraceQL `service.name=ssuai`로 실제 trace 확인(root span `http get /api/meals/today` 등). **3-pillars 전부 라이브.**
+
+**추가 면접 질문:**
+4. "로컬 compose에선 됐는데 prod k3s에서 안 될 때?" → 런타임 환경 차이(distroless probe, k3s 로그 경로, Boot 프로퍼티/의존성)를 하나씩 배제. 특히 로그·설정으로 안 잡히면 `gradle dependencies`로 autoconfig 모듈 존재를 확인.
+5. "저수준 라이브러리 대신 Boot 스타터를 써야 하는 이유?" → 스타터 = 라이브러리 + **autoconfiguration** + 기본값 묶음. Boot 4에서 OTLP autoconfig가 스타터로 이관돼 저수준 deps만으론 자동설정이 안 붙음.
