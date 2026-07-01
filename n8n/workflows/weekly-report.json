@@ -4,61 +4,81 @@
     {
       "parameters": {
         "rule": {
-          "interval": [{
-            "field": "cronExpression",
-            "expression": "0 9 * * 1"
-          }]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
         }
       },
       "id": "schedule-weekly",
       "name": "매주 월요일 09:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
         "url": "={{ $env.SSUAI_API_BASE }}/api/notices",
-        "options": { "timeout": 10000 }
+        "options": {
+          "timeout": 10000
+        }
       },
       "id": "get-notices-weekly",
       "name": "이번 주 공지 조회",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [470, 200]
+      "position": [
+        470,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{ $env.SSUAI_API_BASE }}/api/meals/weekly",
-        "options": { "timeout": 10000 }
+        "options": {
+          "timeout": 10000
+        }
       },
       "id": "get-meals",
       "name": "이번 주 식단 조회",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [470, 400]
+      "position": [
+        470,
+        400
+      ]
     },
     {
       "parameters": {
-        "mode": "combine",
-        "combinationMode": "mergeByPosition",
+        "mode": "append",
         "options": {}
       },
       "id": "merge-data",
       "name": "데이터 병합",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [700, 300]
+      "position": [
+        700,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Build weekly report text\nconst noticeData = $input.first().json;\nconst mealData = $input.last().json;\n\nconst notices = noticeData.data?.notices || noticeData.notices || [];\nconst meals = mealData.data || mealData;\n\nconst today = new Date();\nconst weekNum = Math.ceil(today.getDate() / 7);\nconst monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];\nconst month = monthNames[today.getMonth()];\n\nlet report = `📅 **숭실대 주간 리포트 (${month} ${weekNum}주차)**\\n\\n`;\n\n// Recent notices (top 3)\nreport += '📢 **최신 공지 (TOP 3)**\\n';\nconst topNotices = notices.slice(0, 3);\nif (topNotices.length === 0) {\n  report += '• 새 공지 없음\\n';\n} else {\n  topNotices.forEach(n => {\n    report += `• [${n.category || '공지'}] ${n.title}\\n`;\n  });\n}\n\n// Today's meal summary\nreport += '\\n🍱 **오늘의 학식**\\n';\ntry {\n  const todayMeal = Array.isArray(meals) ? meals[0] : meals;\n  if (todayMeal && todayMeal.lunch) {\n    report += `점심: ${todayMeal.lunch.menu?.slice(0,2).join(', ') || '정보 없음'}\\n`;\n  } else {\n    report += '식단 정보를 불러올 수 없습니다.\\n';\n  }\n} catch (e) {\n  report += '식단 정보를 불러올 수 없습니다.\\n';\n}\n\nreport += '\\n🔗 https://ssumcp.duckdns.org';\n\nreturn [{ json: { report } }];"
+        "jsCode": "// Build a weekly report from the ssuMCP public API.\n// notices: { data: { items: [ { title, category, ... } ] } }\n// meals:   { data: { days: [ { date, meals: [ { restaurant, type, menu[] } ] } ] } }\nconst noticeData = $input.first().json;\nconst mealData = $input.last().json;\n\nconst notices = noticeData.data?.items || [];\nconst days = mealData.data?.days || [];\n\nconst today = new Date();\nconst weekNum = Math.ceil(today.getDate() / 7);\nconst monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];\nconst month = monthNames[today.getMonth()];\n\nlet report = `📅 **숭실대 주간 리포트 (${month} ${weekNum}주차)**\\n\\n`;\n\nreport += '📢 **최신 공지 (TOP 3)**\\n';\nconst topNotices = notices.slice(0, 3);\nif (topNotices.length === 0) {\n  report += '• 새 공지 없음\\n';\n} else {\n  topNotices.forEach(n => {\n    report += `• [${n.category || '공지'}] ${n.title}\\n`;\n  });\n}\n\nreport += '\\n🍱 **오늘의 학식 (점심)**\\n';\nconst todayStr = today.toISOString().slice(0, 10);\nconst day = days.find(d => d.date === todayStr) || days[0];\nif (day) {\n  const lunches = (day.meals || []).filter(m => m.type === 'LUNCH');\n  if (lunches.length > 0) {\n    lunches.slice(0, 2).forEach(m => {\n      report += `• ${m.restaurant}: ${(m.menu || []).slice(0, 3).join(', ')}\\n`;\n    });\n  } else {\n    report += '• 점심 메뉴 정보 없음\\n';\n  }\n} else {\n  report += '• 식단 정보를 불러올 수 없습니다.\\n';\n}\n\nreport += '\\n🔗 https://ssumcp.duckdns.org';\n\nreturn [{ json: { report } }];"
       },
       "id": "build-report",
       "name": "리포트 생성",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [920, 300]
+      "position": [
+        920,
+        300
+      ]
     },
     {
       "parameters": {
@@ -69,7 +89,10 @@
         "specifyBody": "keypair",
         "bodyParameters": {
           "parameters": [
-            { "name": "content", "value": "={{ $json.report }}" }
+            {
+              "name": "content",
+              "value": "={{ $json.report }}"
+            }
           ]
         },
         "options": {}
@@ -78,29 +101,72 @@
       "name": "Discord 주간 리포트",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1140, 300]
+      "position": [
+        1140,
+        300
+      ]
     }
   ],
   "connections": {
     "매주 월요일 09:00": {
       "main": [
         [
-          { "node": "이번 주 공지 조회", "type": "main", "index": 0 },
-          { "node": "이번 주 식단 조회", "type": "main", "index": 0 }
+          {
+            "node": "이번 주 공지 조회",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "이번 주 식단 조회",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
     "이번 주 공지 조회": {
-      "main": [[{ "node": "데이터 병합", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "데이터 병합",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "이번 주 식단 조회": {
-      "main": [[{ "node": "데이터 병합", "type": "main", "index": 1 }]]
+      "main": [
+        [
+          {
+            "node": "데이터 병합",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     },
     "데이터 병합": {
-      "main": [[{ "node": "리포트 생성", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "리포트 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "리포트 생성": {
-      "main": [[{ "node": "Discord 주간 리포트", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Discord 주간 리포트",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

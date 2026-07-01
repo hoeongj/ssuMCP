@@ -4,14 +4,22 @@
     {
       "parameters": {
         "rule": {
-          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
         }
       },
       "id": "schedule-trigger",
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -24,29 +32,23 @@
       "name": "Get Recent Notices",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [470, 300]
+      "position": [
+        470,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Compare with last seen notice id stored in workflow static data\nconst state = $getWorkflowStaticData('global');\nconst prevId = state.lastNoticeId || 0;\n\nconst response = $input.first().json;\nconst notices = response.data?.notices || response.notices || [];\n\nconst newNotices = notices.filter(n => (n.id || 0) > prevId);\n\nif (newNotices.length > 0) {\n  state.lastNoticeId = newNotices[0].id;\n}\n\nreturn newNotices.map(n => ({ json: n }));"
+        "jsCode": "// Detect new notices using the notice link as a stable id (API has no numeric id).\n// API shape: { data: { items: [ { title, link, date, department, category } ] } }\nconst state = $getWorkflowStaticData('global');\nconst response = $input.first().json;\nconst items = response.data?.items || [];\nconst lastLink = state.lastNoticeLink || null;\n\nlet fresh = [];\nif (lastLink === null) {\n  // First run after activation: post only the newest as a live proof, then mark.\n  fresh = items.slice(0, 1);\n} else {\n  // items[0] is newest; collect everything above the last-seen link.\n  for (const n of items) {\n    if (n.link === lastLink) break;\n    fresh.push(n);\n  }\n}\nif (items.length > 0) state.lastNoticeLink = items[0].link;\nreturn fresh.map(n => ({ json: n }));"
       },
       "id": "filter-new",
       "name": "Filter New Notices",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [690, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "number": [{ "value1": "={{ $json.id }}", "operation": "isNotEmpty" }]
-        }
-      },
-      "id": "if-new",
-      "name": "Has New Notices?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [910, 300]
+      "position": [
+        690,
+        300
+      ]
     },
     {
       "parameters": {
@@ -59,7 +61,7 @@
           "parameters": [
             {
               "name": "content",
-              "value": "=📢 **[숭실대 새 공지]** {{ $json.title }}\n카테고리: {{ $json.category || '공지사항' }}\n🔗 {{ $json.url || ('https://ssu.ac.kr/kor/notice/' + $json.id) }}"
+              "value": "=📢 **[숭실대 새 공지]** {{ $json.title }}\n🏷 {{ $json.category || '공지' }} · {{ $json.department || '' }} · {{ $json.date || '' }}\n🔗 {{ $json.link }}"
             }
           ]
         },
@@ -69,23 +71,44 @@
       "name": "Discord Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1130, 200]
+      "position": [
+        910,
+        300
+      ]
     }
   ],
   "connections": {
     "Schedule Trigger": {
-      "main": [[{ "node": "Get Recent Notices", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Recent Notices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Recent Notices": {
-      "main": [[{ "node": "Filter New Notices", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Filter New Notices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter New Notices": {
-      "main": [[{ "node": "Has New Notices?", "type": "main", "index": 0 }]]
-    },
-    "Has New Notices?": {
       "main": [
-        [{ "node": "Discord Notification", "type": "main", "index": 0 }],
-        []
+        [
+          {
+            "node": "Discord Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
