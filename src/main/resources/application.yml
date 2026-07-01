@@ -99,6 +99,13 @@ management:
       export:
         otlp:
           endpoint: ${OTLP_TRACING_ENDPOINT:http://tempo:4318/v1/traces}
+  # spring-boot-starter-opentelemetry also brings micrometer-registry-otlp; left on, the OTLP
+  # metrics registry auto-pushes to localhost:4318 (connection-refused noise) and duplicates the
+  # Prometheus metrics. Metrics are served via /actuator/prometheus only -> disable OTLP metrics.
+  otlp:
+    metrics:
+      export:
+        enabled: false
   endpoint:
     health:
       show-details: never

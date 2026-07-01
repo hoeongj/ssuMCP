@@ -61,10 +61,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
-    // Distributed tracing: Micrometer Observation -> OTel bridge -> OTLP exporter (versions
-    // BOM-managed). Metrics stay on Prometheus above; OTel here is traces only (no metric dup).
-    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
-    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    // Distributed tracing (Spring Boot 4): the OTLP tracing auto-configuration moved into the
+    // new spring-boot-starter-opentelemetry, which pulls micrometer-tracing-bridge-otel and the
+    // OTLP exporter transitively. The bare bridge+exporter combo (the Boot 3 recipe) no longer
+    // wires up an exporter under Boot 4 -> zero spans, no log trace. Metrics stay on Prometheus
+    // above; OTLP metric export is disabled in application.yml so there is no metric duplication.
+    implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
     // Structured JSON logs to stdout (Promtail/Alloy -> Loki); traceId/spanId pulled from MDC.
     implementation 'net.logstash.logback:logstash-logback-encoder:8.1'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
