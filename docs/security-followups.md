@@ -108,7 +108,7 @@
 
 ## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
 
-> **해결**: `NoticeService.getNoticeDetail`에 호출자 제공 URL의 host allowlist 검증 추가 — scheme은 http(s)만, host는 `ssu.ac.kr` 또는 `.ssu.ac.kr` 서브도메인만 허용(공지 본문은 scatch.ssu.ac.kr). IP 리터럴·내부주소는 `.ssu.ac.kr`로 안 끝나므로 자동 차단(defense-in-depth). 위반 시 `IllegalArgumentException`(fetch 전 거부). 테스트 4건(외부host·내부IP·non-http scheme 거부 + ssu host 통과). **잔여**: Jsoup 리다이렉트 추종은 그대로 — 리다이렉트-경유 우회는 egress 격리로 완화(코드레벨 재검증은 추후).
+> **해결**: `NoticeService.getNoticeDetail`에 호출자 제공 URL의 host allowlist 검증 추가 — scheme은 http(s)만, host는 `ssu.ac.kr` 또는 `.ssu.ac.kr` 서브도메인만 허용(공지 본문은 scatch.ssu.ac.kr). IP 리터럴·내부주소는 `.ssu.ac.kr`로 안 끝나므로 자동 차단(defense-in-depth). 위반 시 `IllegalArgumentException`(fetch 전 거부). 테스트 4건(외부host·내부IP·non-http scheme 거부 + ssu host 통과). **잔여**: ~~Jsoup 리다이렉트 추종은 그대로 — 리다이렉트-경유 우회는 egress 격리로 완화(코드레벨 재검증은 추후)~~ → **✅ 리다이렉트 재검증 적용(2026-07-02)**: `RealNoticeConnector`가 Jsoup 자동 리다이렉트를 끄고(`followRedirects(false)`) 수동 hop 루프로 각 `Location` host를 동일 allowlist(`NoticeHostAllowlist`, 초기 검증과 공유)와 대조 — 위반 시 동일한 `IllegalArgumentException`, 최대 5 hop 초과도 거부. **구현 결정**: (a) Jsoup 자동 추종 유지 + 최종 URL 사후 검증 vs (b) 수동 hop 루프 중 **(b) 채택** — (a)는 off-allowlist 요청이 이미 나간 뒤의 검증이라 SSRF 차단이 되지 않고, (b)는 각 hop을 fetch **전에** 검증한다. 테스트 3건 추가(off-allowlist 302 거부 · allowlist 내 체인 추종 · 리다이렉트 루프 >5 hop 거부, WireMock).
 
 - **무엇**: `RealNoticeConnector.connect()`가 임의 URL을 `Jsoup.connect()`로 fetch — `scatch.ssu.ac.kr` 등 학교 도메인 allowlist 없음. 외부 임의 http/https 도달 가능(서버를 요청 프록시로 악용·블라인드 포트스캔 오라클).
 - **왜 보류(부분 완화)**: 현 prod 배포에서 `file://`·메타데이터(169.254)·루프백·사설대역은 egress/컨테이너 격리로 차단됨(Critical 아님). 코드레벨 allowlist는 미적용.

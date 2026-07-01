@@ -3,17 +3,22 @@ package com.ssuai.domain.notice.connector;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
+import org.jsoup.UnsupportedMimeTypeException;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -63,6 +68,10 @@ class RealNoticeConnector implements NoticeConnector {
     static final String DETAIL_DEPARTMENT_SELECTOR = "";
 
     private static final int MAX_BODY_TEXT_LENGTH = 4000;
+    private static final int MAX_REDIRECT_HOPS = 5;
+    // same pattern Jsoup uses for its "*/xml or */*+xml" content-type allowance
+    private static final Pattern XML_CONTENT_TYPE_PATTERN =
+            Pattern.compile("(application|text)/\\w*\\+?xml.*");
     private static final Pattern KOREAN_DATE_PATTERN = Pattern.compile(
             "(\\d{4})\\s*\\uB144\\s*(\\d{1,2})\\s*\\uC6D4\\s*(\\d{1,2})\\s*\\uC77C");
     private static final Pattern NUMERIC_DATE_PATTERN = Pattern.compile(
@@ -82,10 +91,17 @@ class RealNoticeConnector implements NoticeConnector {
     );
 
     private final NoticeConnectorProperties properties;
+    private final NoticeHostAllowlist allowlist;
 
     @Autowired
     RealNoticeConnector(NoticeConnectorProperties properties) {
+        this(properties, NoticeHostAllowlist.OFFICIAL);
+    }
+
+    // package-private so tests can point the allowlist at a local mock server host
+    RealNoticeConnector(NoticeConnectorProperties properties, NoticeHostAllowlist allowlist) {
         this.properties = properties;
+        this.allowlist = allowlist;
     }
 
     @Override
@@ -282,11 +298,56 @@ class RealNoticeConnector implements NoticeConnector {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
-        return Jsoup.connect(url)
-                .userAgent(USER_AGENT)
-                .timeout(timeoutMs)
-                .header("Accept-Language", ACCEPT_LANGUAGE)
-                .get();
+        // Jsoup's automatic redirect following would let an allowlisted host 302 the fetch to an
+        // arbitrary off-allowlist target, bypassing the SSRF gate on the caller-supplied URL
+        // (security follow-up #13). Follow redirects manually instead, re-validating every
+        // Location host against the same allowlist BEFORE it is fetched.
+        String currentUrl = url;
+        Map<String, String> cookies = new HashMap<>();
+        for (int hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+            // ignoreContentType: redirect responses often carry no/odd Content-Type and Jsoup
+            // only skips its content-type check when following redirects itself. The final
+            // (non-redirect) response is re-checked below with the same rule Jsoup applies.
+            Connection.Response response = Jsoup.connect(currentUrl)
+                    .userAgent(USER_AGENT)
+                    .timeout(timeoutMs)
+                    .header("Accept-Language", ACCEPT_LANGUAGE)
+                    .cookies(cookies)
+                    .followRedirects(false)
+                    .ignoreContentType(true)
+                    .execute();
+            int status = response.statusCode();
+            String location = response.header("Location");
+            if (status < 300 || status >= 400 || location == null || location.isBlank()) {
+                // Not a redirect. A 3xx without a Location parses as-is, matching Jsoup's default.
+                requireParseableContentType(response);
+                return response.parse();
+            }
+            URI next = URI.create(currentUrl).resolve(location.trim());
+            if (!allowlist.allows(next)) {
+                throw new IllegalArgumentException(
+                        "허용되지 않은 공지 출처로 리다이렉트되었습니다. 숭실대 공식 도메인(ssu.ac.kr)만 조회할 수 있습니다.");
+            }
+            cookies.putAll(response.cookies());
+            currentUrl = next.toString();
+        }
+        throw new IllegalArgumentException(
+                "공지 URL 리다이렉트가 너무 많습니다 (최대 " + MAX_REDIRECT_HOPS + "회).");
+    }
+
+    // Mirrors the content-type gate Jsoup enforces in execute() (bypassed above via
+    // ignoreContentType so redirect hops without a Content-Type header can be examined).
+    private static void requireParseableContentType(Connection.Response response)
+            throws UnsupportedMimeTypeException {
+        String contentType = response.contentType();
+        if (contentType == null || contentType.isBlank()
+                || contentType.startsWith("text/")
+                || XML_CONTENT_TYPE_PATTERN.matcher(contentType).matches()) {
+            return;
+        }
+        throw new UnsupportedMimeTypeException(
+                "Unhandled content type. Must be text/*, */xml, or */*+xml",
+                contentType, response.url().toString());
     }
 
     private String buildListUrl(String category, String keyword, int page) {

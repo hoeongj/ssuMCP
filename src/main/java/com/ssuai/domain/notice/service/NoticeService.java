@@ -2,7 +2,6 @@ package com.ssuai.domain.notice.service;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.notice.connector.DepartmentNoticeConnector;
 import com.ssuai.domain.notice.connector.NoticeConnector;
+import com.ssuai.domain.notice.connector.NoticeHostAllowlist;
 import com.ssuai.domain.notice.dto.NoticeCategoriesResponse;
 import com.ssuai.domain.notice.dto.NoticeDetailResponse;
 import com.ssuai.domain.notice.dto.NoticeListResponse;
@@ -26,8 +26,6 @@ public class NoticeService {
 
     static final int MAX_KEYWORD_LENGTH = 64;
     private static final int INDEX_PAGE_SIZE = 20;
-    /** SSRF allowlist for caller-supplied notice-detail URLs: only the official Soongsil domain. */
-    private static final String ALLOWED_NOTICE_DOMAIN = "ssu.ac.kr";
 
     private final NoticeConnector connector;
     private final DepartmentNoticeConnector departmentConnector;
@@ -114,6 +112,8 @@ public class NoticeService {
      * Restrict to the official Soongsil domain (notice pages live under scatch.ssu.ac.kr).
      * An IP literal or any other host can never end with ".ssu.ac.kr", so this also blocks
      * pointing the fetch at internal/link-local addresses (security follow-up #13).
+     * {@code RealNoticeConnector} re-validates every redirect hop against the same
+     * {@link NoticeHostAllowlist}, so an allowlisted host cannot 302 the fetch off-allowlist.
      */
     private static void requireAllowedNoticeHost(String url) {
         URI uri;
@@ -129,9 +129,7 @@ public class NoticeService {
                 || host == null) {
             throw new IllegalArgumentException("공지 URL은 http(s) 형식이어야 합니다.");
         }
-        String normalizedHost = host.toLowerCase(Locale.ROOT);
-        if (!normalizedHost.equals(ALLOWED_NOTICE_DOMAIN)
-                && !normalizedHost.endsWith("." + ALLOWED_NOTICE_DOMAIN)) {
+        if (!NoticeHostAllowlist.OFFICIAL.allows(uri)) {
             throw new IllegalArgumentException(
                     "허용되지 않은 공지 출처입니다. 숭실대 공식 도메인(ssu.ac.kr)만 조회할 수 있습니다.");
         }
