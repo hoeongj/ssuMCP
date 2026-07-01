@@ -26,7 +26,7 @@ repositories {
 
 dependencyManagement {
     imports {
-        mavenBom 'org.springframework.ai:spring-ai-bom:1.1.7'
+        mavenBom 'org.springframework.ai:spring-ai-bom:2.0.0'
         // Pin the Testcontainers module versions (junit-jupiter, postgresql). The Spring Boot
         // 4.0.6 platform does not manage the standalone testcontainers artifacts, so without
         // this BOM they resolve to an empty version. Kept in the 1.20.x line that
