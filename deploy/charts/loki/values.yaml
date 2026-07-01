@@ -1,0 +1,83 @@
+# grafana/loki — SingleBinary (monolithic) mode, filesystem storage, for the
+# single-node Oracle ARM64 k3s. Applied by deploy/argocd/application-loki.yaml.
+# Central sink for ssuai-backend JSON logs (logback json-logs profile) shipped by
+# Promtail. Read by Grafana's Loki datasource (monitoring/values.yaml).
+# ADR 0069 §활성화 절차 ①.
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  # Single node -> one copy of each stream.
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  # tsdb + v13 required for current Loki / structured metadata; index rotates daily.
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  limits_config:
+    # Short 72h retention keeps disk + memory bounded on the shared node (ADR 0069 budget).
+    retention_period: 72h
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    volume_enabled: true
+  # Enable the compactor's retention loop so retention_period is actually enforced
+  # (deletes go through the filesystem delete store, no object storage needed).
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+# One monolithic pod; the scalable-mode components are all off.
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Trim every heavyweight extra the chart enables by default — each would add
+# pods/memory we cannot spare on a single 24GB node.
+gateway:
+  enabled: false          # no nginx front proxy; Grafana/Promtail hit the loki svc directly
+chunksCache:
+  enabled: false          # default memcached requests ~9Gi — far over budget
+resultsCache:
+  enabled: false          # same
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+minio:
+  enabled: false          # filesystem storage, no bundled object store
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  serviceMonitor:
+    enabled: false
+  rules:
+    enabled: false
+  dashboards:
+    enabled: false

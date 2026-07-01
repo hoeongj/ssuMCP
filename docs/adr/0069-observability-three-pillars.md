@@ -60,3 +60,28 @@
 1. 분산추적을 왜 도입했고, javaagent 대신 Micrometer Observation 브리지를 쓴 이유는? (코드 레벨 제어 → LLM provider 커스텀 스팬 같은 도메인 의미 부여)
 2. 10-provider LLM 페일오버를 추적에서 어떻게 보나? (`LlmProviderChain`의 provider별 `llm.provider.call` 스팬이 타임라인에 폴백 시퀀스로 표시)
 3. 단일 노드에서 관측성 스택 비용을 어떻게 통제했나? (샘플링 10%·single-binary Tempo/Loki·prod 기본 inert(샘플링 0/json-logs 게이트)로 켜기 전까지 0 오버헤드)
+
+## SET A 활성화 (prod ON) — branch `feat/observability-tempo-loki`
+
+위 "보류·후속"의 활성화 절차 ①②③을 실제 배포 매니페스트로 구현한 브랜치(미머지, 리뷰 대기).
+
+**① Tempo/Loki/수집기 배포** — 기존 monitoring 패턴(업스트림 차트 + 리포 values 파일 + ArgoCD Application) 그대로 미러:
+- `deploy/argocd/application-tempo.yaml` + `deploy/charts/tempo/values.yaml` — `grafana/tempo` 1.24.4 **single-binary(monolithic)**, local(filesystem) 백엔드, block_retention 72h. 차트 기본 `memBallastSizeMbs: 1024`는 512Mi limit을 단독으로 초과해 기동 OOM → **0으로 비활성**(핵심 함정).
+- `deploy/argocd/application-loki.yaml` + `deploy/charts/loki/values.yaml` — `grafana/loki` 6.55.0 **SingleBinary**, filesystem, retention 72h(compactor retention loop on). 차트 기본 heavy 컴포넌트(gateway/chunksCache/resultsCache/lokiCanary/test/minio/self-monitoring) 전부 off — 단일 24GB 노드 예산.
+- `deploy/argocd/application-promtail.yaml` + `deploy/charts/promtail/values.yaml` — `grafana/promtail` 6.17.1 DaemonSet.
+
+**수집기 = Promtail (Alloy 아님) 근거**: ADR 0069 범위·load-tests 파이프라인이 Promtail을 명시 → 이미 로컬에서 증명된 stdout-JSON + Promtail 구성을 prod에 그대로 이식(재현성). Alloy가 Grafana의 장기 후속(Promtail 유지보수 모드)이라는 점은 리뷰 코멘트로 남김.
+
+**② 백엔드 emit ON** (`deploy/charts/ssuai-backend/values.yaml` + `templates/configmap.yaml`):
+- `SPRING_PROFILES_ACTIVE=prod,json-logs` — logback `json-logs` 프로파일 게이트 개방(LogstashEncoder stdout).
+- `TRACING_SAMPLE_RATE=0.1` (application.yml `management.tracing.sampling.probability` 기본 0.0 → 0.1).
+- `OTLP_TRACING_ENDPOINT=http://tempo.monitoring.svc.cluster.local:4318/v1/traces` (in-cluster Tempo svc).
+- ConfigMap 변경 → deployment의 `checksum/config` 애노테이션이 파드 롤을 유발(envFrom는 기동 시 1회 로드).
+
+**③ Grafana 데이터소스** (`deploy/charts/monitoring/values.yaml` `grafana.additionalDataSources`): Tempo(uid tempo, `:3200`) + Loki(uid loki, `:3100`), in-cluster svc URL.
+- Tempo→logs: `tracesToLogsV2.filterByTraceID` (±1h).
+- logs→Tempo: Loki `derivedFields`가 **로그 본문 JSON에서 traceId를 regex 추출**해 링크. load-tests는 traceId를 Loki *라벨*로 승격했으나(데모 규모라 무해), prod에서 UUID를 라벨로 올리면 **고카디널리티로 Loki 인덱스가 폭발** → 라벨 대신 본문 regex 매칭으로 전환(카디널리티 0 비용). 이것이 두 구성의 유일한 의미 차이.
+
+**대안 기각(수집기 라벨링)**: promtail 전역 JSON 파이프라인으로 traceId 라벨 승격 △ — 비-JSON 파드(grafana/prometheus/tempo 등) 로그에 파싱 에러 + 고카디널리티. 채택: 수집기는 k8s 라벨만(cri 파이프라인 기본), traceId 상관은 Grafana 쿼리 시점 regex로. 앱↔Loki 디커플 원칙과도 일관.
+
+**리뷰 주의(머지 전)**: (a) `kubectl top nodes`로 노드 메모리 여유 먼저 확인 — Tempo+Loki+Promtail이 24GB 노드에 ~1.5GB 추가. (b) 단일 파드 앱에서 분산추적 ROI는 낮음(ADR 0069) → SET A는 선택적. (c) 차트 버전 핀은 배포 시점 재확인.
