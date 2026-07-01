@@ -50,13 +50,25 @@
     },
     {
       "parameters": {
-        "webhookUri": "={{ $env.DISCORD_WEBHOOK_URL }}",
-        "content": "📢 **[숭실대 새 공지]** {{ $json.title }}\n카테고리: {{ $json.category || '공지사항' }}\n🔗 {{ $json.url || ('https://ssu.ac.kr/kor/notice/' + $json.id) }}"
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL_NOTICE }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=📢 **[숭실대 새 공지]** {{ $json.title }}\n카테고리: {{ $json.category || '공지사항' }}\n🔗 {{ $json.url || ('https://ssu.ac.kr/kor/notice/' + $json.id) }}"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "discord-notify",
       "name": "Discord Notification",
-      "type": "n8n-nodes-base.discord",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1130, 200]
     }
   ],

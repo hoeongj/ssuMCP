@@ -1,0 +1,106 @@
+namespace: ssuai-prod
+replicaCount: 1
+image:
+  # PUBLIC upstream image (built by n8n, NOT by us) -> no argocd-image-updater.
+  # Pinned to the current stable (n8n 2.x line) at merge time:
+  #   https://docs.n8n.io/release-notes/  /  https://hub.docker.com/r/n8nio/n8n/tags
+  repository: docker.n8n.io/n8nio/n8n
+  tag: "2.27.5"
+  pullPolicy: IfNotPresent
+nameOverride: ""
+fullnameOverride: ""
+# Non-secret runtime config (rendered into the ConfigMap). Secrets live in
+# the n8n-secrets Secret (see secretRef / secret.example.yaml).
+env:
+  host: ssun8n.duckdns.org
+  protocol: https
+  webhookUrl: https://ssun8n.duckdns.org/
+  port: "5678"
+  timezone: Asia/Seoul
+  # n8n 2.x removed basic auth. Provision the instance owner declaratively at
+  # first boot (password hash + JWT secret live in n8n-secrets).
+  ownerManagedByEnv: "true"
+  ownerEmail: seongjuice999@gmail.com
+  ownerFirstName: ssu
+  ownerLastName: admin
+  # Workflows read $env.SSUAI_API_BASE for the ssuMCP public API base.
+  ssuaiApiBase: https://ssumcp.duckdns.org
+  # n8n 2.x enables task runners by default; set it explicitly for clarity.
+  runnersEnabled: "true"
+  # n8n 2.x flips N8N_BLOCK_ENV_ACCESS_IN_NODE to true by default, which blocks
+  # the {{ $env.* }} expressions our workflows depend on (SSUAI_API_BASE and the
+  # two Discord webhook URLs injected via n8n-secrets). Must be "false".
+  blockEnvAccessInNode: "false"
+secretRef:
+  enabled: true
+  name: n8n-secrets
+  optional: true
+# secret.example.yaml is disabled by default; create the Secret out-of-band with
+# kubectl (see values-prod.yaml). Enable only for a throwaway/dev render.
+secretTemplate:
+  enabled: false
+  stringData:
+    # bcrypt hash of the instance owner password (plaintext breaks login).
+    N8N_INSTANCE_OWNER_PASSWORD_HASH: "<replace-me-bcrypt-hash>"
+    # 32+ char random; keep stable so encrypted data + sessions survive a PVC reset.
+    N8N_ENCRYPTION_KEY: "<replace-me-32char-random>"
+    N8N_USER_MANAGEMENT_JWT_SECRET: "<replace-me-32char-random>"
+    DISCORD_WEBHOOK_URL_NOTICE: "<replace-me>"
+    DISCORD_WEBHOOK_URL_WEEKLY: "<replace-me>"
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  mountPath: /home/node/.n8n
+  # storageClassName omitted -> uses the cluster default. On k3s that is
+  # local-path (single-node, node-local). See values-prod.yaml REVIEW block.
+  storageClassName: ""
+service:
+  type: ClusterIP
+  port: 5678
+ingress:
+  enabled: true
+  className: traefik
+  host: ssun8n.duckdns.org
+  tlsSecretName: ssun8n-duckdns-org-tls
+  clusterIssuer: letsencrypt-prod
+  # Shared traefik middlewares in the ssuai-prod namespace (created by the
+  # ssuai-backend chart); referenced namespace-prefixed, not created here.
+  middlewares:
+    redirectHttps: redirect-https
+    hsts: hsts
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+probes:
+  readiness:
+    path: /healthz
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 5
+# The n8n image runs as the 'node' user (UID/GID 1000). n8n writes config and
+# ~/.n8n at runtime, so the root FS must stay writable.
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+    - ALL
+# fsGroup 1000 makes the mounted PVC group-writable by the node user.
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30

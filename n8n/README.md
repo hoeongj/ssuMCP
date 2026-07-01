@@ -35,7 +35,7 @@ cp .env.example .env
 docker compose up -d
 
 # 3. 접속
-# http://localhost:5678  (admin / .env의 N8N_PASSWORD)
+# http://localhost:5678 — 최초 접속 시 owner 계정(이메일/비번)을 1회 설정
 
 # 4. 워크플로우 import
 # Settings > Import Workflow > workflows/notice-discord.json
@@ -46,9 +46,12 @@ docker compose up -d
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `N8N_PASSWORD` | (필수) | n8n 관리자 비밀번호 — 기본값 없음, `.env`에 직접 설정 |
-| `DISCORD_WEBHOOK_URL` | (필수) | Discord Webhook URL |
+| `DISCORD_WEBHOOK_URL_NOTICE` | (필수) | 공지 알림 채널 Discord Webhook URL |
+| `DISCORD_WEBHOOK_URL_WEEKLY` | (필수) | 주간 리포트 채널 Discord Webhook URL |
 | `SSUAI_API_BASE` | `https://ssumcp.duckdns.org` | ssuMCP API 베이스 URL |
+
+> **채널 분리**: 공지 알림과 주간 리포트를 서로 다른 Discord 채널로 보내려고 웹훅을 2개로 나눴다. 각 워크플로우는 HTTP Request 노드에서 `{{ $env.DISCORD_WEBHOOK_URL_* }}`로 자기 채널 웹훅을 읽는다.
+> **n8n 2.x 주의**: `N8N_BLOCK_ENV_ACCESS_IN_NODE`가 2.0부터 기본 `true`라 노드 표현식의 `{{ $env.* }}`가 막힌다. 워크플로우가 `$env`로 웹훅·API 베이스를 읽으므로 `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`가 필요하다(docker-compose·Helm 모두 반영됨).
 
 ## 포트폴리오 포인트
 
@@ -56,3 +59,24 @@ docker compose up -d
 - **상태 유지 설계**: n8n Static Data로 공지 ID를 추적해 중복 알림 방지
 - **관심사 분리**: 예약 상태머신/auth/resilience는 ssuMCP 코드에, 운영 자동화만 n8n에
 - **n8n vs Zapier/Make**: 자체 코드 삽입(Code 노드) + 셀프호스팅으로 데이터 주권 확보
+
+## Prod deployment
+
+로컬 Docker Compose와 별개로, 프로덕션(k3s / Oracle A1, 네임스페이스 `ssuai-prod`)에는
+Helm 차트 + ArgoCD로 배포한다.
+
+- Helm 차트: [`deploy/charts/n8n`](../deploy/charts/n8n)
+- ArgoCD Application: [`deploy/argocd/application-n8n.yaml`](../deploy/argocd/application-n8n.yaml)
+- 접속: `https://ssun8n.duckdns.org` (traefik ingress + cert-manager `letsencrypt-prod`)
+
+주요 설계:
+- 단일 PVC(1Gi, `/home/node/.n8n`) + `Recreate` 전략 (상태 보존형, single-node).
+- 공개 업스트림 이미지(`docker.n8n.io/n8nio/n8n:2.27.5`) 고정 태그 → argocd-image-updater 미사용.
+- 비밀값은 `n8n-secrets` Secret으로 클러스터에 직접 생성(레포에 커밋하지 않음). 채널별 웹훅 2개(`DISCORD_WEBHOOK_URL_NOTICE`/`_WEEKLY`)도 여기 담는다.
+- Discord 전송은 네이티브 Discord 노드 대신 **HTTP Request 노드**로 웹훅에 직접 POST → 노드 스키마 버전 의존 제거 + 웹훅 URL을 `$env`(=k8s Secret)로 주입.
+- n8n 2.x는 basic auth를 제거 → **owner 계정을 env로 선언적 프로비저닝**(`N8N_INSTANCE_OWNER_MANAGED_BY_ENV`), 비밀번호는 bcrypt 해시로 `n8n-secrets`에 저장. UI 수동 셋업 없이 첫 부팅에 자동 생성(GitOps 재현성).
+
+첫 배포 순서:
+1. `n8n-secrets` Secret 생성 (명령어는 `deploy/charts/n8n/values-prod.yaml` 참고).
+2. ArgoCD가 sync → n8n 기동.
+3. `n8n/workflows/*.json` import. 각 워크플로우는 `$env`로 채널별 웹훅을 읽는다(공지=`DISCORD_WEBHOOK_URL_NOTICE`, 주간=`DISCORD_WEBHOOK_URL_WEEKLY`).

@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: n8n
+  namespace: argocd
+  # NOTE: no argocd-image-updater annotations. The n8n image is a pinned PUBLIC
+  # upstream image (docker.n8n.io/n8nio/n8n), not built by our CI. Bump the tag
+  # in deploy/charts/n8n/values.yaml manually.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ghdtjdwn/ssuMCP.git
+    targetRevision: main
+    path: deploy/charts/n8n
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ssuai-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true

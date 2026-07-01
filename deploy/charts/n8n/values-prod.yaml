@@ -1,0 +1,39 @@
+# Production notes for the n8n chart.
+#
+# The ArgoCD Application (deploy/argocd/application-n8n.yaml) renders with
+# values.yaml ONLY. This file is human-facing operator documentation: the
+# Secret bootstrap command and the pre-merge checklist. It is intentionally
+# not wired into the Application's valueFiles.
+#
+# ---------------------------------------------------------------------------
+# Create the n8n-secrets Secret BEFORE the first sync (image starts with basic
+# auth active and fails without a password):
+#
+#   # n8n 2.x uses user management (no basic auth); the owner password must be a
+#   # bcrypt hash: HASH=$(htpasswd -bnBC 12 "" '<owner-pw>' | tr -d ':\n' | sed 's/\$2y/\$2a/')
+#   kubectl create secret generic n8n-secrets \
+#     --namespace ssuai-prod \
+#     --from-literal=N8N_INSTANCE_OWNER_PASSWORD_HASH="$HASH" \
+#     --from-literal=N8N_ENCRYPTION_KEY="$(openssl rand -hex 24)" \
+#     --from-literal=N8N_USER_MANAGEMENT_JWT_SECRET="$(openssl rand -hex 24)" \
+#     --from-literal=DISCORD_WEBHOOK_URL_NOTICE='https://discord.com/api/webhooks/<id>/<token>' \
+#     --from-literal=DISCORD_WEBHOOK_URL_WEEKLY='https://discord.com/api/webhooks/<id>/<token>'
+#
+# ---------------------------------------------------------------------------
+# REVIEW BEFORE MERGE
+# ---------------------------------------------------------------------------
+#   (a) storageClass: the 1Gi PVC uses the cluster DEFAULT storageClass.
+#       Confirm k3s default is `local-path`:
+#         kubectl get storageclass
+#       (look for `local-path (default)`). If not default, set
+#       persistence.storageClassName in values.yaml.
+#   (b) memory headroom: this adds ~512Mi (limit) on the single Oracle A1 node
+#       (24GB). Confirm free memory before syncing:
+#         kubectl top nodes
+#   (c) workflows: after first boot, import n8n/workflows/*.json
+#       (notice-discord.json, weekly-report.json). Each sends via an HTTP Request
+#       node that reads its channel webhook from $env: DISCORD_WEBHOOK_URL_NOTICE
+#       and DISCORD_WEBHOOK_URL_WEEKLY (both in n8n-secrets).
+#   (d) DNS: ensure an A record for ssun8n.duckdns.org points at the node's
+#       public IP 168.110.104.199 (required for the Let's Encrypt HTTP-01
+#       challenge + ingress routing).
