@@ -96,13 +96,15 @@
 - **권장 접근**: ssuAI에 `/api/agent/*` Route Handler 프록시 신설(서버에서만 `AGENT_API_KEY` 주입) → ssuAgent `AGENT_API_KEY` 설정 → 동시 롤아웃.
 - **진행에 필요한 것**: Next 프록시 구현 + 양쪽 env-var(prod 변경=사용자 확인, 철칙 3) + 동시 배포 윈도우.
 
-## 12. ssuAgent 대화 thread 인증 바인딩 (S4, 2026-06-23 신규)
+## 12. ssuAgent 대화 thread 인증 바인딩 (S4, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
+
+> **✅ 종결(2026-06-30)**: thread 소유권 바인딩 구현·머지·prod 검증 완료. ssuAgent에 `thread_owners` 테이블 + `claim_or_verify_thread_owner`로 thread_id를 호출자 신원에 바인딩(ADR 0010, PR #14 `0c8931f` 머지) — 첫 호출자가 thread를 claim하고 이후 다른 신원의 접근은 거부. ssuAI는 로그아웃 시 thread 리셋(PR #206 `272dd42`). **prod IDOR 실측**: 타인 thread_id로 접근 → **403** 확인.
 
 - **무엇**: ssuAgent `thread_id`(클라 제공)가 LangGraph 체크포인트 키인데 인증·소유권 바인딩이 없다(`main.py`). 대화 기밀성이 thread_id 비밀성 + TLS에만 의존.
 - **왜 보류**: 근본 차단은 `/agent` 인증(#11)이 활성화돼야 thread_id를 호출자 신원에 바인딩할 수 있다 → #11과 한 묶음. 완화: ssuAI가 `crypto.randomUUID()`(122bit)로 생성해 추측 난이도 높음.
 - **권장 접근**: #11 인증 활성화 시 thread_id를 호출자 신원(키/세션)에 바인딩 → IDOR 원천 차단. cf. ssuMCP는 #1에서 `(owner, conversationId)` 복합키로 해결.
 - **2026-06-30 갱신**: **#11 활성화 완료 → 선행조건 해제, 착수 가능.** 단 현 #11은 프록시가 **단일 공유 키**를 주입하는 구조라 "호출자별 신원"이 에이전트 계층에 없음 → thread_id 바인딩 설계는 (a) ssuAI 프록시가 per-user 식별자를 추가 주입해 namespace화 vs (b) randomUUID(122bit) + 위협모델 문서화로 수용 중 택1이 필요(철칙2 옵션 보고 대상).
-- **진행에 필요한 것**: ~~#11 선행~~✅완료. 위 (a)/(b) 설계 결정.
+- **진행에 필요한 것**: ~~#11 선행~~✅완료. ~~위 (a)/(b) 설계 결정~~ → `thread_owners` 소유권 claim 바인딩으로 종결(✅ 위 종결 노트).
 
 ## 13. `get_notice_detail` SSRF 도메인 allowlist (M1, 2026-06-23 신규) — ✅ 완료 (2026-06-30)
 

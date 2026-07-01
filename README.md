@@ -145,6 +145,9 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive) |
 | `recommend_library_seats` | 선호도 기반 좌석 추천 |
 | `prepare_reserve_library_seat` | 좌석 예약 준비 → `confirm_action` 필요 |
+| `wait_for_library_seat` | 좌석 대기 등록 — 빈자리가 나면 백그라운드 워커가 자동 예약 (호출 자체가 동의, `confirm_action` 불필요) |
+| `get_library_wait_status` | 좌석 대기 최신 상태 조회 |
+| `cancel_library_wait` | 좌석 대기 취소 (예약 시작 전까지만 가능) |
 | `get_my_library_seat` | 현재 예약 좌석 조회 |
 | `prepare_swap_library_seat` | 이석 준비 → `confirm_action` 필요 |
 | `prepare_cancel_library_seat` | 반납 준비 → `confirm_action` 필요 |

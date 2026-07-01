@@ -618,7 +618,7 @@ Flyway layout은 `classpath:db/migration/V*__*.sql,classpath:db/migration/{vendo
 
 이 규칙은 `docs/security.md`에 반복되어 있다 — 그 문서가 기준 문서이며, 이 섹션은 아키텍처 레벨의 리마인더다.
 
-상태 확인: `/actuator/health` (Spring Boot Actuator). 메트릭과 분산 트레이싱은 측정할 가치가 생길 때까지 보류.
+상태 확인: `/actuator/health` (Spring Boot Actuator). 메트릭·분산 트레이싱·중앙 로그는 관측성 3-pillars(Prometheus·Tempo·Loki·Grafana)로 prod에 라이브다 — Actuator 메트릭 + Boot 4 OTLP export로 수집한다(ADR 0069, 1절 다이어그램 참조).
 
 ---
 

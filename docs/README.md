@@ -14,7 +14,7 @@
 
 ## Historical Records
 
-`adr/`, `deploy/pipeline-diagnosis-2026-05-14.md`, and troubleshooting notes
+`adr/` and troubleshooting notes
 record decisions made before or during the repository split. They may mention
 the former monorepo `backend/` and `frontend/` paths, or the superseded SSE
 transport. Current commands use the `ssuMCP` repository root and current MCP

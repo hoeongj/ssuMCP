@@ -80,3 +80,10 @@ Helm 차트 + ArgoCD로 배포한다.
 1. `n8n-secrets` Secret 생성 (명령어는 `deploy/charts/n8n/values-prod.yaml` 참고).
 2. ArgoCD가 sync → n8n 기동.
 3. `n8n/workflows/*.json` import. 각 워크플로우는 `$env`로 채널별 웹훅을 읽는다(공지=`DISCORD_WEBHOOK_URL_NOTICE`, 주간=`DISCORD_WEBHOOK_URL_WEEKLY`).
+4. Discord 웹훅 2개를 `n8n-secrets`에 주입 후 워크플로우 활성화.
+
+**현재 상태 (2026-07-02, 라이브)**: 웹훅 2개(`DISCORD_WEBHOOK_URL_NOTICE`/`_WEEKLY`) `n8n-secrets` 주입 완료, 두 워크플로우 모두 `active:true`. 공지 모니터링은 스케줄 1회차 실행에서 실제 Discord 전송(2xx)까지 확인됐고, 주간 리포트는 매주 월 09:00 cron으로 대기한다.
+
+운영 노트:
+- REST로 활성화하려면 `POST /rest/workflows/{id}/activate`에 해당 워크플로우의 `versionId`를 body로 보내야 한다(생략 시 실패).
+- 워크플로우 삭제는 즉시 DELETE가 아니라 **archive 후 DELETE** 순서다(n8n 2.x).
