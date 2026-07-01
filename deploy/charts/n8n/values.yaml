@@ -25,8 +25,9 @@ env:
   ownerLastName: admin
   # Workflows read $env.SSUAI_API_BASE for the ssuMCP public API base.
   ssuaiApiBase: https://ssumcp.duckdns.org
-  # n8n 2.x enables task runners by default; set it explicitly for clarity.
-  runnersEnabled: "true"
+  # n8n 2.x ships a heavier image (AI/agent features). Give Node enough heap;
+  # the container memory limit (see resources) must exceed this to avoid OOM.
+  nodeOptions: "--max-old-space-size=1536"
   # n8n 2.x flips N8N_BLOCK_ENV_ACCESS_IN_NODE to true by default, which blocks
   # the {{ $env.* }} expressions our workflows depend on (SSUAI_API_BASE and the
   # two Discord webhook URLs injected via n8n-secrets). Must be "false".
@@ -70,12 +71,14 @@ ingress:
     redirectHttps: redirect-https
     hsts: hsts
 resources:
+  # n8n 2.x OOMs at 512Mi during startup; give it real headroom (node has ~18Gi
+  # free). Keep NODE_OPTIONS max-old-space-size below the memory limit.
   requests:
     cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 500m
     memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
 probes:
   readiness:
     path: /healthz

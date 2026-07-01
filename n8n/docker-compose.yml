@@ -14,7 +14,6 @@ services:
       # n8n 2.x blocks {{ $env.* }} in node expressions by default; our workflows
       # read the webhook URLs + API base via $env, so re-enable env access.
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      - N8N_RUNNERS_ENABLED=true
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/home/node/workflows:ro

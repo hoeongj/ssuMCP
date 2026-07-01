@@ -27,8 +27,9 @@
 #         kubectl get storageclass
 #       (look for `local-path (default)`). If not default, set
 #       persistence.storageClassName in values.yaml.
-#   (b) memory headroom: this adds ~512Mi (limit) on the single Oracle A1 node
-#       (24GB). Confirm free memory before syncing:
+#   (b) memory headroom: this adds up to ~2Gi (limit) on the single Oracle A1
+#       node (24GB). n8n 2.x OOMs at 512Mi, so the limit is 2Gi. Confirm free
+#       memory before syncing:
 #         kubectl top nodes
 #   (c) workflows: after first boot, import n8n/workflows/*.json
 #       (notice-discord.json, weekly-report.json). Each sends via an HTTP Request
