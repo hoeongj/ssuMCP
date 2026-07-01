@@ -1,0 +1,21 @@
+# grafana/promtail — DaemonSet log collector for the single-node k3s. Applied by
+# deploy/argocd/application-promtail.yaml. Tails every pod's stdout and pushes to
+# Loki. ssuai-backend lines are JSON (logback json-logs profile), so Grafana's Loki
+# datasource extracts traceId from the log body at query time — no high-cardinality
+# label is promoted. ADR 0069 대안: stdout-JSON + Promtail (app decoupled from Loki).
+
+config:
+  logLevel: warn
+  clients:
+    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+serviceMonitor:
+  enabled: false

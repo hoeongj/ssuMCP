@@ -27,6 +27,35 @@ prometheus:
               storage: 5Gi
 
 grafana:
+  additionalDataSources:
+    # SET A observability datasources (Tempo traces + Loki logs), correlated by traceId.
+    # In-cluster service URLs — Tempo/Loki live in this same `monitoring` namespace.
+    - name: Tempo
+      type: tempo
+      access: proxy
+      uid: tempo
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      jsonData:
+        # Span -> logs: open Loki filtered by this span's trace id (±1h window).
+        tracesToLogsV2:
+          datasourceUid: loki
+          spanStartTimeShift: -1h
+          spanEndTimeShift: 1h
+          filterByTraceID: true
+    - name: Loki
+      type: loki
+      access: proxy
+      uid: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData:
+        # Log line -> trace: pull traceId out of the JSON body (regex on content, so no
+        # high-cardinality UUID label is created) and link to the Tempo datasource.
+        derivedFields:
+          - name: traceId
+            matcherType: regex
+            matcherRegex: '"traceId":"(\w+)"'
+            url: '$${__value.raw}'
+            datasourceUid: tempo
   # Set via k8s Secret: kubectl -n monitoring create secret generic grafana-admin \
   #   --from-literal=admin-user=admin --from-literal=admin-password=<your-password>
   admin:
