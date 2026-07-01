@@ -7,7 +7,10 @@ metadata:
   labels:
     {{- include "n8n.labels" . | nindent 4 }}
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    # Co-located with the Deployment (sync-wave 3): the PVC uses local-path
+    # (WaitForFirstConsumer), so it only binds once its consumer pod is
+    # scheduled. Gating an earlier wave on its health would deadlock the sync.
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   accessModes:
     - {{ .Values.persistence.accessMode }}
