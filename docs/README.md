@@ -8,7 +8,6 @@
 | --- | --- |
 | [architecture.md](architecture.md) | Current runtime boundaries and package responsibilities |
 | [mcp-tools.md](mcp-tools.md) | Tool inventory, auth flow, client setup, and official-source academic policy tools |
-| [library-seat-agent-completion-plan.md](library-seat-agent-completion-plan.md) | Completion checklist for the library seat automation agent |
 | [security.md](security.md) | Data classification, secret handling, and action policy |
 | [../deploy/README.md](../deploy/README.md) | Production deployment runbook |
 | [troubleshooting-highlights.md](troubleshooting-highlights.md) | Incident and design-correction log, including the 2026-06-06 academic policy RAG refresh decision |
