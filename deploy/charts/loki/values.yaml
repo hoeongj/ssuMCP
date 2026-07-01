@@ -26,8 +26,11 @@ loki:
   limits_config:
     # Short 72h retention keeps disk + memory bounded on the shared node (ADR 0069 budget).
     retention_period: 72h
-    reject_old_samples: true
-    reject_old_samples_max_age: 168h
+    # Accept backlogged pod logs that promtail ships on first start. Otherwise Loki
+    # 400-rejects any batch containing a line older than the window, and because a batch
+    # mixes streams, fresh backend logs in the same batch are dropped too -> nothing ingests.
+    # 72h retention above still bounds storage, so old lines are pruned shortly after.
+    reject_old_samples: false
     volume_enabled: true
   # Enable the compactor's retention loop so retention_period is actually enforced
   # (deletes go through the filesystem delete store, no object storage needed).
