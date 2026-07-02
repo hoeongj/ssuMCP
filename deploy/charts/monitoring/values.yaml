@@ -4,6 +4,20 @@
 # (Alerting > Contact points > Add > Discord, paste webhook URL).
 
 prometheus:
+  # cert-manager exposes /metrics on 9402 but ships no ServiceMonitor of its own;
+  # scraping it feeds the SsuaiCertRenewalStalled alert below.
+  additionalServiceMonitors:
+    - name: cert-manager
+      namespaceSelector:
+        matchNames:
+          - cert-manager
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: cert-manager
+          app.kubernetes.io/component: controller
+      endpoints:
+        - port: tcp-prometheus-servicemonitor
+          interval: 60s
   prometheusSpec:
     # Pick up ServiceMonitors from all namespaces (not just the release namespace).
     serviceMonitorSelectorNilUsesHelmValues: false
@@ -126,3 +140,55 @@ nodeExporter:
 
 kubeStateMetrics:
   enabled: true
+
+# Operational alert rules (visible in Grafana/Alertmanager even before a Discord
+# contact point is configured — that last step is a Grafana-UI-only operation).
+additionalPrometheusRulesMap:
+  ssuai-ops:
+    groups:
+      - name: ssuai-ops
+        rules:
+          - alert: SsuaiBackendDown
+            expr: absent(up{job="ssuai-backend"} == 1)
+            for: 3m
+            labels:
+              severity: critical
+            annotations:
+              summary: "ssuai-backend scrape target is gone or down"
+              description: "Prometheus has no healthy ssuai-backend target for 3 minutes."
+          - alert: SsuaiHigh5xxRate
+            expr: |
+              sum(rate(http_server_requests_seconds_count{namespace="ssuai-prod", status=~"5.."}[5m]))
+                / clamp_min(sum(rate(http_server_requests_seconds_count{namespace="ssuai-prod"}[5m])), 1e-9) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "ssuai-backend 5xx ratio above 5%"
+              description: "More than 5% of requests returned 5xx over the last 5 minutes."
+          - alert: SsuaiJvmHeapHigh
+            expr: |
+              sum(jvm_memory_used_bytes{namespace="ssuai-prod", area="heap"})
+                / sum(jvm_memory_max_bytes{namespace="ssuai-prod", area="heap"} > 0) > 0.9
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "ssuai-backend JVM heap above 90%"
+              description: "Sustained heap pressure — check for leaks or lower the workload before the OOM killer does."
+          - alert: SsuaiPodRestartLoop
+            expr: increase(kube_pod_container_status_restarts_total{namespace="ssuai-prod"}[1h]) > 3
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }} restarted more than 3 times in 1h"
+              description: "Container {{ $labels.container }} in {{ $labels.pod }} is crash-looping."
+          - alert: SsuaiCertRenewalStalled
+            expr: certmanager_certificate_expiration_timestamp_seconds - time() < 14 * 24 * 3600
+            for: 1h
+            labels:
+              severity: critical
+            annotations:
+              summary: "TLS cert {{ $labels.name }} expires in under 14 days"
+              description: "cert-manager renews Let's Encrypt certs ~30 days before expiry; under 14 days means renewal is failing."
