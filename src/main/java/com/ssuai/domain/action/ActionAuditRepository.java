@@ -1,6 +1,7 @@
 package com.ssuai.domain.action;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +35,18 @@ public interface ActionAuditRepository extends JpaRepository<ActionAudit, Long> 
             + "where a.studentId = :studentId and a.status = com.ssuai.domain.action.ActionStatus.PENDING")
     int markPendingSuperseded(@Param("studentId") String studentId,
                               @Param("supersededAt") Instant supersededAt);
+
+    /**
+     * Retention sweep (ADR 0072): bulk-deletes rows that are BOTH in a terminal status AND
+     * older than the cutoff, in a single DELETE statement (no entity hydration). Callers pass
+     * only terminal statuses ({@code SUCCESS}/{@code FAILED}/{@code EXPIRED}/{@code SUPERSEDED});
+     * PENDING and EXECUTING rows are never eligible regardless of age — the status predicate,
+     * not the age predicate, is the safety boundary. Returns the rows deleted.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ActionAudit a where a.status in :statuses and a.createdAt < :cutoff")
+    int deleteByStatusInAndCreatedAtBefore(@Param("statuses") Collection<ActionStatus> statuses,
+                                           @Param("cutoff") Instant cutoff);
 
     /**
      * Row-locking variant used by confirm_action: takes a pessimistic write lock

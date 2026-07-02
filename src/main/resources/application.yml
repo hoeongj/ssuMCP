@@ -161,6 +161,15 @@ ssuai:
     # Prod injects the owner ID via the SSUAI_ADMIN_STUDENT_IDS secret
     # (NOT committed — the repo is public). ADR 0063.
     student-ids: ${SSUAI_ADMIN_STUDENT_IDS:}
+  retention:
+    # Daily terminal-row retention sweep at 04:30 KST (ADR 0072, security follow-up #3).
+    # Only terminal rows are ever deleted; PENDING/EXECUTING actions, unpublished outbox
+    # events and active intents are kept regardless of age. action_audit keeps 180 days
+    # (audit trail of real-account write actions); outbox/intents are operational-only.
+    enabled: ${SSUAI_RETENTION_ENABLED:true}
+    action-audit-days: ${SSUAI_RETENTION_ACTION_AUDIT_DAYS:180}
+    reservation-outbox-days: ${SSUAI_RETENTION_RESERVATION_OUTBOX_DAYS:30}
+    reservation-intent-days: ${SSUAI_RETENTION_RESERVATION_INTENT_DAYS:30}
   academic-policy:
     # Official-source RAG refresh. The seed corpus is only a fast fallback;
     # scheduled refresh pulls rule.ssu.ac.kr / ssu.ac.kr source documents into

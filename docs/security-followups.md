@@ -20,7 +20,9 @@
 - **반영**: `deploy/charts/ssuai-backend`에서 backend rootfs를 read-only로 전환하고 `/tmp`를 항상 `emptyDir`로 마운트했다. LMS export ZIP은 기존처럼 `/data/lms-export` PVC에 쓰며, JVM/JNA scratch는 `-Djava.io.tmpdir=/tmp -Djna.tmpdir=/tmp`로 `/tmp` emptyDir에 고정한다(ADR 0066).
 - **검증 완료(2026-06-30)**: merge `dc7df68` → ArgoCD 배포 후 새 backend pod `ssuai-backend-9f8f879-bkfr6` Ready(maxUnavailable0 무중단), rootfs 쓰기 차단(`touch /test_rootfs`→Read-only)·`/tmp` emptyDir 쓰기 가능·`java.io.tmpdir`/`jna.tmpdir` 양쪽 `/tmp`·`librusaint_ffi.so` 읽기 정상·health UP을 실측했다. 이후 로그인 인시던트 pod 로그에서 authenticated u-SAINT/rusaint 호출이 성공(`saint rusaint session stored`)해 JNA `jnidispatch`가 `/tmp` emptyDir에서 추출·로드되고 rusaint FFI가 read-only rootfs에서 동작함을 확정했다.
 
-## 3. DB 무결성·보존 정책 (#27)
+## 3. DB 무결성·보존 정책 (#27) — ✅ retention 잡 반영 (2026-07-02)
+
+> **✅ retention 잡 배포(2026-07-02)**: 2026-06-30 결정이 남긴 "진짜 해법 = retention `@Scheduled` 잡"을 구현·머지했다([ADR 0072](adr/0072-db-retention-scheduled-job.md)). `DataRetentionJob`이 매일 04:30 KST(leadership lock 하)에 **terminal 행만** bulk DELETE — `action_audit` **180일**(SUCCESS/FAILED/EXPIRED/SUPERSEDED만, PENDING/EXECUTING은 나이 무관 보존) · `library_reservation_outbox` **30일**(`published_at IS NOT NULL`만, 미발행 행은 나이 무관 보존) · `library_reservation_intents` **30일**(SUCCEEDED/FAILED_*/CANCELLED/EXPIRED만, 활성 intent는 나이 무관 보존). 창은 `ssuai.retention.*` 프로퍼티(env `SSUAI_RETENTION_*`)로 조절, `ssuai.retention.enabled=false`로 즉시 무력화 가능. 테이블별 독립 트랜잭션이라 한 테이블 실패가 나머지를 막지 않는다. H2+Flyway 실스키마 통합테스트 5건. 스키마 마이그레이션 0건. **CHECK/FK 제약은 아래 2026-06-30 결정대로 계속 미적용**(ADR 0055 기각 유지) — 이로써 #3의 잔여 작업 없음.
 
 - **무엇**: 주요 테이블에 CHECK/FK 제약 + outbox/audit/export retention 정책.
 - **왜 보류**: 마이그레이션-온-디플로이라 기존 prod 데이터가 새 제약을 위반하면 Flyway 실패 = 배포 깨짐(자율 검증 불가). 저보안가치(앱이 이미 유효값만 기록).

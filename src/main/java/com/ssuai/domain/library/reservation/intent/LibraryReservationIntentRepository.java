@@ -9,6 +9,7 @@ import jakarta.persistence.LockModeType;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -85,4 +86,16 @@ public interface LibraryReservationIntentRepository extends JpaRepository<Librar
 
     @Query("select i from LibraryReservationIntent i where i.id = :id")
     Optional<LibraryReservationIntent> findSnapshotById(@Param("id") Long id);
+
+    /**
+     * Retention sweep (ADR 0072): bulk-deletes rows that are BOTH in a terminal status AND older
+     * than the cutoff, in a single DELETE statement. Callers pass only terminal statuses
+     * ({@code SUCCEEDED}/{@code FAILED_*}/{@code CANCELLED}/{@code EXPIRED}); active rows
+     * (REQUESTED/WAITING_FOR_SEAT/RESERVING) are never eligible regardless of age. Returns the
+     * rows deleted.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from LibraryReservationIntent i where i.status in :statuses and i.createdAt < :cutoff")
+    int deleteByStatusInAndCreatedAtBefore(@Param("statuses") Collection<LibraryReservationIntentStatus> statuses,
+                                           @Param("cutoff") Instant cutoff);
 }
