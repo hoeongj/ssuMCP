@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml)
 
+> 🇺🇸 English version: [README.en.md](README.en.md)
+
 숭실대학교 캠퍼스 정보를 **MCP(Model Context Protocol) 표준 도구**로 제공하는 공개 서버.  
 동시에 [ssuAI](https://github.com/hoeongj/ssuAI) 웹 클라이언트를 위한 REST API 서버다.
 
