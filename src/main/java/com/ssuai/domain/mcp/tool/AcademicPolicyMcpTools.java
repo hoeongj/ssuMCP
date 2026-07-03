@@ -13,8 +13,10 @@ import com.ssuai.domain.academic.dto.AcademicPolicySearchResponse;
 import com.ssuai.domain.academic.dto.AcademicPolicySource;
 import com.ssuai.domain.academic.dto.AcademicQuestionClassificationResponse;
 import com.ssuai.domain.academic.dto.GraduationPolicyEvaluationResponse;
+import com.ssuai.domain.academic.dto.GraduationPolicyMismatchWarning;
 import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse;
 import com.ssuai.domain.academic.service.AcademicPolicyService;
+import com.ssuai.domain.academic.service.GraduationPolicyMismatchDetector;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.saint.dto.GraduationStatus;
@@ -27,14 +29,17 @@ public class AcademicPolicyMcpTools {
 
     private final AcademicPolicyService policyService;
     private final SaintGraduationService graduationService;
+    private final GraduationPolicyMismatchDetector mismatchDetector;
     private final McpAuthHelper authHelper;
 
     public AcademicPolicyMcpTools(
             AcademicPolicyService policyService,
             SaintGraduationService graduationService,
+            GraduationPolicyMismatchDetector mismatchDetector,
             McpAuthHelper authHelper) {
         this.policyService = policyService;
         this.graduationService = graduationService;
+        this.mismatchDetector = mismatchDetector;
         this.authHelper = authHelper;
     }
 
@@ -139,10 +144,13 @@ public class AcademicPolicyMcpTools {
                             policyService.classifier().classify(safeQuestion);
                     AcademicPolicyBriefResponse brief =
                             policyService.brief(safeQuestion, "graduation", 5, live);
+                    List<GraduationPolicyMismatchWarning> mismatchWarnings =
+                            mismatchDetector.detect(status, brief);
                     GraduationPolicyEvaluationResponse data = new GraduationPolicyEvaluationResponse(
                             status,
                             classification,
                             brief,
+                            mismatchWarnings,
                             List.of(
                                     "u-SAINT 졸업사정표의 부족 항목과 policyBrief evidence를 함께 비교하세요.",
                                     "학과별 교육과정, 입학연도별 경과조치, 다전공 여부는 공식 학과 안내와 추가 대조가 필요할 수 있습니다.",

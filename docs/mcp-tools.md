@@ -214,7 +214,7 @@ corpus를 갱신한다. 도구 응답에는 `live`, `fallbackUsed`, `revision`, 
 | `get_my_grades` | 누적 GPA + 학기별 과목 수 | SAINT | `mcp_session_id` |
 | `get_my_chapel_info` | 채플 출석 현황 | SAINT | `year` (선택), `semester` (선택), `mcp_session_id` |
 | `check_graduation_requirements` | 졸업 요건 충족 여부 및 잔여 학점 | SAINT | `mcp_session_id` |
-| `evaluate_graduation_with_policy` | u-SAINT 졸업요건 상태와 공식 학칙·졸업 근거를 함께 반환 | SAINT | `question`, `live` (선택), `mcp_session_id` |
+| `evaluate_graduation_with_policy` | u-SAINT 졸업요건 상태와 공식 학칙·졸업 근거를 함께 반환. 응답 `mismatchWarnings`는 사정표와 정책 근거의 숫자가 다를 때(총 이수학점·채플) 확인 안내를 담는다(없으면 빈 리스트, ADR 0073) | SAINT | `question`, `live` (선택), `mcp_session_id` |
 | `get_my_scholarships` | 장학금 수혜 내역 | SAINT | `year` (선택), `mcp_session_id` |
 | `simulate_gpa` | 누적 GPA 시뮬레이션. 예상 학점·목표 GPA 입력 시 필요 평균 또는 예상 GPA 반환 | SAINT | `plannedCredits`, `plannedGradePointAverage` (선택), `targetGpa` (선택), `mcp_session_id` |
 | `get_my_assignments` | 현재 학기 미제출 과제·퀴즈 목록. 비어 있으면 `message`로 안내 | LMS | `mcp_session_id`, `compact` (선택) |

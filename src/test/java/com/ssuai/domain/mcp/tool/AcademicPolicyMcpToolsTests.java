@@ -23,6 +23,7 @@ import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.MatchedRequi
 import com.ssuai.domain.academic.dto.ScholarshipPolicyCheckResponse.RequirementResult;
 import com.ssuai.domain.academic.service.AcademicPolicyService;
 import com.ssuai.domain.academic.service.AcademicQuestionClassifier;
+import com.ssuai.domain.academic.service.GraduationPolicyMismatchDetector;
 import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.saint.dto.GraduationStatus;
@@ -43,7 +44,8 @@ class AcademicPolicyMcpToolsTests {
         policyService = mock(AcademicPolicyService.class);
         graduationService = mock(SaintGraduationService.class);
         authHelper = mock(McpAuthHelper.class);
-        tools = new AcademicPolicyMcpTools(policyService, graduationService, authHelper);
+        tools = new AcademicPolicyMcpTools(
+                policyService, graduationService, new GraduationPolicyMismatchDetector(), authHelper);
     }
 
     @Test
