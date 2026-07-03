@@ -165,3 +165,17 @@
   - 트레이스 span이 0인데 오류 로그조차 없다. "전송 실패"와 "exporter 미생성"을 어떻게 구분하고, 후자면 어디를 보나? (→ `gradle dependencies`로 autoconfig 모듈 존재 확인)
   - Spring Boot 메이저 업그레이드에서 기능이 조용히 사라질 때 방어법은? (properties-migrator, 릴리스 노트 마이그레이션 표, 스타터 vs 저수준 라이브러리, span export 스모크 테스트)
   - 왜 저수준 라이브러리 대신 Boot 스타터를 써야 했나? (스타터 = 라이브러리 + autoconfiguration + 기본값; Boot 4에서 OTLP autoconfig가 스타터로 이관)
+
+---
+
+## 10. permitAll인데 401 — MCP OAuth 필터가 웹 세션 JWT를 가로챈 prod 전용 로그인 장애
+
+- **증상 / 배경**: 웹 프론트에서 u-SAINT SmartID SSO 로그인이 전면 실패했다. SmartID 인증·콜백·refresh 쿠키 발급·`POST /api/auth/refresh`(200)까지 전부 정상인데, 직후 `GET /api/auth/me`가 401을 반환해 세션 수립이 끝내 실패했다. 테스트 스위트는 전부 그린이었고 prod에서만 재현됐다.
+- **틀린 가설**: ① 학교 SmartID 페이지 측 변경 ② 직전 UI 리디자인의 프론트 회귀. 실계정으로 SSO 체인을 curl로 단계별 재현(로그인 POST → sToken → 콜백 → 쿠키 → refresh)해 모두 정상임을 확인, 두 가설을 소거했다.
+- **실제 원인**: 401 응답의 `WWW-Authenticate: Bearer realm="ssuMCP", resource_metadata="…"` 헤더가 결정적 단서였다 — 이 challenge는 웹 인증이 아니라 **MCP OAuth 리소스 서버**의 것이다. OAuth용 `SecurityFilterChain`이 경로 스코프 없이 전체 요청을 매칭하고 있었고, prod에서만 리소스 서버 플래그가 켜져(`rs-enabled=true`, ChatGPT 연동용) `BearerTokenAuthenticationFilter`가 등록됐다. 이 필터는 *인증* 필터라서 `permitAll()`(*인가* 규칙)과 무관하게 Bearer 헤더가 보이면 무조건 Auth0 디코더로 검증한다 — 자체 HS256 웹 세션 JWT는 당연히 "invalid token" 401. 모든 테스트는 플래그 기본값(off)으로 부팅되어 이 필터 자체가 존재하지 않았다.
+- **해결**: OAuth 체인을 `securityMatcher("/mcp", "/mcp/**", "/.well-known/**")`로 MCP 표면에만 스코프하고, 나머지 경로는 permissive 체인으로 분리(ADR 0074). `/.well-known`을 OAuth 체인에 남긴 것이 함정 포인트 — RFC 9728 PRM 문서를 서빙하는 필터가 그 체인 안에 등록되므로, 빼면 MCP 클라이언트의 AS 디스커버리가 깨진다. 회귀 가드로 WireMock OIDC를 띄워 **prod와 동일한 플래그 조합(rs-enabled=true)으로 부팅하는 통합 테스트**를 추가했다.
+- **포인트**: "permitAll인데 401"은 Spring Security의 인증/인가 계층 분리를 정확히 보여주는 사례 — 인가 규칙으로 인증 필터를 우회할 수 없다. 그리고 기능 플래그 시스템의 사각지대: 테스트가 아무리 많아도 전부 기본값으로 돌면 prod 전용 조합은 0% 커버다. 최소 1개는 prod-equivalent 구성으로 부팅해야 한다.
+- **예상 면접 질문**:
+  - `permitAll()`을 걸었는데 401이 나는 게 어떻게 가능한가? (인증 필터 vs 인가 규칙의 실행 계층)
+  - 테스트는 전부 통과하는데 prod만 깨지는 구성 의존 장애를 구조적으로 막으려면?
+  - OAuth 리소스 서버와 자체 세션 JWT가 한 앱에 공존할 때 경계 설계는? (securityMatcher 멀티체인 vs 토큰 스니핑 resolver)

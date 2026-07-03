@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -74,6 +75,20 @@ import org.springframework.security.web.SecurityFilterChain;
  * framework cannot know the external AS), which left ChatGPT unable to discover Auth0 and stuck
  * looping on {@code start_auth}. We inject the managed issuer via
  * {@link #authorizationServersCustomizer(String)} instead of a controller (TROUBLESHOOTING 2026-06-18).</p>
+ *
+ * <h2>Why two chains — the OAuth chain is scoped to the MCP surface (ADR 0074)</h2>
+ * <p>{@code BearerTokenAuthenticationFilter} is an <em>authentication</em> filter: it runs on
+ * every request its owning chain matches and, whenever an {@code Authorization: Bearer} header
+ * is present, validates the token against the configured decoder — regardless of any
+ * {@code permitAll()} authorization rule. A single unscoped chain therefore made the filter
+ * intercept the web app's own HS256 session JWTs on {@code /api/**} and reject them as
+ * "not an Auth0 token" (401 + MCP challenge), breaking every logged-in web feature in prod
+ * while all tests stayed green (tests run with {@code rs-enabled=false}). The web session
+ * uses the servlet-level {@code JwtAuthFilter} (request attributes, no Spring Security), so
+ * the OAuth resource-server chain must never see {@code /api/**} traffic. Chain 1 below is
+ * scoped via {@code securityMatcher} to exactly the MCP surface ({@code /mcp}, RFC 9728
+ * well-known docs); chain 2 covers everything else permissively, preserving the pre-OAuth
+ * behaviour where Spring Security stays out of the way.</p>
  */
 @Configuration
 @EnableWebSecurity
@@ -96,23 +111,25 @@ class McpOAuthSecurityConfig {
     @Value("${ssuai.mcp.oauth.resource-base-url:https://ssumcp.duckdns.org}")
     private String resourceBaseUrl;
 
+    /**
+     * Chain 1 — MCP surface only ({@code /mcp}, {@code /mcp/**}, {@code /.well-known/**}).
+     * The only chain that may carry the OAuth resource-server machinery; see class javadoc
+     * ("Why two chains"). {@code /.well-known/**} stays here because Spring Security's
+     * {@code OAuth2ProtectedResourceMetadataFilter} — which serves the RFC 9728 PRM
+     * document — is registered inside this chain and never runs for paths it doesn't match.
+     */
     @Bean
+    @Order(1)
     SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
+            .securityMatcher("/mcp", "/mcp/**", "/.well-known/**")
             .csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // RFC 9728 PRM and other well-known docs — must be reachable before auth
-                .requestMatchers("/.well-known/**").permitAll()
-                // MCP school-credential login callbacks are browser redirects, no Bearer
-                .requestMatchers("/api/mcp/auth/**").permitAll()
-                // k8s probes
-                .requestMatchers("/actuator/**").permitAll()
-                // MCP Streamable HTTP: permitAll so missing tokens don't 401 anonymous mode.
-                // BearerTokenAuthenticationFilter validates tokens if present regardless.
-                .requestMatchers("/mcp", "/mcp/**").permitAll()
-                // REST API, chat, Swagger — existing auth handled elsewhere
+                // MCP Streamable HTTP + well-known docs: permitAll so missing tokens don't
+                // 401 anonymous mode. BearerTokenAuthenticationFilter validates tokens if
+                // present regardless of this authorization rule.
                 .anyRequest().permitAll()
             );
 
@@ -146,6 +163,25 @@ class McpOAuthSecurityConfig {
             log.debug("MCP OAuth RS disabled — classic mode (rs-enabled=false or issuer-uri not set)");
         }
 
+        return http.build();
+    }
+
+    /**
+     * Chain 2 — everything outside the MCP surface (REST API, chat, SSO callbacks,
+     * actuator probes, Swagger). Spring Security intentionally stays out of the way:
+     * web-session auth is the servlet-level {@code JwtAuthFilter} (request attributes,
+     * Task 14 spec §6), and CSRF-origin / rate-limit guards are plain servlet filters.
+     * This bean also keeps Boot's default lock-everything auto-config disabled for
+     * these paths now that chain 1 no longer matches them.
+     */
+    @Bean
+    @Order(2)
+    SecurityFilterChain webSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(AbstractHttpConfigurer::disable)
+            .cors(Customizer.withDefaults())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
 
