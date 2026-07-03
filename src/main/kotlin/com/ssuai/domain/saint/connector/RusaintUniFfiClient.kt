@@ -41,6 +41,26 @@ import org.springframework.stereotype.Component
 @Component
 class RusaintUniFfiClient : RusaintClient {
 
+    override fun warmUp() {
+        // Force the UniFFI native library to load and verify its function checksums
+        // now, at boot. Constructing a session builder is the cheapest way to touch
+        // the FFI without any network I/O (it allocates and frees a native handle).
+        //
+        // Why this exists: the first FFI call in a fresh JVM pays a one-time cost —
+        // dlopen of librusaint_ffi.so plus UniFFI's contract-version + per-method
+        // checksum verification. Stacked on top of the cold SAP WebDynpro handshake
+        // inside withToken(), that latency intermittently blew past the handshake
+        // window and consumed the ONE-SHOT SmartID token, so the first login failed
+        // and only the (now-warm) retry succeeded. withToken() can't be retried with
+        // the same one-shot token, so we remove the cold cost from the request path
+        // entirely by warming at startup (TROUBLESHOOTING 2026-07-04, ADR 0076).
+        runCatching {
+            USaintSessionBuilder().useAuto { /* native handle alloc + free, no network */ }
+        }.onFailure {
+            log.warn("rusaint FFI warmup skipped: {} {}", it.javaClass.simpleName, it.message)
+        }
+    }
+
     override fun authenticateWithToken(studentId: String, ssoToken: String): RusaintAuthenticatedSession =
         withClientError("rusaint token authentication failed") {
             require(studentId.isNotBlank()) { "studentId is required" }

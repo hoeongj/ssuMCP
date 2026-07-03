@@ -10,6 +10,16 @@ import com.ssuai.domain.saint.dto.ScholarshipEntry;
 
 public interface RusaintClient {
 
+    /**
+     * Eagerly loads and verifies the native rusaint FFI so the first real login
+     * doesn't pay the one-time native-load cost. Default is a no-op (test doubles
+     * and mock connectors have no native layer to warm). See
+     * {@code RusaintUniFfiClient#warmUp()} for why this matters to login latency.
+     */
+    default void warmUp() {
+        // no-op by default
+    }
+
     RusaintAuthenticatedSession authenticateWithToken(String studentId, String ssoToken);
 
     ScheduleResponse fetchSchedule(String studentId, String sessionJson);
