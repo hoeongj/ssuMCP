@@ -44,13 +44,11 @@
 - **부분 완화 유지**: 기존 no-referrer/no-store/no-cache + 단기 토큰(Bundle C1 `39ad2d9`, #16 부분)은 그대로 유지한다. 이번 변경은 여기에 성공 다운로드 후 replay 차단을 추가한다.
 - **잔여**: 거의 동시에 시작된 두 READY 스트림은 둘 다 파일을 받을 수 있지만, 완료 후 전이는 하나만 성공한다. post-download replay 차단이 목표라 수용한다.
 
-## 6. ssu-ai-service `/v1/embeddings` 인증 (#20)
+## 6. ssu-ai-service `/v1/embeddings` 인증 (#20) — ✅ 완료·prod 배포 (2026-07-03)
 
 - **무엇**: ssu-ai-service의 `/v1/embeddings`가 무인증 + Gemini 키가 URL `?key=`로 노출됨. 키를 `Authorization: Bearer` 헤더로 이동 + 호출자 인증 추가.
-- **왜 보류**: **이 서비스는 별도의 git 추적 안 되는(untracked) 저장소**라 ssuMCP에서 커밋·배포 불가.
-- **2026-06-30 갱신**: prod k3s 전체 네임스페이스 스캔 결과 **ssu-ai-service는 클러스터 어디에도 배포돼 있지 않음**(`kubectl get deploy,svc -A`에 embeddings/ai-service 0건). ssuMCP RAG는 Gemini를 직접 호출(이 서비스 미경유). 즉 현 시점 **노출면 없음**(미배포 유휴 서비스) → 보안 우선순위 사실상 N/A. 추후 git화하여 정식 운영할 경우에만 위 인증 보강 적용.
-- **권장 접근**: 키를 쿼리스트링에서 `Authorization` 헤더로 이동 + 엔드포인트에 호출자 인증 게이트.
-- **진행에 필요한 것**: **실제 ssu-ai-service 소스 저장소 위치**(사용자 제공 필요). 위치가 확인되면 권장 diff 적용 가능.
+- **경과**: 2026-06-30 서비스가 `github.com/ghdtjdwn/ssu-ai-service`로 정식 git화되며 세 가지 하드닝이 함께 머지됨(PR #1) — ① Gemini 키 쿼리스트링→`Authorization: Bearer` 헤더 ② 인바운드 `X-API-Key` 게이트(`secrets.compare_digest` 상수시간, **키 미설정 시 401 fail-closed**) ③ 업스트림 에러 비반사.
+- **2026-07-03 종결**: 서비스가 실제로 prod k3s에 배포됨(non-root uid 10001, `ssu-ai-service-secrets`) — **라이브 검증**: 키 없는 호출 → 401(fail-closed 동작), 유효 키 → 768차원 임베딩 정상. 노출면은 in-cluster ClusterIP 전용(Ingress는 DNS 생성 전까지 비활성). 상세 = ssu-ai-service README "배포" 절.
 
 ## 7. Mistral 학습 opt-out attestation (P2-Z)
 
