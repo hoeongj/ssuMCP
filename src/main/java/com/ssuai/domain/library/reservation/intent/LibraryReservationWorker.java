@@ -166,7 +166,7 @@ public class LibraryReservationWorker {
         try {
             lease = lockClient.tryAcquire(lockName, redisProperties.getSeatLockWaitTime());
         } catch (InterruptedException exception) {
-            // Fail-CLOSED (Codex #13): reserving without the lock would defeat the distributed
+            // Fail-CLOSED: reserving without the lock would defeat the distributed
             // lock and risk a double-booking under contention / multi-pod. Treat a lock-acquire
             // interrupt as a transient "couldn't acquire" and defer the intent for a later retry
             // via the existing backoff machinery — NEVER reserve lock-less.
@@ -177,7 +177,7 @@ public class LibraryReservationWorker {
             deferForRetry(intent, seatId, "Seat lock acquisition was interrupted; retrying later.");
             return;
         } catch (RuntimeException exception) {
-            // Fail-CLOSED (Codex #13): same reasoning as the interrupt branch — a Redis/lock
+            // Fail-CLOSED: same reasoning as the interrupt branch — a Redis/lock
             // failure must not let the worker reserve without holding the lock.
             log.warn("seat lock unavailable; deferring reservation for retry: seatId={}", seatId, exception);
             redisMetrics.countSeatLock("deferred");

@@ -154,7 +154,7 @@ class LibraryReservationIntentTransactionsTests {
 
     @Test
     void timeoutThenWorkerSuccessDrivesOneRealAuditFromExecutingToSuccess() {
-        // Headline end-to-end proof of the Codex #4 fix on a single REAL ActionAudit:
+        // Headline end-to-end proof of the fix on a single REAL ActionAudit:
         //   1. sync confirm claims the action  -> audit EXECUTING
         //   2. sync wait times out             -> audit STILL EXECUTING (not failed) — the
         //      observe-only sync path writes nothing, so we assert it stays EXECUTING here

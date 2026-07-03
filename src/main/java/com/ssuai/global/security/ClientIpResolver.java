@@ -4,7 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Derives the originating client IP for per-IP rate limiting (security review
- * Wave 3, Codex #9).
+ * Wave 3).
  *
  * <h2>Why {@code X-Forwarded-For} and how much of it we trust</h2>
  * <p>The backend runs behind a k3s ingress, so {@code getRemoteAddr()} is the

@@ -9,7 +9,7 @@ import java.util.function.LongSupplier;
 /**
  * A small, reusable in-memory <em>fixed-window</em> per-IP request counter used
  * to throttle abuse-prone endpoints (library login brute-force, chat LLM-cost
- * exhaustion) — security review Wave 3, Codex #9.
+ * exhaustion) — security review Wave 3.
  *
  * <h2>Design</h2>
  * <p>Keyed by client IP in a {@link ConcurrentHashMap}. Each bucket holds a

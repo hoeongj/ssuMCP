@@ -17,7 +17,7 @@ import com.ssuai.global.auth.JwtProperties;
  * Fails the prod boot fast when a required production secret/config is missing
  * or has silently fallen back to an insecure dev default.
  *
- * <p><b>Why this exists (Codex #19).</b> Several production-critical values are
+ * <p><b>Why this exists.</b> Several production-critical values are
  * read via {@code ${ENV:default}} with dev-friendly empty/insecure defaults:
  * {@code SSUAI_DB_URL} defaults to an in-memory H2 database, {@code SSUAI_DB_PASSWORD}
  * defaults to blank, the JWT secret and credential encryption key fall back to an

@@ -10,7 +10,7 @@ import org.springframework.core.Ordered;
 
 /**
  * Registers {@link RateLimitFilter} as a servlet filter on the two abuse-prone
- * endpoints (security review Wave 3, Codex #9).
+ * endpoints (security review Wave 3).
  *
  * <p>Mirrors {@link CsrfOriginGuardFilterConfig} / {@code JwtAuthFilterConfig}:
  * the guard runs outside the Spring Security chain (this code base does REST

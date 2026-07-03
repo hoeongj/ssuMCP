@@ -20,8 +20,7 @@ import com.ssuai.global.response.ApiResponse;
 import com.ssuai.global.response.ErrorResponse;
 
 /**
- * Per-IP request throttling on abuse-prone endpoints (security review Wave 3,
- * Codex #9).
+ * Per-IP request throttling on abuse-prone endpoints (security review Wave 3).
  *
  * <h2>What it protects</h2>
  * <ul>

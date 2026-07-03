@@ -243,7 +243,7 @@ class LibraryReservationWorkerTests {
 
     @Test
     void seatLockContentionDefersForRetryWithoutCallingPyxis() {
-        // Fail-closed (Codex #13): "couldn't acquire within the wait window" must NOT terminally
+        // Fail-closed: "couldn't acquire within the wait window" must NOT terminally
         // fail the intent; it is deferred to the worker's existing retry path (returnToWaiting),
         // never a lock-less reservation.
         FakeLockClient lockClient = FakeLockClient.skipped();
@@ -267,7 +267,7 @@ class LibraryReservationWorkerTests {
 
     @Test
     void seatLockRedisFailureFailsClosedAndDefersForRetry() {
-        // Fail-closed (Codex #13): a Redis/lock exception must NEVER reserve without the lock
+        // Fail-closed: a Redis/lock exception must NEVER reserve without the lock
         // (double-booking risk). The intent is deferred via returnToWaiting, and reserve upstream
         // is never called.
         FakeLockClient lockClient = FakeLockClient.failing();
@@ -291,7 +291,7 @@ class LibraryReservationWorkerTests {
 
     @Test
     void seatLockInterruptFailsClosedAndDefersForRetry() {
-        // Fail-closed (Codex #13): an interrupt while acquiring the lock must NOT reserve
+        // Fail-closed: an interrupt while acquiring the lock must NOT reserve
         // lock-less; defer for retry instead.
         FakeLockClient lockClient = FakeLockClient.interrupting();
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();

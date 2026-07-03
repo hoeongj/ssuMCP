@@ -151,7 +151,7 @@ class LibraryReservationWebControllerTests {
     void confirmReserve_syncTimeout_returnsProcessingWithoutFailingAudit() throws Exception {
         // Worker never resolves the intent within the (shrunk) sync window. The controller must
         // NOT terminally fail the audit; it returns a non-terminal PROCESSING status so the
-        // still-running worker can finalize the linked audit (Codex #4).
+        // still-running worker can finalize the linked audit.
         ReflectionTestUtils.setField(controller, "reservationIntentWait", Duration.ofMillis(20));
         ReflectionTestUtils.setField(controller, "reservationIntentPoll", Duration.ofMillis(5));
         ActionAudit pending = pendingAction("LIBRARY_SEAT_RESERVATION");
@@ -279,7 +279,7 @@ class LibraryReservationWebControllerTests {
 
     @Test
     void intentEvents_intentNotOwnedByCaller_returns404AndNoStream() throws Exception {
-        // IDOR guard (Codex #7): a valid library session but an intentId owned by someone else
+        // IDOR guard: a valid library session but an intentId owned by someone else
         // (or unknown) must be rejected as 404 and MUST NOT open the stream.
         when(intentTransactions.isOwnedBySession(eq(11L), anyString())).thenReturn(false);
 

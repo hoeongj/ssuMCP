@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
  * ssuAI backend passes it through without decrypting — never logs it.
  *
  * <p>Size caps are generous bounds against unbounded request bodies (security
- * review Wave 3, Codex #9): {@code loginId} is a student id (≤ ~100 chars), and
+ * review Wave 3): {@code loginId} is a student id (≤ ~100 chars), and
  * {@code password} is an AES-CBC + Base64 blob — a Base64 ciphertext of any
  * realistic raw password is well under 2000 chars, so 2000 never rejects a
  * legitimate login while still bounding the body.</p>

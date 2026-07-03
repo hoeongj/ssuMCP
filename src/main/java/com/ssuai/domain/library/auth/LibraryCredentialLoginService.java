@@ -71,7 +71,7 @@ public class LibraryCredentialLoginService {
      * Authenticates against pyxis-api and returns the captured {@code accessToken} WITHOUT
      * binding it to any session. Split out from {@link #login} so the servlet-session caller can
      * rotate its session id between a successful authentication and the session→token binding
-     * (session-fixation hardening, Codex #8). Throws {@link LibraryAuthRequiredException} on
+     * (session-fixation hardening). Throws {@link LibraryAuthRequiredException} on
      * invalid credentials.
      */
     public String authenticate(String loginId, String encryptedPassword) {

@@ -22,7 +22,7 @@ import com.ssuai.global.response.ErrorResponse;
 
 /**
  * CSRF defense-in-depth via strict {@code Origin}/{@code Referer} validation
- * (security review Wave 3, Codex #5).
+ * (security review Wave 3).
  *
  * <h2>Why an Origin/Referer check and not token-CSRF?</h2>
  * <p>Spring's CSRF token protection is globally disabled and the auth refresh
@@ -66,7 +66,7 @@ public class CsrfOriginGuardFilter extends OncePerRequestFilter {
 
     /**
      * Exact paths that are CSRF-exempt (was a broad {@code /api/mcp/auth/}
-     * prefix — Codex #5 follow-up, ADR 0063). Exact-matching prevents any future
+     * prefix — a later follow-up, ADR 0063). Exact-matching prevents any future
      * write endpoint added under {@code /api/mcp/auth/} from being silently
      * exempted (a CSRF bypass).
      *

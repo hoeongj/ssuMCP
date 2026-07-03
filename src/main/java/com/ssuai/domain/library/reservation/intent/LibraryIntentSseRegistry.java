@@ -24,7 +24,7 @@ public class LibraryIntentSseRegistry {
     // a small slack absorbs legitimate reconnects (a stale emitter the client dropped can linger
     // until its 55s timeout fires). Beyond the cap we evict the OLDEST emitter so a reconnecting
     // client is never the one rejected — combined with empty-key removal this bounds memory even
-    // under unbounded distinct intentIds (memory-DoS guard, Codex #26).
+    // under unbounded distinct intentIds (memory-DoS guard).
     static final int MAX_EMITTERS_PER_INTENT = 4;
 
     private final LibraryIntentStatusBus intentStatusBus;
@@ -87,7 +87,7 @@ public class LibraryIntentSseRegistry {
     @Scheduled(fixedDelay = 20_000)
     public void sendHeartbeats() {
         // Snapshot the keys: removeDead may drop a key via compute() mid-iteration, and we must
-        // never leave an emptied list attached (memory-DoS guard, Codex #26).
+        // never leave an emptied list attached (memory-DoS guard).
         for (Long intentId : emittersByIntentId.keySet()) {
             List<SseEmitter> emitters = emittersByIntentId.get(intentId);
             if (emitters == null) {
@@ -108,7 +108,7 @@ public class LibraryIntentSseRegistry {
     void removeEmitter(Long intentId, SseEmitter emitter) {
         // compute() so the key is dropped atomically when its list becomes empty. Leaving an empty
         // CopyOnWriteArrayList under the key would let unbounded distinct intentIds accumulate
-        // empty entries forever (memory-DoS, Codex #26).
+        // empty entries forever (memory-DoS).
         emittersByIntentId.compute(intentId, (key, emitters) -> {
             if (emitters == null) {
                 return null;

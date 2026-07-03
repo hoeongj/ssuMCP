@@ -66,7 +66,7 @@ class LibraryIntentSseRegistryTests {
 
         // removeEmitter is the callback (onCompletion/onTimeout/onError) target. It must drop the
         // key (not leave an empty CopyOnWriteArrayList behind) so distinct intentIds can't
-        // accumulate empty entries forever (memory-DoS guard, Codex #26). Invoked directly here
+        // accumulate empty entries forever (memory-DoS guard). Invoked directly here
         // because SseEmitter callbacks are only wired during real MVC async dispatch.
         registry.removeEmitter(55L, emitter);
 

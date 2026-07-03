@@ -117,7 +117,7 @@ public class LibraryReservationIntentTransactions {
 
     /**
      * True only when the intent exists AND its bound {@code sessionKey} matches the caller's
-     * library session (IDOR guard for the wait-events SSE subscribe, Codex #7). The caller's
+     * library session (IDOR guard for the wait-events SSE subscribe). The caller's
      * identity is the same servlet session id the reservation flow keys everything on, so a
      * guessable/sequential {@code intentId} no longer lets one session subscribe to another's
      * reservation result. The {@code sessionKey} field is the semantic owner key (it equals
@@ -257,7 +257,7 @@ public class LibraryReservationIntentTransactions {
     /**
      * Mirrors an immediate-reservation intent's terminal outcome onto its linked
      * {@link com.ssuai.domain.action.ActionAudit} in the same transaction that made the intent
-     * terminal — making the worker the single source of truth for the audit outcome (Codex #4).
+     * terminal — making the worker the single source of truth for the audit outcome.
      * No-op for non-immediate wait intents (no linked audit) and idempotent on the audit side,
      * so a sync-path timeout that left the audit EXECUTING is finalized exactly once and an
      * already-terminal audit is never flipped. The intent terminal write and the audit

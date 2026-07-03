@@ -210,7 +210,7 @@ public class LibraryReservationWebController {
             @PathVariable Long intentId,
             HttpServletRequest httpRequest) {
         String sessionKey = requireLibrarySession(httpRequest);
-        // IDOR guard (Codex #7): a valid library session alone is NOT enough — the intentId must
+        // IDOR guard: a valid library session alone is NOT enough — the intentId must
         // belong to THIS caller's session. Otherwise a guessable/sequential intentId lets one
         // user subscribe to another user's reservation result/seat. Reject with 404 (not 403) so
         // we never confirm whether the intentId exists, and crucially do NOT open the stream.
@@ -245,7 +245,7 @@ public class LibraryReservationWebController {
      * Observe-only sync wait for the async reservation worker, mirroring
      * {@code ConfirmActionMcpTool}. It NEVER writes the {@link ActionAudit} terminal outcome:
      * the worker is the single source of truth and finalizes the linked audit in the same
-     * transaction that makes the intent terminal (Codex #4). On timeout the audit is left
+     * transaction that makes the intent terminal. On timeout the audit is left
      * EXECUTING (a timeout is a response state, not a business failure) and the caller gets a
      * non-terminal {@code PROCESSING} status so the still-running worker can finalize it.
      */

@@ -41,7 +41,7 @@ public class LibrarySessionController {
             HttpServletRequest httpRequest
     ) {
         // Authenticate FIRST, then rotate the servlet session id, then bind the token to the new
-        // id (session-fixation hardening, Codex #8). An attacker-fixed pre-auth JSESSIONID can no
+        // id (session-fixation hardening). An attacker-fixed pre-auth JSESSIONID can no
         // longer be reused post-auth: the authenticated library session lives only under the
         // rotated id. Rotation happens only after a successful authentication so failed logins
         // don't churn session ids. We never call getSession() before this point in the request,

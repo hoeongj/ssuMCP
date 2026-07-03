@@ -49,7 +49,7 @@ class LibrarySessionControllerTests {
 
     @Test
     void credentialLogin_rotatesSessionIdAndBindsTokenToNewId() throws Exception {
-        // Session-fixation hardening (Codex #8): after a successful login the servlet session id
+        // Session-fixation hardening: after a successful login the servlet session id
         // is rotated (changeSessionId) and the library token is bound to the NEW id, so a
         // pre-auth fixed JSESSIONID cannot be reused post-auth.
         MockHttpSession session = new MockHttpSession();
@@ -72,7 +72,7 @@ class LibrarySessionControllerTests {
 
     @Test
     void credentialLogin_overMaxPasswordReturnsValidationError() throws Exception {
-        // Input size cap (Codex #9): password is bounded at 2000 chars; an over-max
+        // Input size cap: password is bounded at 2000 chars; an over-max
         // body is rejected by the existing 400 validation handler before authenticate runs.
         String oversized = "a".repeat(2001);
         mockMvc.perform(post("/api/library/login")

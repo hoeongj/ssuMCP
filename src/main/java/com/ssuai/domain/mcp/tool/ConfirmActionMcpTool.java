@@ -169,7 +169,7 @@ public class ConfirmActionMcpTool {
      * a terminal state, then maps that observed state to a user-facing message. This path is
      * deliberately <em>observe-only</em>: it NEVER writes the {@link ActionAudit} terminal
      * outcome. The worker is the single source of truth for the audit (it finalizes the linked
-     * audit in the same transaction that makes the intent terminal — Codex #4). On timeout the
+     * audit in the same transaction that makes the intent terminal). On timeout the
      * audit is intentionally left EXECUTING so the still-running worker can finalize it; a
      * timeout is a response state, not a business failure.
      */
@@ -302,7 +302,7 @@ public class ConfirmActionMcpTool {
                     result.beginTime(), result.endTime(), result.chargeId()));
         } catch (LibrarySeatNotAvailableException exception) {
             // Old seat already released, new seat taken by a racer. The upstream has no atomic
-            // swap, so we compensate by re-reserving the original seat (Codex #12).
+            // swap, so we compensate by re-reserving the original seat.
             log.warn("confirm_action swap: discharge succeeded but new seat not available seat={}", request.newSeatId());
             return compensateSwap(mcpSessionId, claimed, token, request,
                     "이미 선점됐습니다", "recommend_library_seats로 다른 좌석을 추천받아 다시 시도해주세요.");
@@ -315,7 +315,7 @@ public class ConfirmActionMcpTool {
     }
 
     /**
-     * Compensating action for a non-atomic swap (Codex #12). The old seat is already released and
+     * Compensating action for a non-atomic swap. The old seat is already released and
      * the new-seat reservation failed, so attempt to re-reserve the ORIGINAL seat to restore the
      * user's prior state.
      *

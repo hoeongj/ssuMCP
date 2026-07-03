@@ -75,7 +75,7 @@ class ConfirmActionMcpToolTests {
     void reservationSuccessIsObserveOnlyAndDoesNotCompleteAudit() {
         // The sync path observes a terminal intent and maps it to a message. It must NOT write
         // the audit terminal outcome: the worker finalized the linked audit in the same
-        // transaction that made the intent SUCCEEDED (Codex #4, single source of truth).
+        // transaction that made the intent SUCCEEDED (single source of truth).
         reservationAction();
         when(intentTransactions.createImmediateReservation(
                 eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
@@ -221,7 +221,7 @@ class ConfirmActionMcpToolTests {
 
     @Test
     void swapTargetReserveFailsButCompensationReReservesOriginalSeat() {
-        // Non-atomic swap (Codex #12): old seat discharged, new seat taken upstream. The
+        // Non-atomic swap: old seat discharged, new seat taken upstream. The
         // compensating re-reservation of the ORIGINAL seat succeeds → swap reported as failed but
         // the original seat is retained, and the old seat is re-published as reserved.
         ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
@@ -248,7 +248,7 @@ class ConfirmActionMcpToolTests {
 
     @Test
     void swapTargetReserveFailsAndCompensationFailsReturnsPartialFailure() {
-        // Worst case (Codex #12): old seat discharged, new seat reserve fails upstream, AND the
+        // Worst case: old seat discharged, new seat reserve fails upstream, AND the
         // compensating re-reservation of the original seat ALSO fails (old seat taken in between).
         // → PARTIAL_FAILURE: user holds NO seat, clear message, warn log, old seat left free.
         ActionAudit action = claimableAction(LibrarySwapMcpTool.ACTION_TYPE);
