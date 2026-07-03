@@ -120,6 +120,20 @@ same-seat terminal attempt가 있으면 후속 group을 로컬 `FAILED_RACE`로 
 4. EPIC 4 Redis/Redisson 도입 후 same-seat suppress를 in-memory/DB 최근 결과가 아니라
    seat-level distributed lock으로 검증
 
+### 4-1. 재측정 결과 (2026-07-03, 로컬 colima docker + host JVM)
+
+> 환경: macOS(8 vCPU/16GB) colima docker(postgres+wiremock+redis) + host `bootRun`. 원 baseline 환경(문서 상단)과 절대 수치는 다를 수 있으나, **캐시/단일비행/same-seat 억제의 정성적 성질을 재확인**하는 것이 목적.
+
+| 측정 | 결과 | 판정 |
+|---|---|---|
+| **① single-flight (read RPS 50, 5분)** | checks 100%(24k), p95 **26.9ms**, err 0%. 24k read에 **WireMock 업스트림 ~42콜** | ✅ 30초 캐시 + single-flight가 24000 read를 ~42 업스트림으로 접음(≈1콜/floor/30s) |
+| **③ knee-point (read RPS 200, 5분)** | checks 100%(96k), p95 **19.1ms**, err 0%, 48k req, dropped 82 | ✅ baseline 4× RPS에도 p95 열화 없음(무릎 미도달 — 대부분 캐시 히트) |
+| **④ same-seat 억제 (100 동시 confirm, 동일 좌석)** | k6 `reserve_success==1`·`reserve_race==99`, `action_audit` **SUCCESS 1 / FAILURE_RACE 99**, **WireMock reserve POST 정확히 1** | ✅ intent 큐가 100 동시 claim을 학교 시스템 write **1건**으로 붕괴(나머지 99는 upstream 미접촉 로컬 FAILURE_RACE) |
+| distinct-seats (100 서로 다른 좌석) | `action_audit` SUCCESS 64 / **FAILURE_UPSTREAM 36**. 동기 confirm 다수 PROCESSING 반환 후 워커 poller가 배치 처리 | ⚠️ 무경합 경로는 async 워커 throughput·WireMock 스텁 동시성에 좌우되는 harness 특성(정성 데모는 same-seat 쪽) |
+| ② 장애주입 CB OPEN | **미실행** — WireMock 5xx/timeout fault 스텁 사전구성 필요(harness 미포함) | ⬜ 후속 |
+
+핵심 서사: **읽기는 캐시·single-flight로 학교 시스템을 거의 안 때리고(24k→42), 쓰기 경합은 intent 큐가 100 동시 요청을 upstream 1 write로 접는다** — "단일 egress IP 서버가 학교 시스템에 좋은 시민으로 동작한다"의 수치 근거.
+
 ## 5. 운영 메모
 
 - Grafana(`localhost:3001`)에서 k6 공식 대시보드 `19665` import — k6 메트릭 438개 시계열이
