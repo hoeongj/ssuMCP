@@ -35,7 +35,7 @@ PyxisResilience.read() / write()
 
 **CircuitBreaker가 OPEN이면** `CallNotPermittedException` → `GlobalExceptionHandler` → HTTP 503 `CIRCUIT_OPEN`
 
-**HALF_OPEN이면** "복구 중" 메시지로 구분 (ADR 0047 진행 중)
+**HALF_OPEN이면** "도서관 예약 시스템이 복구 중입니다. 잠시 후 다시 시도해 주세요."로 구분해 안내한다(`GlobalExceptionHandler`가 CB 상태를 보고 OPEN/HALF_OPEN 메시지를 분기).
 
 **사용자가 보는 것:**
 - 타임아웃: "외부 사이트 응답이 지연되어 도서관 정보를 가져오지 못했습니다."

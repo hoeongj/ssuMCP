@@ -210,7 +210,7 @@ Task 14 기준 구현 내용:
 
   오버라이드는 `application-prod.yml`에 있다 (`ssuai.auth.refresh-cookie.same-site: None`). 전체 크로스 사이트 쿠키 인증 설계는 ADR 0014 Addendum 참조.
 - **ssuAI 측 비밀번호 없음.** ssuAI는 사용자가 선택한 비밀번호를 저장하지 않는다. u-SAINT SmartID가 자체 로그인 페이지에서 사용자의 학교 비밀번호를 처리한다. 우리는 SSO 콜백을 통해 일회용 `sToken`·`sIdno` 쿼리 파라미터만 받아, `SaintSsoService.authenticate` 내부에서 신원으로 교환하고 즉시 폐기한다. 롤링할 `BCryptPasswordEncoder`는 없다.
-- **로그인 횟수 제한** — 운영 보안 강화 항목으로 남는다. 사용자 수 또는 악용 노출이 늘기 전에 명시적인 횟수 제한을 추가한다.
+- **로그인 횟수 제한** — 적용 완료: `POST /api/library/login` 10/min·`POST /api/chat` 30/min per-IP fixed-window rate limit(초과 시 429+Retry-After, ADR 0061 — §15 참조).
 - **Refresh rotation** — refresh JWT는 각 `/api/auth/refresh` 호출 시 교체된다. 성공한 refresh 요청은 사용된 기존 refresh JWT의 `jti`를 denylist에 넣고, 새 refresh JWT를 HttpOnly 쿠키로 내려준다. `/api/auth/logout`도 유효한 refresh 쿠키가 있으면 해당 `jti`를 denylist에 넣는다.
 - **Refresh denylist (Redis 영속)** — `RefreshTokenDenylist`는 `RedissonClient`가 연결된 dev/prod에서 **Redis-backed**다. 무효화된 `jti`를 잔여 수명 TTL로 Redis에 저장하므로 JVM 재시작·다중 인스턴스에서도 재사용이 막힌다. 저장값은 JWT의 `jti`(서명 토큰 원문이 아님)라 denylist 자체가 토큰을 보관하지 않는다. **Redis 에러는 fail-open**: deny/조회 모두 Redis blip 시 예외를 삼키고 진행한다 — Redis 장애가 로그인/refresh 전체를 막아선 안 되고, 토큰은 짧은 자체 TTL로 만료되기 때문이다. Redisson lazy-init이라 빈은 항상 존재하고, 런타임 Redis 장애가 이 fail-open 경로를 탄다(인메모리 맵은 Redisson client가 아예 없을 때만 — 예: 테스트). (보안 remediation P1-Q.)
 

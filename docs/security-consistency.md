@@ -30,7 +30,7 @@
 | **쓰기/HITL 경계** | 챗 LLM에서 write/confirm 13종 제외 + 방어적 거부(ADR 0060). write는 HITL 경로에만 | `/agent` 그래프 interrupt→`/agent/resume` confirm(HITL) | 예약 confirm UI가 HITL interrupt를 표면화 |
 | **인프라/공급망** | Actions SHA 핀·wrapper sha256·base image digest 핀·pod seccomp/no-priv-esc(ADR 0062) | 컨테이너 non-root(1001)·drop ALL·readOnlyRootFilesystem 후보 | Vercel 관리형, server-only env로 키 격리 |
 
-> N/A·보류: ssu-ai-service(`/v1/embeddings`)는 **미배포 유휴 서비스**라 노출면 없음(#6). read-only rootfs(#2)는 **적용·prod 검증 완료**(`readOnlyRootFilesystem: true`+`/tmp` emptyDir, JNA/rusaint FFI도 read-only rootfs에서 동작 확인, ADR 0066 / `dc7df68`). k8s NetworkPolicy(#1)는 **결정 후 보류** — k3s 내장 kube-router가 FQDN egress 미지원 + SaaS 동적 IP라 CIDR allowlist 비현실적이라 Cilium CNI 교체가 진짜 해법(`241df2a`). Mistral opt-out attestation(#7)은 외부 계정 의존.
+> N/A·보류: ssu-ai-service(`/v1/embeddings`)는 **prod 배포 완료**(2026-07-03, non-root uid 10001 + 인바운드 `X-API-Key` fail-closed 401 + Let's Encrypt TLS ingress) — 노출면은 인증 게이트 뒤(#6 종결). read-only rootfs(#2)는 **적용·prod 검증 완료**(`readOnlyRootFilesystem: true`+`/tmp` emptyDir, JNA/rusaint FFI도 read-only rootfs에서 동작 확인, ADR 0066 / `dc7df68`). k8s NetworkPolicy(#1)는 **결정 후 보류** — k3s 내장 kube-router가 FQDN egress 미지원 + SaaS 동적 IP라 CIDR allowlist 비현실적이라 Cilium CNI 교체가 진짜 해법(`241df2a`). Mistral opt-out attestation(#7)은 외부 계정 의존.
 
 ---
 
