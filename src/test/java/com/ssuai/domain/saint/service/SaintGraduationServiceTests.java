@@ -34,7 +34,7 @@ class SaintGraduationServiceTests {
     private final SaintChapelConnector chapelConnector = mock(SaintChapelConnector.class);
     private final SaintSessionStore sessionStore = mock(SaintSessionStore.class);
     private final SaintGraduationService service =
-            new SaintGraduationService(connector, chapelConnector, sessionStore);
+            new SaintGraduationService(connector, chapelConnector, sessionStore, 6.0f);
 
     @BeforeEach
     void setUp() {

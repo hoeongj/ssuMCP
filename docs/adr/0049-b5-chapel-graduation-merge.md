@@ -84,7 +84,7 @@ internal fun isChapelCourse(code: String, className: String): Boolean =
 
 - **RusaintGraduationConnector에서 머지**: Connector 레이어가 다른 Connector를 알게 되어 의존 방향 오염. 기각.
 - **MCP Tool에서 두 Tool 결과 합산**: MCP tool은 단일 책임. 사용자가 명시적으로 두 tool을 호출하지 않으면 merge가 발생하지 않는다. 기각.
-- **chapel required=6 설정 파일화**: 현시점 단일 값. 추후 편입생/규정 변경 시 분리.
+- **chapel required=6 설정 파일화**: ~~현시점 단일 값. 추후 편입생/규정 변경 시 분리.~~ → **2026-07-03 분리 완료**: `ssuai.saint.chapel.required-semesters`(기본 6.0, env `SSUAI_SAINT_CHAPEL_REQUIRED_SEMESTERS`)로 외부화. 편입생/규정 변경 시 코드 수정 없이 설정으로 대응.
 
 ## 포트폴리오 포인트
 

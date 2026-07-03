@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.ssuai.domain.auth.saint.PortalCookies;
@@ -20,21 +21,25 @@ import com.ssuai.global.exception.UnauthorizedException;
 public class SaintGraduationService {
 
     private static final Logger log = LoggerFactory.getLogger(SaintGraduationService.class);
-    // SSU requires freshmen to pass 6 semesters of chapel. Rusaint does not
-    // populate this value in the graduation requirements API response.
-    private static final float CHAPEL_REQUIRED_SEMESTERS = 6.0f;
 
     private final SaintGraduationConnector connector;
     private final SaintChapelConnector chapelConnector;
     private final SaintSessionStore sessionStore;
+    // SSU requires 6 chapel semesters for students entering as freshmen, but the
+    // number differs for transfer students and can change by regulation, and
+    // rusaint does not populate it in the graduation requirements API response —
+    // so it is a config knob (ADR 0049) instead of a compile-time constant.
+    private final float chapelRequiredSemesters;
 
     public SaintGraduationService(
             SaintGraduationConnector connector,
             SaintChapelConnector chapelConnector,
-            SaintSessionStore sessionStore) {
+            SaintSessionStore sessionStore,
+            @Value("${ssuai.saint.chapel.required-semesters:6.0}") float chapelRequiredSemesters) {
         this.connector = connector;
         this.chapelConnector = chapelConnector;
         this.sessionStore = sessionStore;
+        this.chapelRequiredSemesters = chapelRequiredSemesters;
     }
 
     public GraduationStatus fetchGraduationRequirements(String studentId) {
@@ -68,10 +73,10 @@ public class SaintGraduationService {
         }
         // completedSemesters is authoritative: 0 means genuinely zero passed, not a fetch failure
 
-        boolean satisfied = completedSemesters >= CHAPEL_REQUIRED_SEMESTERS;
+        boolean satisfied = completedSemesters >= chapelRequiredSemesters;
         GraduationRequirementItem merged = new GraduationRequirementItem(
                 chapel.name(), chapel.category(),
-                CHAPEL_REQUIRED_SEMESTERS, completedSemesters, 0.0f, satisfied);
+                chapelRequiredSemesters, completedSemesters, 0.0f, satisfied);
 
         List<GraduationRequirementItem> updated = new ArrayList<>(requirements);
         updated.set(chapelIndex, merged);

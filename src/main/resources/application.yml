@@ -266,6 +266,11 @@ ssuai:
     sso-url: ${SSUAI_SAINT_SSO_URL:https://saint.ssu.ac.kr/webSSO/sso.jsp}
     portal-url: ${SSUAI_SAINT_PORTAL_URL:https://saint.ssu.ac.kr/irj/portal}
     timeout: 10s
+    chapel:
+      # Chapel semesters required for graduation. 6 for freshman entry; differs
+      # for transfer students and may change by regulation, and rusaint does not
+      # return it — override here instead of touching code (ADR 0049).
+      required-semesters: ${SSUAI_SAINT_CHAPEL_REQUIRED_SEMESTERS:6.0}
     schedule:
       # Per-student timetable cache TTL. Long enough to absorb burst chat
       # queries ("내일 1교시"), short enough that drop/add reflects within an hour.
