@@ -70,9 +70,9 @@ class CampusMcpToolsTests {
     @Test
     void findAcademicCalendarEventsFiltersByMonthKeywordAndLimit() {
         when(academicCalendarService.getCalendar(2026)).thenReturn(List.of(
-                new AcademicCalendarEvent("2026-02-16", "봄학기 수강신청", "수강신청"),
-                new AcademicCalendarEvent("2026-02-20", "수강신청 변경", "수강신청"),
-                new AcademicCalendarEvent("2026-03-02", "봄학기 개강", "학사")));
+                new AcademicCalendarEvent("2026-02-16", "2026-02-20", "봄학기 수강신청", "수강신청"),
+                new AcademicCalendarEvent("2026-02-20", null, "수강신청 변경", "수강신청"),
+                new AcademicCalendarEvent("2026-03-02", null, "봄학기 개강", "학사")));
 
         List<AcademicCalendarEvent> response =
                 tools.findAcademicCalendarEvents(2026, 2, "수강신청", 1);

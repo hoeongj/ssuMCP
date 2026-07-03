@@ -46,13 +46,47 @@ class RealAcademicCalendarConnectorParseTests {
     }
 
     @Test
-    void rangeEventUsesStartDate() throws IOException {
+    void rangeEventCarriesStartAndInclusiveEndDate() throws IOException {
         Document doc = loadFixture(FIXTURE);
 
         List<AcademicCalendarEvent> events = RealAcademicCalendarConnector.parseEvents(doc, 2026);
 
-        // "01.05 (월) ~ 01.28 (수)" range -> only the start date is stored (Phase 1).
-        assertThat(events).extracting(AcademicCalendarEvent::date).contains("2026-01-05");
+        // "01.05 (월) ~ 01.28 (수)" range -> start + inclusive end.
+        assertThat(events).anySatisfy(event -> {
+            assertThat(event.date()).isEqualTo("2026-01-05");
+            assertThat(event.endDate()).isEqualTo("2026-01-28");
+        });
+    }
+
+    @Test
+    void singleDayEventHasNullEndDate() throws IOException {
+        Document doc = loadFixture(FIXTURE);
+
+        List<AcademicCalendarEvent> events = RealAcademicCalendarConnector.parseEvents(doc, 2026);
+
+        // "02.19 (목)" single-day row -> no end date.
+        assertThat(events).anySatisfy(event -> {
+            assertThat(event.date()).isEqualTo("2026-02-19");
+            assertThat(event.endDate()).isNull();
+        });
+    }
+
+    @Test
+    void rangeCrossingNewYearRollsEndDateIntoNextYear() {
+        // December block, "12.30 (수) ~ 01.02 (토)": the year-less end token has a
+        // smaller month than the start, so the end must land in blockYear + 1.
+        Document doc = Jsoup.parse(
+                "<div id=\"calendar202612\" class=\"row\">"
+                        + "<ul class=\"tb\"><li><div class=\"row\">"
+                        + "<div class=\"col-xl-3 text-primary\">12.30 (수) ~ 01.02 (토)</div>"
+                        + "<div class=\"col-xl-9\">동계 집중휴무</div>"
+                        + "</div></li></ul></div>");
+
+        List<AcademicCalendarEvent> events = RealAcademicCalendarConnector.parseEvents(doc, 2026);
+
+        assertThat(events).hasSize(1);
+        assertThat(events.getFirst().date()).isEqualTo("2026-12-30");
+        assertThat(events.getFirst().endDate()).isEqualTo("2027-01-02");
     }
 
     @Test

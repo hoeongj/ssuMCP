@@ -41,8 +41,8 @@ class AcademicCalendarControllerTests {
     @Test
     void returnsCalendarEnvelopeForRequestedYear() throws Exception {
         when(academicCalendarService.getCalendar(2026)).thenReturn(List.of(
-                new AcademicCalendarEvent("2026-03-02", "1학기 개강", ""),
-                new AcademicCalendarEvent("2026-06-19", "1학기 종강", "")));
+                new AcademicCalendarEvent("2026-03-02", null, "1학기 개강", ""),
+                new AcademicCalendarEvent("2026-06-19", "2026-06-25", "1학기 종강", "")));
 
         mockMvc.perform(get("/api/academic-calendar").param("year", "2026"))
                 .andExpect(status().isOk())

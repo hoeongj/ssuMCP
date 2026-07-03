@@ -46,7 +46,7 @@ public class CampusMcpTools {
 
     @Tool(
             name = "get_academic_calendar",
-            description = "숭실대학교 학사일정을 조회합니다. 수강신청·중간/기말고사·방학 등의 주요 일정을 [{date, event, category}] 형태로 반환합니다. year를 생략하면 현재 연도를 사용합니다."
+            description = "숭실대학교 학사일정을 조회합니다. 수강신청·중간/기말고사·방학 등의 주요 일정을 [{date, endDate, event, category}] 형태로 반환합니다. date는 시작일(ISO), endDate는 기간 일정의 종료일(ISO, 포함)이며 하루짜리 일정은 endDate가 null입니다. year를 생략하면 현재 연도를 사용합니다."
     )
     public List<AcademicCalendarEvent> getAcademicCalendar(
             @ToolParam(required = false, description = "조회할 연도(예: 2026). 생략 시 현재 연도.")

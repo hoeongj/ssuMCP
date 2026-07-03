@@ -134,9 +134,9 @@ class RealAcademicCalendarConnector implements AcademicCalendarConnector {
 
                 String title = titleCell.text().trim();
                 // The date cell carries month+day; the year comes from the block id.
-                String isoDate = parseStartDate(dateCell.text(), blockYear);
-                if (isoDate != null && !title.isBlank()) {
-                    events.add(new AcademicCalendarEvent(isoDate, title, ""));
+                DateRange range = parseDateRange(dateCell.text(), blockYear);
+                if (range != null && !title.isBlank()) {
+                    events.add(new AcademicCalendarEvent(range.start(), range.end(), title, ""));
                 }
             }
         }
@@ -144,11 +144,13 @@ class RealAcademicCalendarConnector implements AcademicCalendarConnector {
     }
 
     /**
-     * Resolves the event's start date. The cell text is "MM.DD (요일)" for a single day or
-     * "MM.DD (요일) ~ MM.DD (요일)" for a range; either way the first token is the start.
-     * Month and day come from the token, the year from the enclosing month block.
+     * Resolves the event's date range. The cell text is "MM.DD (요일)" for a single day or
+     * "MM.DD (요일) ~ MM.DD (요일)" for a range; the first token is the start, a second
+     * token (if present) the inclusive end. Month and day come from the tokens, the year
+     * from the enclosing month block; a range whose end month precedes its start month
+     * wraps into the next year (e.g. a December "12.30 ~ 01.02" row).
      */
-    private static String parseStartDate(String cellText, int year) {
+    private static DateRange parseDateRange(String cellText, int year) {
         if (cellText == null || cellText.isBlank()) {
             return null;
         }
@@ -156,11 +158,38 @@ class RealAcademicCalendarConnector implements AcademicCalendarConnector {
         if (!m.find()) {
             return null;
         }
-        int month = Integer.parseInt(m.group(1));
-        int day = Integer.parseInt(m.group(2));
-        if (month < 1 || month > 12 || day < 1 || day > 31) {
+        int startMonth = Integer.parseInt(m.group(1));
+        int startDay = Integer.parseInt(m.group(2));
+        if (!isPlausibleMonthDay(startMonth, startDay)) {
             return null;
         }
+        String start = formatIso(year, startMonth, startDay);
+
+        String end = null;
+        if (m.find()) {
+            int endMonth = Integer.parseInt(m.group(1));
+            int endDay = Integer.parseInt(m.group(2));
+            if (isPlausibleMonthDay(endMonth, endDay)) {
+                // Year-less source: an end month before the start month means the
+                // range crosses New Year (블록 연도 + 1).
+                int endYear = endMonth < startMonth ? year + 1 : year;
+                end = formatIso(endYear, endMonth, endDay);
+                if (end.equals(start)) {
+                    end = null; // degenerate "same day ~ same day" row → single-day
+                }
+            }
+        }
+        return new DateRange(start, end);
+    }
+
+    private static boolean isPlausibleMonthDay(int month, int day) {
+        return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+    }
+
+    private static String formatIso(int year, int month, int day) {
         return String.format(Locale.ROOT, "%04d-%02d-%02d", year, month, day);
+    }
+
+    private record DateRange(String start, String end) {
     }
 }
