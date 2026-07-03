@@ -1,0 +1,5 @@
+{
+  "priority": 1,
+  "request": { "method": "GET", "urlPathPattern": "/pyxis-api/1/api/rooms/[0-9]+/seats" },
+  "response": { "status": 500, "body": "upstream fault (injected for CB test)" }
+}

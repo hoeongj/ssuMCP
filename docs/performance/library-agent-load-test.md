@@ -130,9 +130,25 @@ same-seat terminal attempt가 있으면 후속 group을 로컬 `FAILED_RACE`로 
 | **③ knee-point (read RPS 200, 5분)** | checks 100%(96k), p95 **19.1ms**, err 0%, 48k req, dropped 82 | ✅ baseline 4× RPS에도 p95 열화 없음(무릎 미도달 — 대부분 캐시 히트) |
 | **④ same-seat 억제 (100 동시 confirm, 동일 좌석)** | k6 `reserve_success==1`·`reserve_race==99`, `action_audit` **SUCCESS 1 / FAILURE_RACE 99**, **WireMock reserve POST 정확히 1** | ✅ intent 큐가 100 동시 claim을 학교 시스템 write **1건**으로 붕괴(나머지 99는 upstream 미접촉 로컬 FAILURE_RACE) |
 | distinct-seats (100 서로 다른 좌석) | `action_audit` SUCCESS 64 / **FAILURE_UPSTREAM 36**. 동기 confirm 다수 PROCESSING 반환 후 워커 poller가 배치 처리 | ⚠️ 무경합 경로는 async 워커 throughput·WireMock 스텁 동시성에 좌우되는 harness 특성(정성 데모는 same-seat 쪽) |
-| ② 장애주입 CB OPEN | **미실행** — WireMock 5xx/timeout fault 스텁 사전구성 필요(harness 미포함) | ⬜ 후속 |
+| **② 장애주입 CB OPEN (부하 중 서킷 전이)** | k6 read RPS 25 부하 중 WireMock을 500으로 flip → **~3초 만에 `pyxis` 서킷 OPEN**. open 동안 WireMock 호출수 **119에서 완전 정지**(k6는 계속 25 req/s 전송, ~40초·≈1000 요청 short-circuit → 업스트림 0콜). 복구(200) 후 half-open 프로브 3콜 성공 → **CLOSED**, 호출 재개 | ✅ 서킷브레이커가 업스트림 장애를 부하 중에 감지·차단·자동복구(전 사이클 관측) |
 
-핵심 서사: **읽기는 캐시·single-flight로 학교 시스템을 거의 안 때리고(24k→42), 쓰기 경합은 intent 큐가 100 동시 요청을 upstream 1 write로 접는다** — "단일 egress IP 서버가 학교 시스템에 좋은 시민으로 동작한다"의 수치 근거.
+핵심 서사: **읽기는 캐시·single-flight로 학교 시스템을 거의 안 때리고(24k→42), 쓰기 경합은 intent 큐가 100 동시 요청을 upstream 1 write로 접으며(100→1), 업스트림 장애 시 서킷브레이커가 부하를 upstream에서 완전히 끊는다(open 동안 0콜)** — "단일 egress IP 서버가 학교 시스템에 좋은 시민으로 동작한다"의 3중 수치 근거.
+
+#### ② CB 전이 타임라인 (관측 원본)
+
+`SSUAI_LIBRARY_SEAT_CACHE_TTL=0s`로 seat 캐시를 꺼 매 읽기가 커넥터→`PyxisResilience.read()`→WireMock을 때리게 하고, `resilience4j_circuitbreaker_state{name="pyxis"}`(`/actuator/prometheus`)와 seat 엔드포인트 WireMock 호출수를 3초 간격 폴링. 서킷 설정: 실패율 50% · COUNT window 20 · min 10콜 · openState 30s · half-open 3 프로브.
+
+```
+정상(200):  CB=closed, wiremock_seat_calls 84→91→102  (매 읽기가 업스트림)
+t+34s  500 주입
+t+37s  CB=OPEN                     wiremock=119  ← ~3초 만에 트립
+t+37~77s  CB=open 유지             wiremock=119 고정  ← k6 25 req/s 계속 전송에도 업스트림 0콜(short-circuit)
+                                   (119→122 미세증가 = half-open 프로브 3콜, fault 지속으로 실패→재open)
+t+77s  복구(200)
+t+99s  CB=CLOSED                   wiremock 0→7→16→…→101  ← 프로브 성공 후 트래픽 재개
+```
+
+관측 절차·fault 스텁은 [`load-tests/wiremock/fault/`](../../load-tests/wiremock/fault/) + `load-tests/README.md`의 CB 실험 항목 참조.
 
 ## 5. 운영 메모
 

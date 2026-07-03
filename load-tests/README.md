@@ -110,3 +110,23 @@ docker exec -it ssumcp-loadtest-postgres-1 psql -U ssuai -d ssuai -c `
    같은 좌석 100건은 worker가 한 batch에서 좌석별로 그룹화하므로 WireMock
    `/pyxis-api/1/api/seat-charges` POST가 정확히 1건이어야 한다. k6 teardown이
    WireMock request journal로 이를 자동 검증한다.
+
+## 6. 서킷브레이커 장애주입 실험 (CB-under-load)
+
+업스트림(Pyxis) 장애 시 Resilience4j `pyxis` 서킷이 부하 중에 OPEN으로 전이해 업스트림을
+차단하고, 복구되면 half-open 프로브를 거쳐 CLOSED로 자동 복귀하는지 관측한다.
+
+**주의**: seat read는 30초 캐시가 있어 대부분 커넥터를 안 탄다. 실험은 백엔드를
+`SSUAI_LIBRARY_SEAT_CACHE_TTL=0s`로 기동해 매 읽기가 커넥터→`PyxisResilience.read()`→
+WireMock을 때리게 해야 서킷이 빠르게 트립된다.
+
+```bash
+docker compose up -d postgres wiremock          # (+ redis on :6379)
+# 백엔드는 host JVM에서 load-test env + SSUAI_LIBRARY_SEAT_CACHE_TTL=0s 로 기동
+./cb-experiment.sh
+```
+
+`cb-experiment.sh`는 k6 read 부하(RPS 25)를 구동하면서 `wiremock/fault/*.json`(500 오버레이)을
+주입하고, `resilience4j_circuitbreaker_state{name="pyxis"}`(`/actuator/prometheus`)와 seat
+엔드포인트 WireMock 호출수를 3초 간격으로 찍는다. 관측된 전이 타임라인은
+[`docs/performance/library-agent-load-test.md`](../docs/performance/library-agent-load-test.md) §4-1 ②.
