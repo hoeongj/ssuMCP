@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -215,6 +217,18 @@ public class GlobalExceptionHandler {
             IllegalArgumentException exception
     ) {
         return validationFailed(exception.getMessage());
+    }
+
+    @ExceptionHandler(AsyncRequestTimeoutException.class)
+    public ResponseEntity<Void> handleAsyncRequestTimeout() {
+        // An idle SSE / long-poll streaming connection (library seat + reservation
+        // intent registries) hit its async timeout. This is normal lifecycle, not a
+        // fault: the response is already committed, so nothing is written. Log at
+        // DEBUG instead of letting the Exception catch-all record it as an ERROR
+        // with a full stack trace — otherwise every idle stream close (~15 per burst
+        // in prod) pollutes the error dashboard and alerting.
+        log.debug("async request timed out (idle streaming connection closed)");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
     }
 
     @ExceptionHandler(Exception.class)
