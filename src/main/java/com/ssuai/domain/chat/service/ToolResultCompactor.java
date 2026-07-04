@@ -18,7 +18,8 @@ public class ToolResultCompactor {
     private static final int MAX_CHAT_TOOL_FACILITY_RESULTS = 10;
     private static final int MAX_CHAT_TOOL_LIST_RESULTS = 20;
     private static final int MAX_NOTICE_DETAIL_CHARS = 2_000;
-    private static final int MAX_TOOL_CONTENT_BYTES = 8 * 1024;
+    // Char cap (compared against String.length(), i.e. UTF-16 units, not bytes).
+    private static final int MAX_TOOL_CONTENT_CHARS = 8 * 1024;
     private static final String TOOL_TRUNCATION_MARKER = "...[truncated]";
 
     private final ObjectMapper objectMapper;
@@ -56,10 +57,10 @@ public class ToolResultCompactor {
     }
 
     private static String capLength(String value) {
-        if (value.length() <= MAX_TOOL_CONTENT_BYTES) {
+        if (value.length() <= MAX_TOOL_CONTENT_CHARS) {
             return value;
         }
-        return value.substring(0, MAX_TOOL_CONTENT_BYTES) + TOOL_TRUNCATION_MARKER;
+        return value.substring(0, MAX_TOOL_CONTENT_CHARS) + TOOL_TRUNCATION_MARKER;
     }
 
     private ObjectNode compactMealNode(JsonNode node) {

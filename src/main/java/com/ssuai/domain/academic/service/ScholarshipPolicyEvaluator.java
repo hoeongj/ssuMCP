@@ -318,14 +318,17 @@ public class ScholarshipPolicyEvaluator {
         return value.toString();
     }
 
+    // Render alternative thresholds as readable text ("3.5, 4.0"), NOT a raw
+    // List.toString() ("[3.5, 4.0]") — this string is shown to the user.
     private static String joinNumbers(List<Double> values) {
-        return values.stream()
+        return String.join(", ", values.stream()
                 .map(ScholarshipPolicyEvaluator::formatNumber)
-                .toList()
-                .toString();
+                .toList());
     }
 
     private static String joinIntegers(List<Integer> values) {
-        return values.toString();
+        return String.join(", ", values.stream()
+                .map(String::valueOf)
+                .toList());
     }
 }

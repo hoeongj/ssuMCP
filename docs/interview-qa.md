@@ -119,8 +119,8 @@ reserve() timeout
        │
        ├── action_audit: TIMEOUT 상태 기록
        └── worker: getCurrentCharge() (GET, idempotent)
-              ├── Pyxis에 예약 있음 → SUCCESS_UPSTREAM_CONFIRMED
-              └── Pyxis에 예약 없음 → FAILURE_UPSTREAM
+              ├── Pyxis에 예약 있음 → OUTCOME_SUCCESS
+              └── Pyxis에 예약 없음 → OUTCOME_FAILURE
 ```
 
 GET으로 결과 확인 → 사용자에게 정확한 최종 상태 전달. "timeout이 났지만 알고 보니 예약됐다" 케이스도 처리.
@@ -209,9 +209,9 @@ Spring Cloud Circuit Breaker는 Resilience4j 위의 추상화 레이어다. 이 
 
 Pyxis는 단일 upstream (`oasis.ssu.ac.kr`). 읽기가 실패하면 쓰기도 실패할 가능성이 높다. 공유 CB가 "upstream 전체 건강"을 반영한다. read 전용/write 전용으로 나누면 실제로 upstream이 죽었는데도 write CB만 OPEN이고 read CB는 CLOSED인 불일치가 생길 수 있다.
 
-### "action_audit 테이블을 append-only로 설계한 이유?"
+### "action_audit를 append-only 이벤트 로그가 아니라 단일 행 in-place UPDATE로 둔 이유?"
 
-상태를 in-place UPDATE하는 방식이 더 단순하지만, 감사(audit) 목적상 "각 상태 전환 시각과 내용"이 보존되어야 한다. PREPARED→EXECUTING→SUCCESS 전환을 별도 행으로 기록하면 "언제 어떤 상태였는가" 히스토리가 유지된다. 현재 구현은 단일 행 UPDATE지만, ADR 0015가 append-only 방향을 권고한다.
+감사(audit) 목적만 보면 상태 전환마다 새 행을 남기는 append-only가 이상적이다 — "언제 어떤 상태였는가"의 완전한 히스토리가 보존되기 때문이다. 하지만 confirm 경로의 핵심 불변식은 **"PREPARED 행 하나를 원자적으로 소비"**(`SELECT … FOR UPDATE`로 PREPARED→EXECUTING 전환, 두 번째 confirm은 행을 못 찾아 실패)라, 단일 행을 상태 머신처럼 UPDATE하는 편이 이 중복-confirm 방지를 가장 단순·정확하게 표현한다. 그래서 현재 구현은 **단일 행 UPDATE**이고, 완전한 전환 히스토리가 필요해지면 별도 append-only 이벤트 테이블을 덧붙이는 방향(ADR 0015·0059)이다.
 
 ---
 
