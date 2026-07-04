@@ -59,6 +59,21 @@ class LibraryAvailableSeatsServiceTests {
     }
 
     @Test
+    void allAvailabilityPropagatesTheOriginalExceptionWhenARoomFails() {
+        LibraryRoomSeatCache cache = mock(LibraryRoomSeatCache.class);
+        LibraryAvailableSeatsService service =
+                new LibraryAvailableSeatsService(cache, mock(LibrarySessionStore.class), "mock");
+        when(cache.get(anyInt(), isNull())).thenReturn(stubSeats());
+        when(cache.get(eq(57), isNull())).thenThrow(new IllegalStateException("pyxis down"));
+
+        // The concurrent fan-out must surface the ORIGINAL exception, not the
+        // CompletionException wrapper that CompletableFuture.join() would throw.
+        assertThatThrownBy(() -> service.getAllAvailableSeats("session"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("pyxis down");
+    }
+
+    @Test
     void realModePassesResolvedTokenToCache() {
         LibraryRoomSeatCache cache = mock(LibraryRoomSeatCache.class);
         LibrarySessionStore store = mock(LibrarySessionStore.class);

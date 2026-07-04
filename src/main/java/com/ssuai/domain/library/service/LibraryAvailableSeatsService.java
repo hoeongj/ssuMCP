@@ -1,11 +1,13 @@
 package com.ssuai.domain.library.service;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -56,19 +58,35 @@ public class LibraryAvailableSeatsService {
 
     public LibraryAllAvailableSeatsResponse getAllAvailableSeats(String sessionKey) {
         String token = resolveToken(sessionKey);
-        List<LibraryAllAvailableSeatsRoomSummary> rooms = new ArrayList<>(ALL_ROOM_IDS.size());
-        int totalAvailable = 0;
-        int totalAway = 0;
 
-        for (int roomId : ALL_ROOM_IDS) {
-            log.debug("fetching per-seat data: roomId={}", roomId);
-            List<PyxisSeatInfo> seats = roomSeatCache.get(roomId, token);
-            LibraryAllAvailableSeatsRoomSummary summary = toRoomSummary(roomId, seats);
-            rooms.add(summary);
-            totalAvailable += summary.availableSeats();
-            totalAway += summary.awaySeats();
+        // Fan out the 7 reading-room fetches concurrently: on a cold/expired cache
+        // each is an independent upstream round-trip, so serial fetches paid ~7x
+        // the latency. Virtual threads (Java 21) fit blocking I/O fan-out without a
+        // shared pool to size or starve; the try-with-resources joins all tasks.
+        List<LibraryAllAvailableSeatsRoomSummary> rooms;
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<LibraryAllAvailableSeatsRoomSummary>> futures = ALL_ROOM_IDS.stream()
+                    .map(roomId -> CompletableFuture.supplyAsync(() -> {
+                        log.debug("fetching per-seat data: roomId={}", roomId);
+                        return toRoomSummary(roomId, roomSeatCache.get(roomId, token));
+                    }, executor))
+                    .toList();
+            try {
+                rooms = futures.stream().map(CompletableFuture::join).toList();
+            } catch (CompletionException e) {
+                // Preserve the pre-fan-out contract: any room failure fails the whole
+                // request, with the original exception (not the CompletionException wrapper).
+                if (e.getCause() instanceof RuntimeException cause) {
+                    throw cause;
+                }
+                throw e;
+            }
         }
 
+        int totalAvailable = rooms.stream()
+                .mapToInt(LibraryAllAvailableSeatsRoomSummary::availableSeats).sum();
+        int totalAway = rooms.stream()
+                .mapToInt(LibraryAllAvailableSeatsRoomSummary::awaySeats).sum();
         return new LibraryAllAvailableSeatsResponse(totalAvailable, totalAway, Instant.now(), rooms);
     }
 
