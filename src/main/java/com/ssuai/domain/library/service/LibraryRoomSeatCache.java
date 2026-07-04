@@ -2,28 +2,30 @@ package com.ssuai.domain.library.service;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.ssuai.domain.library.connector.LibrarySeatConnector;
 import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.domain.library.redis.LibraryRedisMetrics;
 import com.ssuai.domain.library.redis.LibraryRoomSeatL2Cache;
+import com.ssuai.global.cache.SingleFlightCache;
 
 /**
- * Per-room live seat cache with single-flight semantics.
+ * Per-room live seat cache with single-flight semantics and a Redis L2 tier.
  * Per-seat availability changes faster than floor counts, so the TTL is short
  * while still collapsing concurrent misses into one Pyxis call per room.
+ *
+ * <p>The L1 TTL + single-flight machinery lives in {@link SingleFlightCache};
+ * this class's loader adds the L2 read-through/write-behind. An L2 hit is stored
+ * in L1 at <i>half</i> the TTL so an entry that already aged in Redis does not
+ * get a second full lifetime in-process (staleness doubling).
  */
 @Component
 public class LibraryRoomSeatCache {
@@ -33,10 +35,7 @@ public class LibraryRoomSeatCache {
     private final LibrarySeatConnector connector;
     private final LibraryRoomSeatL2Cache l2Cache;
     private final LibraryRedisMetrics redisMetrics;
-    private final Duration ttl;
-    private final Clock clock;
-    private final ConcurrentHashMap<Key, Entry> entries = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Key, CompletableFuture<Entry>> inflight = new ConcurrentHashMap<>();
+    private final SingleFlightCache<Key, List<PyxisSeatInfo>> cache;
 
     @Autowired
     public LibraryRoomSeatCache(
@@ -66,69 +65,27 @@ public class LibraryRoomSeatCache {
         this.connector = connector;
         this.l2Cache = l2Cache;
         this.redisMetrics = redisMetrics;
-        this.ttl = ttl;
-        this.clock = clock;
+        this.cache = SingleFlightCache.unbounded("library room seat cache", ttl, clock);
     }
 
     public List<PyxisSeatInfo> get(int roomId, String token) {
         Key key = Key.of(roomId, token);
-        Entry cached = entries.get(key);
-        if (isFresh(cached)) {
-            return cached.value;
-        }
-
-        CompletableFuture<Entry> mine = new CompletableFuture<>();
-        CompletableFuture<Entry> winner = inflight.putIfAbsent(key, mine);
-        if (winner == null) {
-            try {
-                Entry refreshed = entries.get(key);
-                if (isFresh(refreshed)) {
-                    mine.complete(refreshed);
-                    return refreshed.value;
-                }
-
-                Entry l2Entry = readL2(key);
-                if (l2Entry != null) {
-                    entries.put(key, l2Entry);
-                    mine.complete(l2Entry);
-                    return l2Entry.value;
-                }
-
-                Entry entry = new Entry(connector.fetchRoomSeats(roomId, token), clock.instant().plus(ttl));
-                entries.put(key, entry);
-                writeL2(key, entry.value);
-                mine.complete(entry);
-                return entry.value;
-            } catch (RuntimeException exception) {
-                mine.completeExceptionally(exception);
-                throw exception;
-            } finally {
-                inflight.remove(key, mine);
+        return cache.getWithEntry(key, k -> {
+            SingleFlightCache.Entry<List<PyxisSeatInfo>> l2 = readL2(k);
+            if (l2 != null) {
+                return l2;
             }
-        }
-
-        try {
-            return winner.get().value;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("library room seat cache wait interrupted", exception);
-        } catch (ExecutionException exception) {
-            Throwable cause = exception.getCause();
-            if (cause instanceof RuntimeException runtime) {
-                throw runtime;
-            }
-            throw new IllegalStateException("library room seat cache fetch failed", cause);
-        }
+            List<PyxisSeatInfo> seats = copyOf(connector.fetchRoomSeats(roomId, token));
+            writeL2(k, seats);
+            return cache.newEntry(seats);
+        });
     }
 
-    private boolean isFresh(Entry entry) {
-        return entry != null && entry.expiresAt.isAfter(clock.instant());
-    }
-
-    private Entry readL2(Key key) {
+    /** L2 hit → an L1 entry at half TTL; miss or failure → null (fall through). */
+    private SingleFlightCache.Entry<List<PyxisSeatInfo>> readL2(Key key) {
         try {
             return l2Cache.get(key.roomId(), key.authenticated())
-                    .map(seats -> new Entry(seats, clock.instant().plus(ttl.dividedBy(2))))
+                    .map(seats -> cache.newEntry(copyOf(seats), cache.ttl().dividedBy(2)))
                     .orElse(null);
         } catch (RuntimeException exception) {
             log.warn("library room seat Redis L2 read failed: roomId={} authenticated={}",
@@ -140,7 +97,7 @@ public class LibraryRoomSeatCache {
 
     private void writeL2(Key key, List<PyxisSeatInfo> seats) {
         try {
-            l2Cache.put(key.roomId(), key.authenticated(), seats, ttl);
+            l2Cache.put(key.roomId(), key.authenticated(), seats, cache.ttl());
         } catch (RuntimeException exception) {
             log.warn("library room seat Redis L2 write failed: roomId={} authenticated={}",
                     key.roomId(), key.authenticated(), exception);
@@ -148,18 +105,13 @@ public class LibraryRoomSeatCache {
         }
     }
 
+    private static List<PyxisSeatInfo> copyOf(List<PyxisSeatInfo> seats) {
+        return seats == null ? List.of() : List.copyOf(seats);
+    }
+
     private record Key(int roomId, boolean authenticated) {
         static Key of(int roomId, String token) {
             return new Key(roomId, token != null && !token.isBlank());
-        }
-    }
-
-    private record Entry(List<PyxisSeatInfo> value, Instant expiresAt) {
-        Entry {
-            value = value == null ? List.of() : List.copyOf(value);
-            if (expiresAt == null) {
-                throw new IllegalArgumentException("cache expiresAt cannot be null");
-            }
         }
     }
 }

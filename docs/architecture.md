@@ -409,7 +409,7 @@ class MockMealConnector implements MealConnector { ... }
 - `MealService.getMealForRestaurant(date, restaurant)`가 캐시 미스 시 Connector 폴백을 포함한 캐시-어사이드 조회를 수행한다.
 
 도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 특히 도서관 좌석 캐시는 요청이 인증되어 있는지 여부를 키에 포함시켜, MCP나 REST 익명 호출자가 인증된 호출자의 캐시 결과를 받지 못하도록 한다.
-좌석 read 캐시는 모두 single-flight(request coalescing)를 포함한다. 캐시 만료 직후 같은 층/열람실을 동시에 요청해도 첫 요청만 Pyxis로 나가고 나머지는 같은 `CompletableFuture` 결과를 기다린다.
+좌석·도서·시간표·공지 read 캐시는 모두 single-flight(request coalescing)를 포함한다. 캐시 만료 직후 같은 키를 동시에 요청해도 첫 요청만 상류로 나가고 나머지는 같은 `CompletableFuture` 결과를 기다린다. 이 미스 경로(신선도 검사 → in-flight 등록 → double-check → 로더 1회 → 실패 시 미오염 재던짐 → 대기자 언랩)는 5개 캐시가 각자 복붙하던 것을 `global/cache/SingleFlightCache<K,V>`로 한 번만 구현하고, 각 캐시는 키·TTL·백킹 맵 정책(무한 vs LRU)·로더만 공급한다(ADR 0077). 열람실 live 좌석 캐시는 그 위에 Redis L2 read-through를 얹되, L2 히트를 half-TTL로 L1에 저장해 staleness 이중화를 막는다.
 
 ### 결정 기록 — 도서관 live room read single-flight (2026-06-12)
 

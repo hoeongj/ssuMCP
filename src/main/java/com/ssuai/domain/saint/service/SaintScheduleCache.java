@@ -2,13 +2,6 @@ package com.ssuai.domain.saint.service;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,23 +11,23 @@ import com.ssuai.domain.auth.saint.PortalCookies;
 import com.ssuai.domain.auth.saint.SaintSessionStore;
 import com.ssuai.domain.saint.connector.SaintScheduleConnector;
 import com.ssuai.domain.saint.dto.ScheduleResponse;
+import com.ssuai.global.cache.SingleFlightCache;
 import com.ssuai.global.exception.SaintSessionExpiredException;
 
 /**
  * Per-student cumulative timetable cache with short TTL and single-flight
  * semantics (Task 16 spec §6 #5). The cumulative fetch walks the WDA7
  * "previous term" path up to 16 hops; a chat user asking "내일 1교시" three
- * times in a row should pay that cost once, not three times. Mirrors the
- * {@link com.ssuai.domain.library.service.LibraryBookCache} shape — LRU
- * bound, clock-based expiry, single-flight on the miss path — but keyed by
- * student id and folding in the {@link SaintSessionStore} cookie lookup so
- * a cached schedule survives a portal-cookie expiry (the data hasn't
+ * times in a row should pay that cost once, not three times. Keyed by student
+ * id (+ optional year/term) and folds in the {@link SaintSessionStore} cookie
+ * lookup so a cached schedule survives a portal-cookie expiry (the data hasn't
  * changed, we just can't fetch a new copy).
  *
- * <p>Exceptions from the loader (missing cookies, connector-side
+ * <p>The TTL + LRU + single-flight machinery lives in {@link SingleFlightCache}.
+ * Loader exceptions (missing cookies, connector-side
  * {@link SaintSessionExpiredException}, transport faults) propagate without
- * poisoning the cache so the next caller — including the same student
- * after re-running SmartID SSO — retries cleanly.
+ * poisoning the cache so the next caller — including the same student after
+ * re-running SmartID SSO — retries cleanly.
  */
 @Component
 public class SaintScheduleCache {
@@ -43,11 +36,7 @@ public class SaintScheduleCache {
 
     private final SaintScheduleConnector connector;
     private final SaintSessionStore sessionStore;
-    private final Duration ttl;
-    private final Clock clock;
-    private final int capacity;
-    private final Map<CacheKey, Entry> entries;
-    private final ConcurrentHashMap<CacheKey, CompletableFuture<Entry>> inflight = new ConcurrentHashMap<>();
+    private final SingleFlightCache<CacheKey, ScheduleResponse> cache;
 
     @Autowired
     public SaintScheduleCache(
@@ -67,15 +56,7 @@ public class SaintScheduleCache {
     ) {
         this.connector = connector;
         this.sessionStore = sessionStore;
-        this.ttl = ttl;
-        this.clock = clock;
-        this.capacity = capacity;
-        this.entries = Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<CacheKey, Entry> eldest) {
-                return size() > SaintScheduleCache.this.capacity;
-            }
-        });
+        this.cache = SingleFlightCache.lruBounded("saint schedule cache", ttl, clock, capacity);
     }
 
     public ScheduleResponse get(String studentId) {
@@ -84,67 +65,15 @@ public class SaintScheduleCache {
 
     public ScheduleResponse get(String studentId, Integer year, Integer term) {
         CacheKey key = CacheKey.of(studentId, year, term);
-        Entry cached = entries.get(key);
-        if (isFresh(cached)) {
-            return cached.value;
-        }
-
-        CompletableFuture<Entry> mine = new CompletableFuture<>();
-        CompletableFuture<Entry> winner = inflight.putIfAbsent(key, mine);
-        if (winner == null) {
-            try {
-                Entry refreshed = entries.get(key);
-                if (isFresh(refreshed)) {
-                    mine.complete(refreshed);
-                    return refreshed.value;
-                }
-
-                PortalCookies cookies = sessionStore.cookies(studentId)
-                        .orElseThrow(SaintSessionExpiredException::new);
-                ScheduleResponse fresh = connector.fetchSchedule(studentId, cookies, year, term);
-                Entry entry = new Entry(fresh, clock.instant().plus(ttl));
-                entries.put(key, entry);
-                mine.complete(entry);
-                return entry.value;
-            } catch (RuntimeException exception) {
-                mine.completeExceptionally(exception);
-                throw exception;
-            } finally {
-                inflight.remove(key, mine);
-            }
-        }
-
-        try {
-            return winner.get().value;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("saint schedule cache wait interrupted", exception);
-        } catch (ExecutionException exception) {
-            Throwable cause = exception.getCause();
-            if (cause instanceof RuntimeException runtime) {
-                throw runtime;
-            }
-            throw new IllegalStateException("saint schedule cache fetch failed", cause);
-        }
-    }
-
-    private boolean isFresh(Entry entry) {
-        return entry != null && entry.expiresAt.isAfter(clock.instant());
+        return cache.get(key, k -> {
+            PortalCookies cookies = sessionStore.cookies(k.studentId())
+                    .orElseThrow(SaintSessionExpiredException::new);
+            return connector.fetchSchedule(k.studentId(), cookies, k.year(), k.term());
+        });
     }
 
     int size() {
-        return entries.size();
-    }
-
-    private record Entry(ScheduleResponse value, Instant expiresAt) {
-        Entry {
-            if (value == null) {
-                throw new IllegalArgumentException("cache value cannot be null");
-            }
-            if (expiresAt == null) {
-                throw new IllegalArgumentException("cache expiresAt cannot be null");
-            }
-        }
+        return cache.size();
     }
 
     private record CacheKey(String studentId, Integer year, Integer term) {
