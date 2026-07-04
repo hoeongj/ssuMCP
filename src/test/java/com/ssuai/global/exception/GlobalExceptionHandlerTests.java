@@ -56,6 +56,15 @@ class GlobalExceptionHandlerTests {
     }
 
     @Test
+    void asyncRequestTimeoutReturns503AndIsNotTreatedAsUnhandledError() {
+        // A dedicated handler keeps idle SSE/long-poll timeouts off the ERROR-level
+        // Exception catch-all (which would log a full stack trace per stream close).
+        ResponseEntity<Void> response = handler.handleAsyncRequestTimeout();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
     void seatNotAvailableReturns409() {
         ResponseEntity<ApiResponse<ErrorResponse>> response =
                 handler.handleLibrarySeatNotAvailableException(
