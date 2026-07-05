@@ -695,12 +695,12 @@ Claude Desktop / IDE
 
 | 도구 | 도메인 |
 |------|--------|
-| `get_today_meal`, `get_meal_by_date` | `MealService` |
+| `get_today_meal`, `get_meal_by_date`, `get_meal_weekly` | `MealService` |
 | `get_dorm_weekly_meal` | `DormMealService` |
 | `search_campus_facilities` | `CampusService` |
 | `get_academic_calendar`, `find_academic_calendar_events` | `AcademicCalendarService` |
 | `classify_academic_question`, `search_academic_policy_sources`, `get_academic_policy_brief`, `check_scholarship_policy`, `list_academic_policy_sources` | `AcademicPolicyService` |
-| `get_library_available_seats`, `get_room_available_seats` | `LibraryAvailableSeatsService` |
+| `get_library_seat_catalog` | `LibrarySeatRoomCatalogService` |
 | `search_library_book` | `LibraryBookService` |
 | `get_recent_notices`, `search_notices`, `list_notice_categories`, `get_notice_detail`, `get_active_notices`, `get_department_notices` | `NoticeService` |
 

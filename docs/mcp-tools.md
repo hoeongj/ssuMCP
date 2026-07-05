@@ -306,6 +306,10 @@ REST health: http://localhost:8080/actuator/health
 MCP:         http://localhost:8080/mcp
 ```
 
+> 로컬 빌드 없이 **라이브 prod 서버**에 바로 붙어봐도 된다(공개 도구는 인증 불필요):
+> REST health `https://ssumcp.duckdns.org/actuator/health` · MCP `https://ssumcp.duckdns.org/mcp`
+> — 아래 inspector/클라이언트 설정의 `http://localhost:8080/mcp` 를 이 URL 로 바꾸면 된다.
+
 ## 4. MCP inspector 로 검증
 먼저 `ssuMCP` 저장소 루트에서 서버를 켠다.
 
