@@ -102,6 +102,23 @@ Once ArgoCD is up, ArgoCD owns everything that lives in
     later), never precede it.** Full incident + recovery (terminate the
     stuck op, re-sync) in `TROUBLESHOOTING.md` (2026-06-18); fix in PR #77
     (`deploy/charts/ssuai-backend/templates/pvc.yaml`, wave 1 → 3).
+  - **Realized foot-gun (2026-07-05) — CRD-based Image Updater needs one
+    `ImageUpdater` CR per app.** This ADR's original model was a single
+    `ssuai-backend` Application with Image Updater reading its annotations. The
+    cluster has since grown to several ArgoCD Applications (`ssuai-backend`,
+    `ssu-agent`, `ssu-ai-service`), and the installed Image Updater is the
+    **CRD-based controller**: it only processes apps that have an `ImageUpdater`
+    custom resource (`namePattern` + `useAnnotations: true`); the Application's
+    annotations alone are inert without a CR pointing at it. `ssu-ai-service`
+    had no CR, so Image Updater silently never considered it (its logs read
+    `considering 1 application(s)`), its `image.tag` stayed the static `latest`,
+    and — because ArgoCD only syncs on a manifest diff — **the service never
+    auto-deployed at all since launch** (two merged fixes sat unshipped). **Rule:
+    every auto-deployed app needs an `ImageUpdater` CR in
+    `deploy/argocd/image-updater/imageupdater-cr.yaml`; verify CD by the running
+    image tag (`kubectl get deploy -o jsonpath …image`), never by CI-green.** Full
+    incident + the wrong-hypothesis→root-cause trail in `TROUBLESHOOTING.md`
+    (2026-07-05); fix in PR #171.
 - ArgoCD UI is publicly exposed to keep the portfolio narrative
   visible. Mitigation is HTTPS + a strong admin password; long-term
   fix is SSO (Dex + GitHub OAuth), deferred.
