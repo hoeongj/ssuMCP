@@ -50,12 +50,12 @@ public class McpAuthMcpTools {
 
     @Tool(
             name = "get_auth_status",
-            description = "Returns the current MCP auth session status. The 'status' field is one of: "
-                    + "OK (session valid — check each provider's 'linked'); "
-                    + "INVALID_SESSION (an mcp_session_id was provided but is wrong/expired — call start_auth to get a new one; do NOT treat this as a login failure); "
-                    + "NO_SESSION (no mcp_session_id supplied yet). "
-                    + "Call this before private tools to avoid unnecessary AUTH_REQUIRED retries. "
-                    + "Sessions are persisted in the database and survive server restarts."
+            description = "현재 MCP 인증 세션 상태를 반환합니다. 'status' 필드는 다음 중 하나입니다: "
+                    + "OK (세션 유효 — 각 provider의 'linked' 값을 확인하세요); "
+                    + "INVALID_SESSION (mcp_session_id가 전달됐지만 잘못됐거나 만료됨 — start_auth로 새로 발급받으세요. 로그인 실패로 처리하지 마세요); "
+                    + "NO_SESSION (아직 mcp_session_id가 전달되지 않음). "
+                    + "인증 도구 호출 전에 이 도구를 먼저 호출하면 불필요한 AUTH_REQUIRED 재시도를 줄일 수 있습니다. "
+                    + "세션은 데이터베이스에 저장되어 서버 재시작 후에도 유지됩니다."
     )
     public McpAuthStatusResponse getAuthStatus(
             @ToolParam(description = "MCP session ID issued by start_auth. If absent or invalid, all providers show as not linked.", required = false)
@@ -92,13 +92,13 @@ public class McpAuthMcpTools {
 
     @Tool(
             name = "start_auth",
-            description = "Generates a browser login URL for the specified provider (SAINT, LMS, or LIBRARY). "
-                    + "Use this tool when a private tool returns AUTH_REQUIRED. "
-                    + "Steps: 1) Call this tool to get loginUrl and mcpSessionId. "
-                    + "2) Paste the raw loginUrl as visible text for the user; do not replace it with a PlayMCP connector page URL or a markdown link target that differs from loginUrl. "
-                    + "3) Wait for the user to confirm login is complete. "
-                    + "4) Retry the original private tool call with mcp_session_id=[mcpSessionId]. "
-                    + "Creates a new MCP session if mcp_session_id is not provided."
+            description = "지정한 provider(SAINT, LMS, LIBRARY)의 브라우저 로그인 URL을 생성합니다. "
+                    + "인증 도구가 AUTH_REQUIRED를 반환할 때 이 도구를 사용하세요. "
+                    + "절차: 1) 이 도구를 호출해 loginUrl과 mcpSessionId를 받습니다. "
+                    + "2) loginUrl 원문을 사용자에게 그대로 보여주세요. PlayMCP connector 페이지 URL이나 loginUrl과 다른 마크다운 링크로 대체하지 마세요. "
+                    + "3) 사용자가 로그인 완료를 확인할 때까지 기다립니다. "
+                    + "4) mcp_session_id=[mcpSessionId]를 넣어 원래 인증 도구 호출을 다시 시도합니다. "
+                    + "mcp_session_id가 전달되지 않으면 새 MCP 세션을 생성합니다."
     )
     public McpAuthStartResponse startAuth(
             @ToolParam(description = "Provider to authenticate. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 좌석·대출 현황.")
@@ -135,8 +135,8 @@ public class McpAuthMcpTools {
 
     @Tool(
             name = "logout_provider",
-            description = "Unlinks a specific provider (SAINT, LMS, or LIBRARY) from the MCP session. "
-                    + "Requires both mcp_session_id and provider."
+            description = "MCP 세션에서 특정 provider(SAINT, LMS, LIBRARY) 연결을 해제합니다. "
+                    + "mcp_session_id와 provider가 모두 필요합니다."
     )
     public McpAuthLogoutResponse logoutProvider(
             @ToolParam(description = "Provider to unlink: SAINT, LMS, or LIBRARY.")
@@ -165,8 +165,8 @@ public class McpAuthMcpTools {
 
     @Tool(
             name = "logout_all",
-            description = "Removes the entire MCP auth session and all linked providers. "
-                    + "Requires mcp_session_id."
+            description = "MCP 인증 세션 전체와 연결된 모든 provider를 제거합니다. "
+                    + "mcp_session_id가 필요합니다."
     )
     public McpAuthLogoutResponse logoutAll(
             @ToolParam(description = "MCP session ID to fully invalidate.")

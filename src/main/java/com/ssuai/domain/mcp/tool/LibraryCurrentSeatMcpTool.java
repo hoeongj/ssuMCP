@@ -37,7 +37,7 @@ public class LibraryCurrentSeatMcpTool {
                     + "예약 중인 좌석이 없으면 없다고 알려줍니다. "
                     + "반납하려면 prepare_cancel_library_seat를, "
                     + "자리를 바꾸려면 prepare_swap_library_seat를 사용하세요. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> getMyLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

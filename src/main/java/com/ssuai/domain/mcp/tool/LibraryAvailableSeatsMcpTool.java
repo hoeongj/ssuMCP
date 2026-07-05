@@ -36,7 +36,7 @@ public class LibraryAvailableSeatsMcpTool {
                     + "이석(away) 상태인 좌석(자리 비움, 곧 반납될 수 있음)도 함께 표시됩니다. "
                     + "externalSeatId는 prepare_reserve_library_seat 호출 시 사용합니다. "
                     + "전체 현황 파악 후 특정 열람실 세부 현황은 get_room_available_seats로 조회하세요. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibraryAllAvailableSeatsResponse> getLibraryAvailableSeats(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

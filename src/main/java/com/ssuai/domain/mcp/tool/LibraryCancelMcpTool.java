@@ -43,7 +43,7 @@ public class LibraryCancelMcpTool {
             description = "숭실대학교 중앙도서관 현재 예약된 좌석을 반납합니다. "
                     + "현재 예약 정보를 자동으로 조회하므로 예약 번호를 따로 입력하지 않아도 됩니다. "
                     + "반납은 이 도구만으로 실행되지 않으며, confirm_action을 호출해야 최종 실행됩니다. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibraryPrepareResult> prepareCancelLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

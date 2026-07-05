@@ -38,11 +38,10 @@ public class LibraryLoansMcpTool {
 
     @Tool(
             name = "get_my_library_loans",
-            description = "Returns the authenticated user's current library loans including due dates. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth. "
-                    + "Returns AUTH_REQUIRED with a loginUrl if LIBRARY is not authenticated — "
-                    + "show the loginUrl to the user and ask them to open it in a browser, "
-                    + "then retry this call with the returned mcp_session_id."
+            description = "인증된 사용자의 현재 도서관 대출 현황을 반납 예정일과 함께 조회합니다. "
+                    + "mcp_session_id 필요(LIBRARY 로그인). "
+                    + "미인증 시 loginUrl이 포함된 AUTH_REQUIRED를 반환하므로, loginUrl을 사용자에게 보여주고 "
+                    + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<LibraryLoansResponse> getMyLibraryLoans(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY). If absent or LIBRARY not linked, returns AUTH_REQUIRED with a loginUrl.")

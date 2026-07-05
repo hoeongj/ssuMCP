@@ -33,8 +33,8 @@ public class LibrarySeatMcpTool {
             description = "숭실대학교 중앙도서관의 현재 좌석 현황을 층별로 조회합니다. "
                     + "응답에는 해당 층의 전체/이용 가능/예약/사용 불가 좌석 수와 구역별 분포가 포함됩니다. "
                     + "compact=true 지원. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth. "
-                    + "Returns AUTH_REQUIRED with a loginUrl if LIBRARY is not authenticated. "
+                    + "mcp_session_id 필요(LIBRARY 로그인). "
+                    + "미인증 시 loginUrl이 포함된 AUTH_REQUIRED를 반환합니다. "
                     + "이 도구는 읽기 전용이며, 좌석 예약은 별도의 동작 도구로 분리되어 있습니다."
     )
     public McpPrivateToolResponse<Object> getLibrarySeatStatus(

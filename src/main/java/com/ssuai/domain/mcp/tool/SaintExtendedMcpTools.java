@@ -45,9 +45,9 @@ public class SaintExtendedMcpTools {
 
     @Tool(
             name = "get_my_chapel_info",
-            description = "Returns the authenticated student's u-SAINT chapel attendance information. "
-                    + "Year and semester are optional; without them the current u-SAINT semester is used. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth."
+            description = "인증된 학생의 u-SAINT 채플 출석 정보를 조회합니다. "
+                    + "year와 semester는 선택이며, 생략하면 현재 u-SAINT 학기를 사용합니다. "
+                    + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<ChapelInfo> getMyChapelInfo(
             @ToolParam(required = false, description = "Academic year, such as 2026.") Integer year,
@@ -66,8 +66,8 @@ public class SaintExtendedMcpTools {
 
     @Tool(
             name = "check_graduation_requirements",
-            description = "Returns the authenticated student's u-SAINT graduation eligibility and requirement status. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth."
+            description = "인증된 학생의 u-SAINT 졸업 가능 여부와 졸업요건 충족 현황을 조회합니다. "
+                    + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<GraduationStatus> checkGraduationRequirements(
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
@@ -84,9 +84,9 @@ public class SaintExtendedMcpTools {
 
     @Tool(
             name = "get_my_scholarships",
-            description = "Returns the authenticated student's u-SAINT scholarship receipt history. "
-                    + "Year is optional; without it all available history is returned. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth."
+            description = "인증된 학생의 u-SAINT 장학금 수혜 내역을 조회합니다. "
+                    + "year는 선택이며, 생략하면 조회 가능한 전체 내역을 반환합니다. "
+                    + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<List<ScholarshipEntry>> getMyScholarships(
             @ToolParam(required = false, description = "Academic year, such as 2026.") Integer year,
@@ -104,10 +104,10 @@ public class SaintExtendedMcpTools {
 
     @Tool(
             name = "simulate_gpa",
-            description = "Simulates cumulative GPA from the authenticated student's u-SAINT academicRecord. "
-                    + "Use plannedCredits with either plannedGradePointAverage to project a GPA, targetGpa to compute the required average, or both. "
-                    + "Uses SSU's 4.5 max grade-point scale and excludes P/F credits from the GPA denominator. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth."
+            description = "인증된 학생의 u-SAINT academicRecord를 기반으로 누적 GPA를 시뮬레이션합니다. "
+                    + "plannedCredits와 함께 plannedGradePointAverage를 넣어 예상 GPA를 계산하거나, targetGpa를 넣어 필요한 평균 평점을 계산하거나, 둘 다 사용할 수 있습니다. "
+                    + "숭실대학교의 4.5 만점 평점 척도를 사용하며 P/F 학점은 GPA 분모에서 제외합니다. "
+                    + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<GpaSimulationResponse> simulateGpa(
             @ToolParam(description = "GPA-bearing credits to add, excluding P/F credits.")

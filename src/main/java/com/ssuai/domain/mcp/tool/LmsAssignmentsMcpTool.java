@@ -40,14 +40,13 @@ public class LmsAssignmentsMcpTool {
 
     @Tool(
             name = "get_my_assignments",
-            description = "Returns the authenticated student's pending LMS assignments and quizzes. "
-                    + "Requires mcp_session_id with the LMS provider linked via start_auth. "
+            description = "인증된 학생의 미제출 LMS 과제와 퀴즈를 조회합니다. "
+                    + "mcp_session_id 필요(LMS 로그인). "
                     + "compact=true 지원. "
-                    + "term_id를 지정하지 않으면 LMS 기본 학기 사용. "
+                    + "term_id를 지정하지 않으면 LMS 기본 학기를 사용합니다. "
                     + "다른 학기 과제를 조회하려면 get_my_lms_terms로 학기 목록을 먼저 확인하세요. "
-                    + "Returns AUTH_REQUIRED with a loginUrl if LMS is not authenticated — "
-                    + "show the loginUrl to the user and ask them to open it in a browser, "
-                    + "then retry this call with the returned mcp_session_id."
+                    + "미인증 시 loginUrl이 포함된 AUTH_REQUIRED를 반환하므로, loginUrl을 사용자에게 보여주고 "
+                    + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<Object> getMyAssignments(
             @ToolParam(description = "MCP session ID issued by start_auth(LMS). If absent or LMS not linked, returns AUTH_REQUIRED with a loginUrl.")
@@ -80,7 +79,7 @@ public class LmsAssignmentsMcpTool {
                     + "각 학기의 id, name, 시작/종료 날짜, 현재 기본 학기 여부(defaultTerm)를 포함합니다. "
                     + "defaultTerm=true는 현재 활성 학기 하나에만 표시됩니다(term_id 생략 시 이 학기가 사용됨). "
                     + "반환된 id를 get_my_lecture_list 또는 get_my_assignments의 term_id 파라미터에 사용하세요. "
-                    + "mcp_session_id with LMS provider required."
+                    + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsTerms(
             @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")

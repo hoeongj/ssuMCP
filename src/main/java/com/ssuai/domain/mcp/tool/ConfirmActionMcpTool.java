@@ -32,8 +32,8 @@ import com.ssuai.global.exception.LibrarySeatNotAvailableException;
  * Shared confirm step for library write actions (ADR 0015).
  *
  * <p>Reserve confirms now create an immediate reservation intent and wait briefly
- * for the queue worker. Cancel/swap still execute directly because PR2 only routes
- * reserve through the intent queue.
+ * for the queue worker. Cancel/swap execute synchronously; only the reserve path is
+ * routed through the intent queue.
  */
 @Component
 public class ConfirmActionMcpTool {
@@ -75,7 +75,7 @@ public class ConfirmActionMcpTool {
                     + "특정 액션을 지정하려면 prepare 응답의 actionId를 action_id로 전달하세요(생략 가능). "
                     + "prepare_reserve_library_seat(좌석 예약)는 예약 intent 큐를 통해 실행하고, "
                     + "prepare_cancel_library_seat(좌석 반납)와 prepare_swap_library_seat(자리 변경)는 직접 실행합니다. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> confirmAction(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

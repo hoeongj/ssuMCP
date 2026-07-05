@@ -35,7 +35,7 @@ public class LmsMaterialsMcpTool {
                     + "사용자에게는 '과목 | 파일 수 | 용량' 표(파일이 있는 과목만)와 합계를 보여주고 어떤 과목을 받을지 물어보세요. "
                     + "사용자가 과목을 고르면 이 응답에 들어있는 content_id로 바로 prepare_lms_material_export를 호출하면 됩니다(get_my_lms_materials를 다시 부를 필요 없음). "
                     + "term_id를 지정하지 않으면 현재 날짜 기준 활성 학기가 자동 선택됩니다. "
-                    + "mcp_session_id with LMS provider linked required."
+                    + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsCourses(
             @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
@@ -68,7 +68,7 @@ public class LmsMaterialsMcpTool {
             description = "지정된 LMS 과목들의 주차학습 비디오 외 주차별 학습 자료(PDF, PPT, DOC, HWP, TXT 등) 목록을 조회합니다. "
                     + "결과는 파일 확장자별 그룹(개수 및 상세 목록)으로 분류되어 제공되며, 비디오 및 오디오 파일은 보안 및 용량 제한으로 포함되지 않습니다. "
                     + "term_id를 지정하지 않으면 현재 활성 학기가 자동 선택됩니다. "
-                    + "mcp_session_id with LMS provider linked required."
+                    + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsMaterials(
             @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")

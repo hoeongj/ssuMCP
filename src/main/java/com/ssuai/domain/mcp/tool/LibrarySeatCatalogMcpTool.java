@@ -18,9 +18,10 @@ public class LibrarySeatCatalogMcpTool {
 
     @Tool(
             name = "get_library_seat_catalog",
-            description = "Returns the static Soongsil library room and seat-map catalog built from screenshots. "
-                    + "This does not include live availability and does not require authentication. "
-                    + "Use include_layout=true when the LLM needs a compact text-based floor map."
+            description = "스크린샷으로 구축한 숭실대학교 도서관 열람실·좌석 배치도 정적 카탈로그를 반환합니다. "
+                    + "실시간 좌석 현황은 포함하지 않으며 인증도 필요하지 않습니다. "
+                    + "LLM이 간단한 텍스트 기반 층별 배치도가 필요할 때는 include_layout=true를 사용하세요. "
+                    + "인증 불필요."
     )
     public LibrarySeatRoomCatalogResponse getLibrarySeatCatalog(
             @ToolParam(description = "Optional floor filter: B1, 2F, 5F, 6F, or numeric 2/5/6.", required = false)
