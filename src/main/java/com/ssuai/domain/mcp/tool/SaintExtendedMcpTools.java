@@ -50,9 +50,9 @@ public class SaintExtendedMcpTools {
                     + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<ChapelInfo> getMyChapelInfo(
-            @ToolParam(required = false, description = "Academic year, such as 2026.") Integer year,
-            @ToolParam(required = false, description = "Semester: 1학기, 여름학기, 2학기, or 겨울학기.") String semester,
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(required = false, description = "조회할 학년도(예: 2026).") Integer year,
+            @ToolParam(required = false, description = "학기: 1학기, 여름학기, 2학기, 겨울학기 중 하나.") String semester,
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {
@@ -70,7 +70,7 @@ public class SaintExtendedMcpTools {
                     + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<GraduationStatus> checkGraduationRequirements(
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {
@@ -89,8 +89,8 @@ public class SaintExtendedMcpTools {
                     + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<List<ScholarshipEntry>> getMyScholarships(
-            @ToolParam(required = false, description = "Academic year, such as 2026.") Integer year,
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(required = false, description = "조회할 학년도(예: 2026).") Integer year,
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {
@@ -110,13 +110,13 @@ public class SaintExtendedMcpTools {
                     + "mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<GpaSimulationResponse> simulateGpa(
-            @ToolParam(description = "GPA-bearing credits to add, excluding P/F credits.")
+            @ToolParam(description = "추가할 성적 산입 학점(P/F 학점 제외).")
             Double plannedCredits,
-            @ToolParam(required = false, description = "Expected average grade point for plannedCredits, 0.0 to 4.5.")
+            @ToolParam(required = false, description = "plannedCredits의 예상 평균 평점(0.0~4.5).")
             Double plannedGradePointAverage,
-            @ToolParam(required = false, description = "Target cumulative GPA, 0.0 to 4.5.")
+            @ToolParam(required = false, description = "목표 누적 GPA(0.0~4.5).")
             Double targetGpa,
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {

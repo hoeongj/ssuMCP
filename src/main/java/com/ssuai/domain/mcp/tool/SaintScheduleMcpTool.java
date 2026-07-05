@@ -46,11 +46,11 @@ public class SaintScheduleMcpTool {
                     + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<ScheduleResponse> getMySchedule(
-            @ToolParam(required = false, description = "Academic year, such as 2026. Must be provided together with term.")
+            @ToolParam(required = false, description = "조회할 학년도(예: 2026). term과 함께 지정해야 함.")
             Integer year,
-            @ToolParam(required = false, description = "Academic term: 1=spring, 2=summer, 3=fall, 4=winter. Must be provided together with year.")
+            @ToolParam(required = false, description = "학기: 1=봄, 2=여름, 3=가을, 4=겨울. year와 함께 지정해야 함.")
             Integer term,
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {

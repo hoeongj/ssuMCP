@@ -40,26 +40,26 @@ public class LibrarySeatRecommendationMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibrarySeatRecommendationResponse> recommendLibrarySeats(
-            @ToolParam(description = "Library floor code. Allowed values: 2, 5, 6.")
+            @ToolParam(description = "조회할 도서관 층 코드. 가능한 값: 2, 5, 6.")
             int floor,
-            @ToolParam(description = "Prefer a window seat when true, avoid one when false.", required = false)
+            @ToolParam(description = "true면 창가 좌석 선호, false면 회피.", required = false)
             Boolean window,
-            @ToolParam(description = "Prefer a seat with an outlet when true, avoid one when false.", required = false)
+            @ToolParam(description = "true면 콘센트 있는 좌석 선호, false면 회피.", required = false)
             Boolean outlet,
-            @ToolParam(description = "Prefer a standing desk when true, avoid standing desks when false.", required = false)
+            @ToolParam(description = "true면 스탠딩 데스크 선호, false면 스탠딩 데스크 회피.", required = false)
             Boolean standing,
-            @ToolParam(description = "Prefer an edge/corner seat when true, avoid one when false.", required = false)
+            @ToolParam(description = "true면 가장자리/모서리 좌석 선호, false면 회피.", required = false)
             Boolean edge,
-            @ToolParam(description = "Prefer a quieter seat when true, avoid one when false.", required = false)
+            @ToolParam(description = "true면 조용한 좌석 선호, false면 회피.", required = false)
             Boolean quiet,
-            @ToolParam(description = "Prefer a seat near the entrance when true, avoid one when false.", required = false)
+            @ToolParam(description = "true면 입구 근처 좌석 선호, false면 회피.", required = false)
             Boolean near_entrance,
-            @ToolParam(description = "Include graduate-only reading rooms. Default false — "
-                    + "undergraduate users cannot use them.", required = false)
+            @ToolParam(description = "대학원 전용 열람실 포함 여부. 기본 false — "
+                    + "학부생은 이용할 수 없음.", required = false)
             Boolean include_graduate_only,
-            @ToolParam(description = "Maximum recommendations to return. Default 5, max 10.", required = false)
+            @ToolParam(description = "반환할 최대 추천 수. 기본 5, 최대 10.", required = false)
             Integer limit,
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id
     ) {
         LibraryFloor target = LibraryFloor.fromCode(floor);

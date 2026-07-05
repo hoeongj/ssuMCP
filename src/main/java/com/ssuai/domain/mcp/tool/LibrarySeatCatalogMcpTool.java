@@ -24,11 +24,11 @@ public class LibrarySeatCatalogMcpTool {
                     + "인증 불필요."
     )
     public LibrarySeatRoomCatalogResponse getLibrarySeatCatalog(
-            @ToolParam(description = "Optional floor filter: B1, 2F, 5F, 6F, or numeric 2/5/6.", required = false)
+            @ToolParam(description = "층 필터(선택): B1, 2F, 5F, 6F 또는 숫자 2/5/6.", required = false)
             String floor_code,
-            @ToolParam(description = "Optional roomCode filter, such as open-reading-2f.", required = false)
+            @ToolParam(description = "roomCode 필터(선택), 예: open-reading-2f.", required = false)
             String room_code,
-            @ToolParam(description = "Whether to include compact textLayout lines. Default false.", required = false)
+            @ToolParam(description = "compact textLayout 라인 포함 여부. 기본 false.", required = false)
             Boolean include_layout
     ) {
         // No public "debug" param: it exposed internal captureNotes (backend name,

@@ -51,7 +51,7 @@ public class LibraryReservationMcpTool {
                     + "추천 목록 없이 직접 예약하려면 oasis.ssu.ac.kr에서 좌석을 클릭해 URL의 숫자를 확인하세요."
     )
     public McpPrivateToolResponse<LibraryPrepareResult> prepareReserveLibrarySeat(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id,
             @ToolParam(description = "예약할 좌석 ID (숫자). get_library_seat_status 또는 recommend_library_seats에서 확인.")
             String seat_id

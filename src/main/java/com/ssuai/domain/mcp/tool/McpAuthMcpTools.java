@@ -58,7 +58,7 @@ public class McpAuthMcpTools {
                     + "세션은 데이터베이스에 저장되어 서버 재시작 후에도 유지됩니다."
     )
     public McpAuthStatusResponse getAuthStatus(
-            @ToolParam(description = "MCP session ID issued by start_auth. If absent or invalid, all providers show as not linked.", required = false)
+            @ToolParam(description = "start_auth로 발급받은 MCP session ID. 없거나 유효하지 않으면 모든 provider가 미연동으로 표시됨.", required = false)
             String mcp_session_id) {
         McpAuthSession session = mcpAuthHelper.resolveSession(mcp_session_id).orElse(null);
         String sessionIdValue = session != null ? session.id().value() : null;
@@ -101,9 +101,9 @@ public class McpAuthMcpTools {
                     + "mcp_session_id가 전달되지 않으면 새 MCP 세션을 생성합니다."
     )
     public McpAuthStartResponse startAuth(
-            @ToolParam(description = "Provider to authenticate. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 좌석·대출 현황.")
+            @ToolParam(description = "인증할 provider. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 좌석·대출 현황.")
             String provider,
-            @ToolParam(description = "Existing MCP session ID to reuse. If absent, a new session is created.", required = false)
+            @ToolParam(description = "재사용할 기존 MCP session ID. 없으면 새 세션이 생성됨.", required = false)
             String mcp_session_id) {
         McpProviderType providerType = parseProvider(provider);
         if (providerType == null) {
@@ -139,9 +139,9 @@ public class McpAuthMcpTools {
                     + "mcp_session_id와 provider가 모두 필요합니다."
     )
     public McpAuthLogoutResponse logoutProvider(
-            @ToolParam(description = "Provider to unlink: SAINT, LMS, or LIBRARY.")
+            @ToolParam(description = "연동 해제할 provider: SAINT, LMS, LIBRARY 중 하나.")
             String provider,
-            @ToolParam(description = "MCP session ID issued by start_auth.")
+            @ToolParam(description = "start_auth로 발급받은 MCP session ID.")
             String mcp_session_id) {
         McpProviderType providerType = parseProvider(provider);
         if (providerType == null) {
@@ -169,7 +169,7 @@ public class McpAuthMcpTools {
                     + "mcp_session_id가 필요합니다."
     )
     public McpAuthLogoutResponse logoutAll(
-            @ToolParam(description = "MCP session ID to fully invalidate.")
+            @ToolParam(description = "완전히 무효화할 MCP session ID.")
             String mcp_session_id) {
         if (mcp_session_id == null || mcp_session_id.isBlank()) {
             return new McpAuthLogoutResponse("ERROR", null, null, "mcp_session_id is required.");

@@ -38,7 +38,7 @@ public class LmsMaterialsMcpTool {
                     + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsCourses(
-            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            @ToolParam(description = "start_auth(LMS)로 LMS를 연동한 MCP session ID.")
             String mcp_session_id,
             @ToolParam(required = false, description = "조회할 학기 ID. 생략 시 현재 활성 학기가 선택됩니다.")
             Long term_id
@@ -71,7 +71,7 @@ public class LmsMaterialsMcpTool {
                     + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsMaterials(
-            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            @ToolParam(description = "start_auth(LMS)로 LMS를 연동한 MCP session ID.")
             String mcp_session_id,
             @ToolParam(description = "조회할 LMS 과목 ID 목록 (get_my_lms_courses에서 획득).")
             List<Long> course_ids,

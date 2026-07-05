@@ -43,17 +43,17 @@ public class LibraryWaitMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> waitForLibrarySeat(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id,
-            @ToolParam(required = false, description = "Preferred floor: 2, 5, 6, 2F, 5F, or 6F.")
+            @ToolParam(required = false, description = "선호 층: 2, 5, 6, 2F, 5F, 6F 중 하나.")
             String floor,
-            @ToolParam(required = false, description = "Preferred Pyxis room IDs as JSON array or CSV, e.g. [57,58] or 57,58.")
+            @ToolParam(required = false, description = "선호 Pyxis room ID. JSON 배열 또는 CSV 형식, 예: [57,58] 또는 57,58.")
             String room_ids,
-            @ToolParam(required = false, description = "Required attributes as JSON object/array or CSV: window,outlet,standing,edge,quiet,nearEntrance.")
+            @ToolParam(required = false, description = "필수 속성. JSON 객체/배열 또는 CSV 형식: window,outlet,standing,edge,quiet,nearEntrance.")
             String seat_attributes,
-            @ToolParam(required = false, description = "Fixed Pyxis seat ID to reserve when available.")
+            @ToolParam(required = false, description = "가용 시 예약할 고정 Pyxis 좌석 ID.")
             String target_seat_id,
-            @ToolParam(required = false, description = "Wait expiry in minutes. Defaults to 120 minutes.")
+            @ToolParam(required = false, description = "대기 만료 시간(분). 기본 120분.")
             Integer expires_in_minutes
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
@@ -70,7 +70,7 @@ public class LibraryWaitMcpTool {
             description = "최신 도서관 좌석 대기 intent 상태를 조회합니다. mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> getLibraryWaitStatus(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
@@ -91,7 +91,7 @@ public class LibraryWaitMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> cancelLibraryWait(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)

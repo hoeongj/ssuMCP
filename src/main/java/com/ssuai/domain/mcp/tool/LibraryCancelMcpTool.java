@@ -46,7 +46,7 @@ public class LibraryCancelMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibraryPrepareResult> prepareCancelLibrarySeat(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)

@@ -131,7 +131,7 @@ public class AcademicPolicyMcpTools {
             String question,
             @ToolParam(required = false, description = "true면 공식 원문을 live fetch. false/생략이면 빠른 seed corpus 검색.")
             Boolean live,
-            @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(SAINT)로 발급받은 MCP session ID. 없거나 SAINT 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.SAINT)
                 .map(principal -> {

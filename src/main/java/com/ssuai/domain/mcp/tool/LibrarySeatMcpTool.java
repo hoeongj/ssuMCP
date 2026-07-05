@@ -40,7 +40,7 @@ public class LibrarySeatMcpTool {
     public McpPrivateToolResponse<Object> getLibrarySeatStatus(
             @ToolParam(description = "조회할 도서관 층 코드. 가능한 값: 2 (2층), 5 (5층), 6 (6층).")
             int floor,
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY). If absent or LIBRARY not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID. 없거나 LIBRARY 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id,
             @ToolParam(description = "compact=true: 전체/가용/예약 수치만 반환 (층 요약). compact=false(기본): 구역별 상세 포함.", required = false)
             Boolean compact

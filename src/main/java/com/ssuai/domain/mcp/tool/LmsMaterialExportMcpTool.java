@@ -40,7 +40,7 @@ public class LmsMaterialExportMcpTool {
                     + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> prepareLmsMaterialExport(
-            @ToolParam(description = "MCP session ID with LMS linked.")
+            @ToolParam(description = "LMS가 연동된 MCP session ID.")
             String mcp_session_id,
             @ToolParam(description = "내보내기할 LMS 자료의 content_id 목록.")
             List<String> content_ids,
@@ -75,7 +75,7 @@ public class LmsMaterialExportMcpTool {
             + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> exportAllLmsMaterials(
-            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            @ToolParam(description = "start_auth(LMS)로 LMS를 연동한 MCP session ID.")
             String mcp_session_id,
             @ToolParam(required = false, description = "조회할 학기 ID. 생략 시 현재 활성 학기가 자동 선택됩니다.")
             Long term_id
@@ -104,7 +104,7 @@ public class LmsMaterialExportMcpTool {
                     + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> confirmLmsMaterialExport(
-            @ToolParam(description = "MCP session ID with LMS linked.")
+            @ToolParam(description = "LMS가 연동된 MCP session ID.")
             String mcp_session_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)

@@ -51,7 +51,7 @@ public class LibrarySwapMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibraryPrepareResult> prepareSwapLibrarySeat(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id,
             @ToolParam(description = "새로 예약할 좌석 ID (숫자). get_library_seat_status 또는 recommend_library_seats에서 확인.")
             String new_seat_id

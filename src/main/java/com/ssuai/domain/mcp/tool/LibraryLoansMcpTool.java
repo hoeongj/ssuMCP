@@ -44,7 +44,7 @@ public class LibraryLoansMcpTool {
                     + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<LibraryLoansResponse> getMyLibraryLoans(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY). If absent or LIBRARY not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID. 없거나 LIBRARY 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
                 .map(principal -> {

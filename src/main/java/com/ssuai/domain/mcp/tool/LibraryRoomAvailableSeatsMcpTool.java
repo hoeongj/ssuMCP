@@ -42,7 +42,7 @@ public class LibraryRoomAvailableSeatsMcpTool {
     public McpPrivateToolResponse<LibraryRoomAvailableSeatsResponse> getRoomAvailableSeats(
             @ToolParam(description = "열람실 ID. 가능한 값: 15(1열람실 B1F), 53(숭실스퀘어ON), 54(오픈열람실), 57(마루열람실), 58(대학원열람실), 59(리클라이너), 60(숭실멀티라운지).")
             int roomId,
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)

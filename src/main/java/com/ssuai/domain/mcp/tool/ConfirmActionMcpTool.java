@@ -78,7 +78,7 @@ public class ConfirmActionMcpTool {
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> confirmAction(
-            @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
+            @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
             String mcp_session_id,
             @ToolParam(required = false,
                     description = "확정할 액션 ID (prepare 응답의 actionId). 생략하면 현재 대기 중인 단일 액션을 확정합니다.")

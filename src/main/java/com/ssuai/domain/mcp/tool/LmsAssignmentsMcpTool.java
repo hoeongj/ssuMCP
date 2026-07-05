@@ -49,7 +49,7 @@ public class LmsAssignmentsMcpTool {
                     + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<Object> getMyAssignments(
-            @ToolParam(description = "MCP session ID issued by start_auth(LMS). If absent or LMS not linked, returns AUTH_REQUIRED with a loginUrl.")
+            @ToolParam(description = "start_auth(LMS)로 발급받은 MCP session ID. 없거나 LMS 미연동이면 loginUrl과 함께 AUTH_REQUIRED를 반환.")
             String mcp_session_id,
             @ToolParam(description = "compact=true: 과제명·마감일만 반환. compact=false(기본): 상세 정보 포함.", required = false)
             Boolean compact,
@@ -82,7 +82,7 @@ public class LmsAssignmentsMcpTool {
                     + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> getMyLmsTerms(
-            @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
+            @ToolParam(description = "start_auth(LMS)로 LMS를 연동한 MCP session ID.")
             String mcp_session_id) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LMS)
                 .map(principal -> {
