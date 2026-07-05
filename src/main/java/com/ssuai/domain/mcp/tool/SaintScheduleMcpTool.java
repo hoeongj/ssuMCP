@@ -37,14 +37,13 @@ public class SaintScheduleMcpTool {
 
     @Tool(
             name = "get_my_schedule",
-            description = "Returns the authenticated student's u-SAINT timetable grouped by course. "
-                    + "Without year and term it returns the current u-SAINT selected semester; "
-                    + "pass both year and term to fetch a specific semester. "
-                    + "Term values: 1=spring, 2=summer, 3=fall, 4=winter. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth. "
-                    + "Returns AUTH_REQUIRED with a loginUrl if SAINT is not authenticated — "
-                    + "show the loginUrl to the user and ask them to open it in a browser, "
-                    + "then retry this call with the returned mcp_session_id."
+            description = "인증된 학생의 u-SAINT 시간표를 과목별로 묶어 조회합니다. "
+                    + "year와 term을 생략하면 현재 u-SAINT에서 선택된 학기를 반환하며, "
+                    + "특정 학기를 조회하려면 year와 term을 모두 전달하세요. "
+                    + "term 값: 1=봄학기, 2=여름학기, 3=가을학기, 4=겨울학기. "
+                    + "mcp_session_id 필요(SAINT 로그인). "
+                    + "미인증 시 loginUrl이 포함된 AUTH_REQUIRED를 반환하므로, loginUrl을 사용자에게 보여주고 "
+                    + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<ScheduleResponse> getMySchedule(
             @ToolParam(required = false, description = "Academic year, such as 2026. Must be provided together with term.")

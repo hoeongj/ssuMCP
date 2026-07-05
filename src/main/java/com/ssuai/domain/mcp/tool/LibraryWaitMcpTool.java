@@ -37,10 +37,10 @@ public class LibraryWaitMcpTool {
 
     @Tool(
             name = "wait_for_library_seat",
-            description = "Register a background wait intent for a Soongsil central-library seat. "
-                    + "This call itself is the user's consent: after registration, when a matching seat opens, "
-                    + "the server worker may autonomously reserve it without a later confirm_action call. "
-                    + "Requires mcp_session_id linked with start_auth(LIBRARY)."
+            description = "숭실대학교 중앙도서관 좌석에 대한 백그라운드 대기 intent를 등록합니다. "
+                    + "이 호출 자체가 사용자의 동의이며, 등록 후 조건에 맞는 좌석이 나오면 "
+                    + "서버 워커가 이후 confirm_action 호출 없이 자동으로 예약할 수 있습니다. "
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> waitForLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
@@ -67,7 +67,7 @@ public class LibraryWaitMcpTool {
 
     @Tool(
             name = "get_library_wait_status",
-            description = "Get the latest library seat wait intent status. Requires mcp_session_id linked with start_auth(LIBRARY)."
+            description = "최신 도서관 좌석 대기 intent 상태를 조회합니다. mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> getLibraryWaitStatus(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
@@ -87,8 +87,8 @@ public class LibraryWaitMcpTool {
 
     @Tool(
             name = "cancel_library_wait",
-            description = "Cancel the active library seat wait intent if it has not started reserving. "
-                    + "Requires mcp_session_id linked with start_auth(LIBRARY)."
+            description = "아직 예약이 시작되지 않은 활성 도서관 좌석 대기 intent를 취소합니다. "
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> cancelLibraryWait(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")

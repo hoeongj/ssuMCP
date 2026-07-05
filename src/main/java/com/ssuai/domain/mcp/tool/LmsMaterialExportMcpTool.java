@@ -37,7 +37,7 @@ public class LmsMaterialExportMcpTool {
                     + "특정 과목 다운로드 요청의 기본 흐름입니다. 호출 전에 get_my_lms_courses로 과목+파일 목록(과목별 파일 수·용량·content_id 포함)을 사용자에게 보여주고 "
                     + "어떤 과목을 받을지 선택하게 하세요. 선택된 과목의 content_id들은 get_my_lms_courses 응답에 이미 들어있으니 그대로 content_ids 파라미터로 전달하면 됩니다(get_my_lms_materials 재호출 불필요). "
                     + "한도 초과 또는 미지원 파일은 자동 제외되고 안내됩니다. "
-                    + "mcp_session_id with LMS provider linked required."
+                    + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> prepareLmsMaterialExport(
             @ToolParam(description = "MCP session ID with LMS linked.")
@@ -72,7 +72,7 @@ public class LmsMaterialExportMcpTool {
             + "결과에는 과목별 파일 목록, 파일 수, 용량, 제외 항목이 포함됩니다. "
             + "확인 후 confirm_lms_material_export를 호출하면 ZIP 다운로드 링크가 발급됩니다. "
             + "비디오·오디오 파일은 용량 제한으로 자동 제외됩니다. "
-            + "mcp_session_id with LMS provider linked required."
+            + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> exportAllLmsMaterials(
             @ToolParam(description = "MCP session ID with LMS linked via start_auth(LMS).")
@@ -101,7 +101,7 @@ public class LmsMaterialExportMcpTool {
             name = "confirm_lms_material_export",
             description = "대기 상태인 LMS 자료 내보내기 액션을 실행 승인합니다. "
                     + "승인 성공 시 비동기 ZIP 압축 빌드 작업이 큐에 쌓이고, 20분간 유효한 capability URL 다운로드 링크가 반환됩니다. "
-                    + "mcp_session_id with LMS provider linked required."
+                    + "mcp_session_id 필요(LMS 로그인)."
     )
     public McpPrivateToolResponse<Object> confirmLmsMaterialExport(
             @ToolParam(description = "MCP session ID with LMS linked.")

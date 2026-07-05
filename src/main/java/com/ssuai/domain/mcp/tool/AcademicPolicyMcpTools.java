@@ -124,7 +124,7 @@ public class AcademicPolicyMcpTools {
 
     @Tool(
             name = "evaluate_graduation_with_policy",
-            description = "인증된 학생의 u-SAINT 졸업요건 상태와 공식 학칙/졸업 안내 근거를 함께 반환합니다. Requires mcp_session_id with the SAINT provider linked via start_auth."
+            description = "인증된 학생의 u-SAINT 졸업요건 상태와 공식 학칙/졸업 안내 근거를 함께 반환합니다. mcp_session_id 필요(SAINT 로그인)."
     )
     public McpPrivateToolResponse<GraduationPolicyEvaluationResponse> evaluateGraduationWithPolicy(
             @ToolParam(required = false, description = "추가로 확인할 졸업 질문. 생략하면 졸업요건, 이수학점, 전공/교양 기준을 검색합니다.")

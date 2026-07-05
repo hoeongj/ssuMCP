@@ -32,12 +32,12 @@ public class LibrarySeatRecommendationMcpTool {
 
     @Tool(
             name = "recommend_library_seats",
-            description = "Ranks currently available Soongsil library seats by user preferences. "
-                    + "This read-only tool combines live seat availability with the static seat catalog "
-                    + "in library/seat-catalog.json. Boolean preferences use true for wanted, false for avoided, "
-                    + "and null/omitted for no preference. Graduate-only reading rooms are excluded by default; "
-                    + "set include_graduate_only=true only for graduate students. "
-                    + "Use prepare_reserve_library_seat only after the user chooses a recommended seat."
+            description = "현재 예약 가능한 숭실대학교 도서관 좌석을 사용자 선호도에 따라 순위화합니다. "
+                    + "이 읽기 전용 도구는 실시간 좌석 현황과 library/seat-catalog.json의 정적 좌석 카탈로그를 결합합니다. "
+                    + "불리언 선호도는 true면 선호, false면 회피, null/생략이면 선호 없음을 의미합니다. "
+                    + "대학원생 전용 열람실은 기본적으로 제외되며, 대학원생인 경우에만 include_graduate_only=true를 설정하세요. "
+                    + "prepare_reserve_library_seat는 사용자가 추천된 좌석을 선택한 뒤에만 호출하세요. "
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibrarySeatRecommendationResponse> recommendLibrarySeats(
             @ToolParam(description = "Library floor code. Allowed values: 2, 5, 6.")

@@ -35,11 +35,10 @@ public class SaintGradesMcpTool {
 
     @Tool(
             name = "get_my_grades",
-            description = "Returns the authenticated student's cumulative u-SAINT grades including semester GPA history. "
-                    + "Requires mcp_session_id with the SAINT provider linked via start_auth. "
-                    + "Returns AUTH_REQUIRED with a loginUrl if SAINT is not authenticated — "
-                    + "show the loginUrl to the user and ask them to open it in a browser, "
-                    + "then retry this call with the returned mcp_session_id."
+            description = "인증된 학생의 u-SAINT 누적 성적을 학기별 GPA 이력과 함께 조회합니다. "
+                    + "mcp_session_id 필요(SAINT 로그인). "
+                    + "미인증 시 loginUrl이 포함된 AUTH_REQUIRED를 반환하므로, loginUrl을 사용자에게 보여주고 "
+                    + "브라우저에서 로그인하도록 안내한 뒤 발급된 mcp_session_id로 다시 호출하세요."
     )
     public McpPrivateToolResponse<GradesResponse> getMyGrades(
             @ToolParam(description = "MCP session ID issued by start_auth(SAINT). If absent or SAINT not linked, returns AUTH_REQUIRED with a loginUrl.")

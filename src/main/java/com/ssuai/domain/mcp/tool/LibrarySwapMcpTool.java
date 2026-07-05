@@ -48,7 +48,7 @@ public class LibrarySwapMcpTool {
                     + "현재 예약 정보를 자동으로 조회하므로 charge_id를 따로 입력하지 않아도 됩니다. "
                     + "변경은 이 도구만으로 실행되지 않으며, confirm_action을 호출해야 최종 실행됩니다. "
                     + "현재 예약이 없으면 prepare_reserve_library_seat를 사용하세요. "
-                    + "Requires mcp_session_id with the LIBRARY provider linked via start_auth."
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<LibraryPrepareResult> prepareSwapLibrarySeat(
             @ToolParam(description = "MCP session ID issued by start_auth(LIBRARY).")
