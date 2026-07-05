@@ -8,6 +8,10 @@ on:
       # ArgoCD Application / ImageUpdater manifests are cluster wiring only — they
       # never affect the backend build, so don't rebuild+redeploy the image on them.
       - 'deploy/argocd/**'
+      # Docs never affect the Gradle build — a docs-only change must not rebuild
+      # and redeploy the backend image.
+      - 'docs/**'
+      - '**.md'
   pull_request:
   workflow_dispatch:
 
