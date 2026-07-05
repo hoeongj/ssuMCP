@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths-ignore:
       - 'deploy/charts/ssuai-backend/values.yaml'
+      # ArgoCD Application / ImageUpdater manifests are cluster wiring only — they
+      # never affect the backend build, so don't rebuild+redeploy the image on them.
+      - 'deploy/argocd/**'
   pull_request:
   workflow_dispatch:
 

@@ -1,3 +1,12 @@
+# ImageUpdater CRs (CRD-based argocd-image-updater). Each app that should be
+# auto-deployed needs one CR here; `useAnnotations: true` reads the image-list /
+# allow-tags / write-back config from the referenced Application's annotations.
+# Applied manually to the cluster (no ArgoCD app syncs this dir):
+#   kubectl apply -f deploy/argocd/image-updater/imageupdater-cr.yaml
+# NOTE (2026-07-05): ssu-ai-service had no CR here, so image-updater never
+# considered it and its image tag stayed the static `latest` — the service never
+# auto-deployed. Adding it (and ssu-agent, previously applied but undocumented)
+# restores continuous delivery for every app.
 apiVersion: argocd-image-updater.argoproj.io/v1alpha1
 kind: ImageUpdater
 metadata:
@@ -6,4 +15,24 @@ metadata:
 spec:
   applicationRefs:
     - namePattern: ssuai-backend
+      useAnnotations: true
+---
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: ssu-agent
+  namespace: argocd
+spec:
+  applicationRefs:
+    - namePattern: ssu-agent
+      useAnnotations: true
+---
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: ssu-ai-service
+  namespace: argocd
+spec:
+  applicationRefs:
+    - namePattern: ssu-ai-service
       useAnnotations: true
