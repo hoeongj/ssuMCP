@@ -31,7 +31,7 @@ dependencyManagement {
         // 4.0.6 platform does not manage the standalone testcontainers artifacts, so without
         // this BOM they resolve to an empty version. Kept in the 1.20.x line that
         // com.redis:testcontainers-redis:2.2.2 is built against.
-        mavenBom 'org.testcontainers:testcontainers-bom:1.20.6'
+        mavenBom 'org.testcontainers:testcontainers-bom:2.0.5'
     }
 }
 
