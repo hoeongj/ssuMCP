@@ -15,6 +15,7 @@ public class LmsExportProperties {
     private Duration downloadTtl = Duration.ofMinutes(20);
     private String tempDir = System.getProperty("java.io.tmpdir") + "/ssuai-lms-export";
     private Duration pollInterval = Duration.ofSeconds(5);
+    private Duration leaseDuration = Duration.ofMinutes(5);
     private String publicBaseUrl = "";
 
     public int getMaxFilesPerExport() {
@@ -63,6 +64,17 @@ public class LmsExportProperties {
 
     public void setPollInterval(Duration pollInterval) {
         this.pollInterval = pollInterval;
+    }
+
+    public Duration getLeaseDuration() {
+        return leaseDuration;
+    }
+
+    public void setLeaseDuration(Duration leaseDuration) {
+        if (leaseDuration == null || leaseDuration.isZero() || leaseDuration.isNegative()) {
+            throw new IllegalArgumentException("leaseDuration must be positive");
+        }
+        this.leaseDuration = leaseDuration;
     }
 
     public String getPublicBaseUrl() {

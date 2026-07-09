@@ -36,6 +36,12 @@ public class LibraryReservationOutbox {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
+    @Column(name = "claimed_by", length = 128)
+    private String claimedBy;
+
     protected LibraryReservationOutbox() {
         // JPA
     }
@@ -56,6 +62,13 @@ public class LibraryReservationOutbox {
 
     public void markPublished(Instant now) {
         this.publishedAt = Objects.requireNonNull(now, "now");
+        this.claimedAt = null;
+        this.claimedBy = null;
+    }
+
+    public void claim(String owner, Instant now) {
+        this.claimedBy = requireNonBlank(owner, "owner");
+        this.claimedAt = Objects.requireNonNull(now, "now");
     }
 
     public Long getId() {
@@ -80,5 +93,20 @@ public class LibraryReservationOutbox {
 
     public Instant getPublishedAt() {
         return publishedAt;
+    }
+
+    public Instant getClaimedAt() {
+        return claimedAt;
+    }
+
+    public String getClaimedBy() {
+        return claimedBy;
+    }
+
+    private static String requireNonBlank(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " cannot be blank");
+        }
+        return value;
     }
 }

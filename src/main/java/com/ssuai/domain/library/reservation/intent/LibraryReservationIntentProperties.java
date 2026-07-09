@@ -17,6 +17,7 @@ public class LibraryReservationIntentProperties {
     private Duration maxBackoff = Duration.ofMinutes(5);
     private Duration relayInterval = Duration.ofSeconds(2);
     private int relayBatchSize = 50;
+    private Duration relayLease = Duration.ofSeconds(30);
     private boolean notifyWakeEnabled = true;
     private Duration notifyListenTimeout = Duration.ofSeconds(1);
     private Duration notifyReconnectDelay = Duration.ofSeconds(5);
@@ -96,6 +97,14 @@ public class LibraryReservationIntentProperties {
             throw new IllegalArgumentException("relayBatchSize must be positive");
         }
         this.relayBatchSize = relayBatchSize;
+    }
+
+    public Duration getRelayLease() {
+        return relayLease;
+    }
+
+    public void setRelayLease(Duration relayLease) {
+        this.relayLease = positive(relayLease, "relayLease");
     }
 
     public boolean isNotifyWakeEnabled() {

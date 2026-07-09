@@ -6,37 +6,32 @@ import java.util.List;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class LibraryReservationEventRelay {
 
-    private final LibraryReservationOutboxRepository outboxRepository;
-    private final LibraryReservationIntentProperties properties;
+    private final LibraryReservationOutboxClaimer claimer;
     private final LibraryReservationIntentMetrics metrics;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public LibraryReservationEventRelay(
-            LibraryReservationOutboxRepository outboxRepository,
-            LibraryReservationIntentProperties properties,
+            LibraryReservationOutboxClaimer claimer,
             LibraryReservationIntentMetrics metrics,
             ApplicationEventPublisher eventPublisher,
             Clock clock) {
-        this.outboxRepository = outboxRepository;
-        this.properties = properties;
+        this.claimer = claimer;
         this.metrics = metrics;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "#{@libraryReservationIntentProperties.relayInterval.toMillis()}")
-    @Transactional
     public int relay() {
-        List<LibraryReservationOutbox> unpublished =
-                outboxRepository.findUnpublished(properties.getRelayBatchSize());
-        unpublished.forEach(this::publish);
-        return unpublished.size();
+        List<LibraryReservationOutbox> claimed = claimer.claimBatch();
+        claimed.forEach(this::publish);
+        claimer.markPublished(claimed);
+        return claimed.size();
     }
 
     private void publish(LibraryReservationOutbox outbox) {

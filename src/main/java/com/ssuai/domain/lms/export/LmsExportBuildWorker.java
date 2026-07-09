@@ -7,6 +7,7 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +19,7 @@ import java.util.zip.ZipOutputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -288,18 +290,32 @@ class BoundedOutputStream extends FilterOutputStream {
 
 @Component
 class LmsExportJobClaimer {
-    private final LmsExportJobRepository repository;
+    private static final Logger log = LoggerFactory.getLogger(LmsExportJobClaimer.class);
 
-    public LmsExportJobClaimer(LmsExportJobRepository repository) {
+    private final LmsExportJobRepository repository;
+    private final LmsExportProperties properties;
+    private final Clock clock;
+    private final String ownerId;
+
+    public LmsExportJobClaimer(
+            LmsExportJobRepository repository,
+            LmsExportProperties properties,
+            Clock clock,
+            @Value("${HOSTNAME:${random.uuid}}") String ownerId) {
         this.repository = repository;
+        this.properties = properties;
+        this.clock = clock;
+        this.ownerId = ownerId;
     }
 
     @Transactional
     public Optional<LmsExportJob> claimNextJob() {
-        Optional<LmsExportJob> jobOpt = repository.findFirstByStatusOrderByCreatedAtAsc(LmsExportStatus.QUEUED);
+        Instant now = clock.instant();
+        Optional<LmsExportJob> jobOpt =
+                repository.findClaimableForUpdate(now.minus(properties.getLeaseDuration()));
         if (jobOpt.isPresent()) {
             LmsExportJob job = jobOpt.get();
-            job.markBuilding();
+            job.claim(ownerId, now);
             return Optional.of(repository.save(job));
         }
         return Optional.empty();
@@ -307,6 +323,11 @@ class LmsExportJobClaimer {
 
     @Transactional
     public void saveJob(LmsExportJob job) {
+        Optional<LmsExportJob> current = repository.findByIdForUpdate(job.getId());
+        if (current.isEmpty() || !ownerId.equals(current.get().getClaimedBy())) {
+            log.warn("Ignoring stale LMS export completion: jobId={} owner={}", job.getId(), ownerId);
+            return;
+        }
         repository.save(job);
     }
 }

@@ -17,7 +17,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class LibraryReservationEventRelayTests {
 
     @Test
-    void dispatchesUnpublishedEventsAndMarksPublished() {
+    void dispatchesClaimedEventsAndCompletesBatch() {
         Instant now = Instant.parse("2026-06-11T00:00:00Z");
         LibraryReservationOutbox outbox = new LibraryReservationOutbox(
                 LibraryReservationIntentEventType.WAIT_REGISTERED,
@@ -26,15 +26,13 @@ class LibraryReservationEventRelayTests {
                 now.minusSeconds(1));
         ReflectionTestUtils.setField(outbox, "id", 9L);
 
-        LibraryReservationOutboxRepository repository = mock(LibraryReservationOutboxRepository.class);
+        LibraryReservationOutboxClaimer claimer = mock(LibraryReservationOutboxClaimer.class);
         LibraryReservationIntentMetrics metrics = mock(LibraryReservationIntentMetrics.class);
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        LibraryReservationIntentProperties properties = new LibraryReservationIntentProperties();
-        when(repository.findUnpublished(50)).thenReturn(List.of(outbox));
+        when(claimer.claimBatch()).thenReturn(List.of(outbox));
 
         LibraryReservationEventRelay relay = new LibraryReservationEventRelay(
-                repository,
-                properties,
+                claimer,
                 metrics,
                 publisher,
                 Clock.fixed(now, ZoneOffset.UTC));
@@ -42,7 +40,6 @@ class LibraryReservationEventRelayTests {
         int count = relay.relay();
 
         assertThat(count).isEqualTo(1);
-        assertThat(outbox.getPublishedAt()).isEqualTo(now);
         verify(publisher).publishEvent(new LibraryReservationOutboxEvent(
                 9L,
                 LibraryReservationIntentEventType.WAIT_REGISTERED,
@@ -50,5 +47,6 @@ class LibraryReservationEventRelayTests {
                 "{\"intentId\":1}",
                 now.minusSeconds(1)));
         verify(metrics).countRelay(LibraryReservationIntentEventType.WAIT_REGISTERED);
+        verify(claimer).markPublished(List.of(outbox));
     }
 }

@@ -53,6 +53,12 @@ public class LmsExportJob {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
+    @Column(name = "claimed_by", length = 128)
+    private String claimedBy;
+
     protected LmsExportJob() {
         // JPA
     }
@@ -81,6 +87,15 @@ public class LmsExportJob {
         this.status = LmsExportStatus.BUILDING;
     }
 
+    public void claim(String owner, Instant now) {
+        if (status != LmsExportStatus.QUEUED && status != LmsExportStatus.BUILDING) {
+            throw new IllegalStateException("Only QUEUED or BUILDING jobs can be claimed. Current status: " + status);
+        }
+        this.status = LmsExportStatus.BUILDING;
+        this.claimedBy = requireNonBlank(owner, "owner");
+        this.claimedAt = Objects.requireNonNull(now, "now");
+    }
+
     public void markReady(String filePath, int fileCount, long totalBytes, Instant completedAt) {
         if (status != LmsExportStatus.BUILDING) {
             throw new IllegalStateException("Only BUILDING jobs can transition to READY. Current status: " + status);
@@ -90,6 +105,7 @@ public class LmsExportJob {
         this.totalBytes = totalBytes;
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt");
         this.status = LmsExportStatus.READY;
+        clearClaim();
     }
 
     public void markFailed(String reason, Instant completedAt) {
@@ -99,11 +115,13 @@ public class LmsExportJob {
         this.failureReason = reason;
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt");
         this.status = LmsExportStatus.FAILED;
+        clearClaim();
     }
 
     public void markExpired(Instant expiredAt) {
         this.status = LmsExportStatus.EXPIRED;
         this.completedAt = Objects.requireNonNull(expiredAt, "expiredAt");
+        clearClaim();
     }
 
     public String getId() {
@@ -152,6 +170,19 @@ public class LmsExportJob {
 
     public Instant getCompletedAt() {
         return completedAt;
+    }
+
+    public Instant getClaimedAt() {
+        return claimedAt;
+    }
+
+    public String getClaimedBy() {
+        return claimedBy;
+    }
+
+    private void clearClaim() {
+        this.claimedAt = null;
+        this.claimedBy = null;
     }
 
     private static String requireNonBlank(String value, String field) {
