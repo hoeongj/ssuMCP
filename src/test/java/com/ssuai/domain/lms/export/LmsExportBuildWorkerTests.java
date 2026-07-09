@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,18 +14,18 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.ArgumentCaptor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssuai.domain.auth.lms.LmsCookies;
@@ -67,6 +68,8 @@ class LmsExportBuildWorkerTests {
         );
 
         when(sessionStore.cookies(STUDENT_ID)).thenReturn(Optional.of(COOKIES));
+        when(repository.findAllByExpiresAtBefore(any())).thenReturn(List.of());
+        when(repository.findAllById(any())).thenReturn(List.of());
     }
 
     @Test
@@ -82,6 +85,7 @@ class LmsExportBuildWorkerTests {
         job.markBuilding();
 
         when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(repository.findAllById(any())).thenReturn(List.of(job));
         when(connector.resolveDownload(COOKIES, "c1")).thenReturn(Optional.of(new ContentDownloadInfo("c1", "a", "https://url/1")));
         when(connector.resolveDownload(COOKIES, "c2")).thenReturn(Optional.of(new ContentDownloadInfo("c2", "a", "https://url/2")));
         when(connector.resolveDownload(COOKIES, "c3")).thenReturn(Optional.empty()); // No download URI
@@ -90,10 +94,6 @@ class LmsExportBuildWorkerTests {
         when(connector.resolveDownload(COOKIES, "c1")).thenReturn(Optional.of(new ContentDownloadInfo("c1", "a", "https://url/1")));
         when(connector.resolveDownload(COOKIES, "c2")).thenReturn(Optional.of(new ContentDownloadInfo("c2", "a", "https://url/2")));
         when(connector.resolveDownload(COOKIES, "c3")).thenReturn(Optional.empty()); // Missing download URL
-
-        // Mock download calls
-        ArgumentCaptor<OutputStream> outCaptor1 = ArgumentCaptor.forClass(OutputStream.class);
-        ArgumentCaptor<OutputStream> outCaptor2 = ArgumentCaptor.forClass(OutputStream.class);
 
         // When
         worker.poll();
@@ -218,5 +218,89 @@ class LmsExportBuildWorkerTests {
 
         File partialZip = new File(tempDir, job.getId() + ".zip");
         assertThat(partialZip.exists()).isFalse();
+    }
+
+    @Test
+    void sweepDeletesManagedZipWithoutJobRow() throws Exception {
+        String jobId = UUID.randomUUID().toString();
+        Path orphanZip = writeManagedZip(jobId);
+
+        when(claimer.claimNextJob()).thenReturn(Optional.empty());
+        when(repository.findAllById(any())).thenReturn(List.of());
+
+        worker.poll();
+
+        assertThat(orphanZip).doesNotExist();
+    }
+
+    @Test
+    void sweepKeepsZipForActivelyClaimedBuildingJob() throws Exception {
+        LmsExportJob job = LmsExportJob.createQueued(
+                STUDENT_ID,
+                "hash",
+                "{\"selections\":[],\"totalBytes\":0}",
+                Instant.now(),
+                Instant.now().plusSeconds(600));
+        job.claim("pod-b", Instant.now());
+        Path activeZip = writeManagedZip(job.getId());
+
+        when(claimer.claimNextJob()).thenReturn(Optional.empty());
+        when(repository.findAllById(any())).thenReturn(List.of(job));
+
+        worker.poll();
+
+        assertThat(activeZip).exists();
+    }
+
+    @Test
+    void sweepSkipsExpiredActiveBuildingJob() throws Exception {
+        LmsExportJob job = LmsExportJob.createQueued(
+                STUDENT_ID,
+                "hash",
+                "{\"selections\":[],\"totalBytes\":0}",
+                Instant.now().minusSeconds(1200),
+                Instant.now().minusSeconds(60));
+        job.claim("pod-b", Instant.now());
+        Path activeZip = writeManagedZip(job.getId());
+
+        when(claimer.claimNextJob()).thenReturn(Optional.empty());
+        when(repository.findAllByExpiresAtBefore(any())).thenReturn(List.of(job));
+        when(repository.findAllById(any())).thenReturn(List.of(job));
+
+        worker.poll();
+
+        assertThat(activeZip).exists();
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.BUILDING);
+        verify(repository, never()).save(job);
+    }
+
+    @Test
+    void sweepRetriesDeletionForAlreadyExpiredJobRows() throws Exception {
+        LmsExportJob job = LmsExportJob.createQueued(
+                STUDENT_ID,
+                "hash",
+                "{\"selections\":[],\"totalBytes\":0}",
+                Instant.now().minusSeconds(1200),
+                Instant.now().minusSeconds(60));
+        Path expiredZip = writeManagedZip(job.getId());
+        job.markBuilding();
+        job.markReady(expiredZip.toString(), 1, 3L, Instant.now().minusSeconds(300));
+        job.markExpired(Instant.now().minusSeconds(60));
+
+        when(claimer.claimNextJob()).thenReturn(Optional.empty());
+        when(repository.findAllByExpiresAtBefore(any())).thenReturn(List.of(job));
+        when(repository.findAllById(any())).thenReturn(List.of(job));
+
+        worker.poll();
+
+        assertThat(expiredZip).doesNotExist();
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.EXPIRED);
+        verify(repository, never()).save(job);
+    }
+
+    private Path writeManagedZip(String jobId) throws IOException {
+        Path path = tempDir.toPath().resolve(jobId + ".zip");
+        Files.writeString(path, "zip", StandardCharsets.UTF_8);
+        return path;
     }
 }

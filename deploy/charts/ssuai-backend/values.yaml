@@ -182,9 +182,10 @@ podSecurityContext:
   # group-owns the PVC mount as gid 1001 — the container runs as uid 1001 and
   # must be able to write ZIPs into the volume.
   fsGroup: 1001
-# Durable storage for the LMS export ZIP cache. k3s ships local-path-provisioner
-# (RWO, node-local) which survives pod restarts on the single prod node. RWX /
-# object storage is only needed once replicaCount > 1 — over-investment now.
+# Durable storage for the LMS export ZIP cache (ADR 0084). k3s local-path is
+# RWO and node-local: two backend pods may mount it read-write only because prod
+# is a single-node k3s cluster. A multi-node move must switch this to RWX storage
+# or S3/MinIO; do not treat this PVC as a multi-node storage design.
 persistence:
   lmsExport:
     enabled: true

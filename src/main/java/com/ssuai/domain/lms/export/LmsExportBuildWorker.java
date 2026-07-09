@@ -7,19 +7,26 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +44,8 @@ import com.ssuai.domain.lms.dto.SelectionPayload;
 public class LmsExportBuildWorker {
 
     private static final Logger log = LoggerFactory.getLogger(LmsExportBuildWorker.class);
+    private static final Pattern MANAGED_ZIP_NAME = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.zip$");
 
     private final LmsExportJobRepository repository;
     private final LmsMaterialsConnector connector;
@@ -59,11 +68,22 @@ public class LmsExportBuildWorker {
 
     @Scheduled(fixedDelayString = "#{@lmsExportProperties.pollInterval.toMillis()}")
     public void poll() {
+        runOnce(true);
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void sweepOnStartup() {
+        runOnce(false);
+    }
+
+    private void runOnce(boolean buildJobs) {
         if (!running.compareAndSet(false, true)) {
             return;
         }
         try {
-            buildQueuedJobs();
+            if (buildJobs) {
+                buildQueuedJobs();
+            }
             sweepExpiredJobs();
         } finally {
             running.set(false);
@@ -197,20 +217,113 @@ public class LmsExportBuildWorker {
         Instant now = Instant.now();
         List<LmsExportJob> expired = repository.findAllByExpiresAtBefore(now);
         for (LmsExportJob job : expired) {
-            if (job.getStatus() == LmsExportStatus.EXPIRED) {
+            if (isActiveBuild(job, now)) {
                 continue;
             }
-            try {
-                if (job.getFilePath() != null) {
-                    File file = new File(job.getFilePath());
-                    Files.deleteIfExists(file.toPath());
-                }
-            } catch (IOException e) {
-                log.warn("Failed to delete expired ZIP file: path={} jobId={}", job.getFilePath(), job.getId(), e);
+            if (job.getFilePath() != null) {
+                deleteExportFile(Path.of(job.getFilePath()), job.getId(), "expired ZIP");
             }
-            job.markExpired(now);
-            repository.save(job);
-            log.info("Expired LMS material export job: jobId={}", job.getId());
+            if (job.getStatus() != LmsExportStatus.EXPIRED) {
+                job.markExpired(now);
+                repository.save(job);
+                log.info("Expired LMS material export job: jobId={}", job.getId());
+            }
+        }
+        sweepOrphanZipFiles(now);
+    }
+
+    private void sweepOrphanZipFiles(Instant now) {
+        Path exportDir = exportDir();
+        if (!Files.isDirectory(exportDir)) {
+            return;
+        }
+
+        List<Path> zipFiles;
+        try (Stream<Path> stream = Files.list(exportDir)) {
+            zipFiles = stream
+                    .filter(Files::isRegularFile)
+                    .filter(this::isManagedZip)
+                    .toList();
+        } catch (IOException e) {
+            log.warn("Failed to list LMS export directory for orphan ZIP sweep: path={}", exportDir, e);
+            return;
+        }
+
+        if (zipFiles.isEmpty()) {
+            return;
+        }
+
+        List<String> jobIds = zipFiles.stream()
+                .map(this::jobIdFromZip)
+                .toList();
+        Map<String, LmsExportJob> jobsById = new HashMap<>();
+        for (LmsExportJob job : repository.findAllById(jobIds)) {
+            jobsById.put(job.getId(), job);
+        }
+
+        for (Path zipFile : zipFiles) {
+            String jobId = jobIdFromZip(zipFile);
+            LmsExportJob job = jobsById.get(jobId);
+            if (shouldRetainZip(zipFile, job, now)) {
+                continue;
+            }
+            deleteExportFile(zipFile, jobId, job == null ? "orphan ZIP without DB row" : "orphan ZIP for inactive job");
+        }
+    }
+
+    private boolean shouldRetainZip(Path zipFile, LmsExportJob job, Instant now) {
+        if (job == null) {
+            return false;
+        }
+        if (isActiveBuild(job, now)) {
+            return true;
+        }
+        if ((job.getStatus() == LmsExportStatus.READY || job.getStatus() == LmsExportStatus.DOWNLOADED)
+                && !now.isAfter(job.getExpiresAt())
+                && job.getFilePath() != null) {
+            return sameNormalizedPath(zipFile, Path.of(job.getFilePath()));
+        }
+        return false;
+    }
+
+    private boolean isActiveBuild(LmsExportJob job, Instant now) {
+        if (job.getStatus() != LmsExportStatus.BUILDING || job.getClaimedAt() == null) {
+            return false;
+        }
+        Instant leaseCutoff = now.minus(properties.getLeaseDuration());
+        return job.getClaimedAt().isAfter(leaseCutoff);
+    }
+
+    private boolean isManagedZip(Path path) {
+        Path fileName = path.getFileName();
+        return fileName != null && MANAGED_ZIP_NAME.matcher(fileName.toString()).matches();
+    }
+
+    private String jobIdFromZip(Path path) {
+        String fileName = path.getFileName().toString();
+        return fileName.substring(0, fileName.length() - ".zip".length());
+    }
+
+    private boolean sameNormalizedPath(Path left, Path right) {
+        return left.toAbsolutePath().normalize().equals(right.toAbsolutePath().normalize());
+    }
+
+    private Path exportDir() {
+        return Path.of(properties.getTempDir()).toAbsolutePath().normalize();
+    }
+
+    private void deleteExportFile(Path path, String jobId, String reason) {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(exportDir())) {
+            log.warn("Refusing to delete LMS export file outside export directory: jobId={} path={}", jobId, normalized);
+            return;
+        }
+        try {
+            if (Files.deleteIfExists(normalized)) {
+                log.info("Deleted LMS export {}: jobId={} path={}", reason, jobId, normalized);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to delete LMS export {}: jobId={} path={}", reason, jobId, normalized, e);
         }
     }
 

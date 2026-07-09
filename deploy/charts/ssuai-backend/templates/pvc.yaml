@@ -19,6 +19,8 @@ metadata:
     argocd.argoproj.io/sync-options: Prune=false
 spec:
   accessModes:
+    # ADR 0084: local-path RWO is acceptable only for the current single-node
+    # k3s cluster. Multi-node scheduling requires RWX storage or S3/MinIO.
     - ReadWriteOnce
   {{- if .Values.persistence.lmsExport.storageClass }}
   storageClassName: {{ .Values.persistence.lmsExport.storageClass | quote }}
