@@ -261,8 +261,8 @@ McpAuthHelper.principalKey(mcp_session_id)
 
 - 인터넷에서 접근 가능한 모든 환경에서 HTTPS만 사용한다. 로컬 개발은 평문 HTTP를 사용할 수 있다.
 - 프로덕션 응답에 HSTS 헤더를 포함한다.
-- CORS allowlist는 명시적(배포된 프론트엔드 origin)이며, 절대 `*`가 아니다.
-- **`Access-Control-Allow-Credentials: true`**는 크로스 사이트 프론트엔드가 `credentials: 'include'`로 호출하는 모든 엔드포인트(현재 `/api/**` 전체)에 필요하다. 이것이 없으면 200 OK 응답도 프론트엔드 JavaScript에 숨겨져 사용자는 백엔드 에러 없이 일반적인 실패 메시지를 보게 된다. `ApiCorsDefaults`가 이를 설정하며, 이를 되돌리는 회귀는 `WebCorsConfigTest`·`WebCorsProdConfigTest`로 잡힌다. 이 조합은 `allowedOrigins`가 명시적 목록(`*` 아님)일 때만 유효하며, 현재 그렇게 되어 있다.
+- CORS allowlist는 공개 read/SSE endpoint에만 명시적으로 열린다(ADR 0087). prod exact origin은 `SSUAI_FRONTEND_ORIGIN`, preview는 `https://ssuai-*.vercel.app`, local은 `localhost:3000`/`127.0.0.1:3000`이다.
+- 공개 CORS mapping은 `allowCredentials(false)`다. 직접 origin 호출은 학식·기숙사 식단, 공지, 시설, 학사일정, 도서관 좌석 상태/SSE, 도서 검색처럼 로그인 없는 GET/SSE만 허용한다. refresh cookie, library `JSESSIONID`, SmartID/LMS Bearer, 예약/대출, MCP web session, agent stream은 ssuAI same-origin proxy path를 유지한다.
 - 학교 시스템으로의 아웃바운드 연결은 학교 사이트가 지원하는 경우 HTTPS를 사용한다. 학교 엔드포인트가 HTTP 전용이라면 문서화하고 응답을 신뢰하지 않는 것으로 취급한다 (방어적으로 파싱한다).
 
 ---

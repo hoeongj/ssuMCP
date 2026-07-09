@@ -784,7 +784,9 @@ lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
 
 - **Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui**로 웹 대시보드를 구현한다.
 - **TanStack Query**로 서버 상태 (캐싱, 재시도, 백그라운드 재검증)를 관리해 UI를 단순하게 유지하고 백엔드를 stateless로 유지한다.
-- 백엔드 URL은 환경 변수(`NEXT_PUBLIC_SSUAI_API_BASE`)에서 읽는다 — 하드코딩된 호스트가 없다.
+- ssuAI는 공개 조회/SSE backend origin을 `NEXT_PUBLIC_BACKEND_ORIGIN`(fallback:
+  `NEXT_PUBLIC_SSUAI_API_BASE`)에서 읽고, 인증·세션 경로는 same-origin proxy를 유지한다
+  (ADR 0087). 하드코딩된 호스트가 없다.
 - 별도의 `ssuAI` 저장소가 대시보드 카드, `/chat`, 도서관·SAINT·LMS 데이터를 위한 provider 연동 UX를 담당한다.
 - 제품 범위와 UI 결정은 [ssuAI docs](https://github.com/hoeongj/ssuAI/tree/main/docs)에 있으며, 이 서버 문서는 서버/API 경계를 기록한다.
 

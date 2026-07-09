@@ -2,8 +2,11 @@ package com.ssuai.global.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 
@@ -19,25 +22,46 @@ class WebCorsProdConfigTest {
     }
 
     @Test
-    void apiCorsMappingAllowsGetPostAndOptions() {
+    void publicCorsMappingAllowsGetAndOptions() {
         InspectableCorsRegistry registry = new InspectableCorsRegistry();
 
         new WebCorsProdConfig("https://test.example.com").addCorsMappings(registry);
 
-        CorsConfiguration config = registry.corsConfiguration("/api/**");
+        CorsConfiguration config = registry.corsConfiguration("/api/meals/today");
         assertThat(config).isNotNull();
-        assertThat(config.getAllowedMethods()).contains("GET", "POST", "OPTIONS");
+        assertThat(config.getAllowedMethods()).containsExactly("GET", "OPTIONS");
+        assertThat(registry.pathPatterns())
+                .containsExactlyInAnyOrderElementsOf(ApiCorsDefaults.PUBLIC_READ_MAPPINGS);
     }
 
     @Test
-    void apiCorsMappingAllowsCredentialsUnderProd() {
+    void publicCorsMappingDoesNotAllowCredentialsUnderProd() {
         InspectableCorsRegistry registry = new InspectableCorsRegistry();
 
         new WebCorsProdConfig("https://test.example.com").addCorsMappings(registry);
 
-        CorsConfiguration config = registry.corsConfiguration("/api/**");
+        CorsConfiguration config = registry.corsConfiguration("/api/library/seats/events");
         assertThat(config).isNotNull();
-        assertThat(config.getAllowCredentials()).isTrue();
+        assertThat(config.getAllowCredentials()).isFalse();
+    }
+
+    @Test
+    void publicPreflightAllowsProdAndPreviewOriginsButNotAuthenticatedEndpoints() {
+        InspectableCorsRegistry registry = new InspectableCorsRegistry();
+
+        new WebCorsProdConfig("https://ssuai.vercel.app").addCorsMappings(registry);
+
+        CorsConfiguration config = registry.corsConfiguration("/api/library/seats");
+        assertThat(config).isNotNull();
+        assertThat(config.checkOrigin("https://ssuai.vercel.app")).isEqualTo("https://ssuai.vercel.app");
+        assertThat(config.checkOrigin("https://ssuai-git-main-hoeongj.vercel.app"))
+                .isEqualTo("https://ssuai-git-main-hoeongj.vercel.app");
+        assertThat(config.checkHttpMethod(HttpMethod.GET)).contains(HttpMethod.GET);
+        assertThat(config.checkHeaders(List.of("accept"))).contains("accept");
+        assertThat(config.getAllowCredentials()).isFalse();
+
+        assertThat(registry.corsConfiguration("/api/auth/refresh")).isNull();
+        assertThat(registry.corsConfiguration("/api/library/reservations/prepare")).isNull();
     }
 
     @Test
@@ -85,6 +109,10 @@ class WebCorsProdConfigTest {
 
         private CorsConfiguration corsConfiguration(String pathPattern) {
             return getCorsConfigurations().get(pathPattern);
+        }
+
+        private java.util.Set<String> pathPatterns() {
+            return getCorsConfigurations().keySet();
         }
     }
 }

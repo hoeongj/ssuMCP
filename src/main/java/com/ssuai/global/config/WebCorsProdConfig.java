@@ -1,5 +1,7 @@
 package com.ssuai.global.config;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -9,6 +11,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 @Profile("prod")
 public class WebCorsProdConfig implements WebMvcConfigurer {
+
+    private static final String VERCEL_PREVIEW_ORIGIN_PATTERN = "https://ssuai-*.vercel.app";
 
     private final String frontendOrigin;
 
@@ -24,6 +28,9 @@ public class WebCorsProdConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        ApiCorsDefaults.register(registry, frontendOrigin);
+        ApiCorsDefaults.register(
+                registry,
+                List.of(frontendOrigin),
+                List.of(VERCEL_PREVIEW_ORIGIN_PATTERN));
     }
 }

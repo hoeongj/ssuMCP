@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.dto.LibrarySeatStatusResponse;
+import com.ssuai.domain.library.timeseries.LibrarySamplerSessionManager;
 import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 
@@ -18,16 +19,43 @@ public class LibrarySeatService {
 
     private final LibrarySeatCache cache;
     private final LibrarySessionStore sessionStore;
+    private final LibrarySamplerSessionManager samplerSessionManager;
     private final boolean authRequired;
 
     public LibrarySeatService(
             LibrarySeatCache cache,
             LibrarySessionStore sessionStore,
+            LibrarySamplerSessionManager samplerSessionManager,
             @Value("${ssuai.connector.library-seat:mock}") String connectorMode
     ) {
         this.cache = cache;
         this.sessionStore = sessionStore;
+        this.samplerSessionManager = samplerSessionManager;
         this.authRequired = "real".equalsIgnoreCase(connectorMode);
+    }
+
+    public LibrarySeatStatusResponse getPublicSeatStatus(LibraryFloor floor) {
+        if (!authRequired) {
+            return fetchWithToken(floor, null);
+        }
+
+        String token = samplerSessionManager.currentToken().orElse(null);
+        boolean loginAttempted = false;
+        if (token == null) {
+            token = samplerSessionManager.loginForRun().orElse(null);
+            loginAttempted = true;
+        }
+
+        try {
+            return fetchWithToken(floor, token);
+        } catch (LibraryAuthRequiredException exception) {
+            samplerSessionManager.invalidateToken();
+            if (loginAttempted) {
+                throw exception;
+            }
+            String refreshed = samplerSessionManager.loginForRun().orElseThrow(() -> exception);
+            return fetchWithToken(floor, refreshed);
+        }
     }
 
     public LibrarySeatStatusResponse getSeatStatusForSession(LibraryFloor floor, String sessionKey) {
