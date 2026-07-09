@@ -1,0 +1,7 @@
+apiVersion: v2
+name: postgres
+description: Prod PostgreSQL (pgvector) for ssuAI — GitOps adoption of the manually kubectl-applied DB Deployment
+type: application
+version: 0.1.0
+# Tracks the live image tag (pgvector/pgvector:pg17). Bump alongside values.yaml.
+appVersion: "17"

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "postgres.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postgres.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # Single-node PVC (ReadWriteOnce, local-path): Recreate avoids two postgres
+  # pods contending for the same data directory during a rollout — a
+  # RollingUpdate would deadlock waiting for the old pod to release the
+  # volume the new pod can never mount.
+  strategy:
+    type: {{ .Values.strategy.type }}
+  # CRITICAL — must stay exactly `app: postgres`, byte-for-byte the live
+  # Deployment's original (manually kubectl-applied) selector. spec.selector
+  # is immutable: any diff here (extra keys, renamed key, different value)
+  # makes the Kubernetes API reject the update, and ArgoCD would have to
+  # delete+recreate the Deployment to reconcile — losing the running pod
+  # unnecessarily (the PVC itself would survive, but so would an avoidable
+  # downtime window). Do not route this through a shared "selectorLabels"
+  # helper that emits app.kubernetes.io/name — that is a different label.
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.db.name | quote }}
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret.name }}
+                  key: {{ .Values.existingSecret.usernameKey }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret.name }}
+                  key: {{ .Values.existingSecret.passwordKey }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: pgdata
+              mountPath: {{ .Values.persistence.mountPath }}
+      volumes:
+        # Pre-existing PVC (holds the live data directory) — referenced by
+        # name only, never created/owned by this chart. See values.yaml
+        # persistence.existingClaim.
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}

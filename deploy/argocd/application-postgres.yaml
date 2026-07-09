@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+  # NOTE: no argocd-image-updater annotations. pgvector/pgvector:pg17 is a
+  # pinned PUBLIC upstream image, not built by our CI. Bump the tag in
+  # deploy/charts/postgres/values.yaml manually.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hoeongj/ssuMCP.git
+    targetRevision: main
+    path: deploy/charts/postgres
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ssuai-prod
+  # Manual sync (not automated like n8n/ssuai-backend): this Application
+  # ADOPTS an already-live, manually kubectl-applied Deployment. The first
+  # sync restarts the DB pod (strategy Recreate — see chart README), so an
+  # operator must review `argocd app diff postgres` before syncing rather
+  # than let self-heal apply it unattended. Promote to
+  # `syncPolicy.automated: { prune: true, selfHeal: true }` once a few
+  # manual syncs have confirmed the rendered manifest matches the live
+  # object with no unexpected diffs (selector/labels especially).
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
