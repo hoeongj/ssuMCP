@@ -67,22 +67,45 @@ public class LibraryWaitMcpTool {
 
     @Tool(
             name = "get_library_wait_status",
-            description = "최신 도서관 좌석 대기 intent 상태를 조회합니다. mcp_session_id 필요(LIBRARY 로그인)."
+            description = "도서관 좌석 대기/예약 intent 상태를 조회합니다. "
+                    + "intent_id를 생략하면 가장 최근 intent를 반환합니다(대기 intent가 하나뿐인 일반적인 경우에 사용). "
+                    + "confirm_action으로 접수된 좌석 예약처럼 여러 intent가 동시에 진행 중일 수 있는 경우, "
+                    + "confirm_action 응답에 포함된 intentId를 intent_id로 지정해 특정 intent의 결과를 확인하세요. "
+                    + "mcp_session_id 필요(LIBRARY 로그인)."
     )
     public McpPrivateToolResponse<String> getLibraryWaitStatus(
             @ToolParam(description = "start_auth(LIBRARY)로 발급받은 MCP session ID.")
-            String mcp_session_id
+            String mcp_session_id,
+            @ToolParam(required = false,
+                    description = "조회할 특정 intent ID (confirm_action/wait_for_library_seat 응답의 intentId). "
+                            + "생략하면 가장 최근 intent를 반환합니다.")
+            Long intent_id
     ) {
         return authHelper.resolvePrincipal(mcp_session_id, McpProviderType.LIBRARY)
                 .map(principal -> {
-                    Optional<LibraryReservationIntentView> latest = transactions.latestForSession(principal.studentId());
+                    Optional<LibraryReservationIntentView> found = intent_id != null
+                            ? findByIdOwnedBySession(intent_id, principal.studentId())
+                            : transactions.latestForSession(principal.studentId());
                     return McpPrivateToolResponse.ok(principal.sessionId(), McpProviderType.LIBRARY.name(),
-                            latest.map(this::statusMessage).orElse("No library seat wait intent exists."));
+                            found.map(this::statusMessage).orElse("No library seat wait intent exists."));
                 })
                 .orElseGet(() -> {
                     log.debug("get_library_wait_status: LIBRARY not linked, returning AUTH_REQUIRED");
                     return authHelper.<String>buildAuthRequired(mcp_session_id, McpProviderType.LIBRARY);
                 });
+    }
+
+    /**
+     * IDOR guard for explicit intent_id lookups (mirrors the SSE subscribe endpoint's ownership
+     * check): a guessable/sequential intentId must not let one session read another session's
+     * reservation outcome. Not-found and not-owned both resolve to empty so the caller cannot
+     * distinguish "unknown id" from "someone else's id".
+     */
+    private Optional<LibraryReservationIntentView> findByIdOwnedBySession(Long intentId, String sessionKey) {
+        if (!transactions.isOwnedBySession(intentId, sessionKey)) {
+            return Optional.empty();
+        }
+        return transactions.findById(intentId);
     }
 
     @Tool(

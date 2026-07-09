@@ -142,6 +142,44 @@ class ActionServiceTests {
     }
 
     @Test
+    void createPendingActionWithTargetKeySupersedesOnlySameActionTypeAndTarget() {
+        // ADR 0086: the 4-arg overload used by MCP library prepare tools scopes supersede to
+        // (studentId, actionType, targetKey), NOT the whole owner — a re-prepare of the SAME
+        // seat (same target) supersedes its own predecessor.
+        when(repository.markPendingSupersededForAction(eq(STUDENT_ID), eq(ACTION_TYPE), eq("101"), eq(NOW)))
+                .thenReturn(1);
+
+        ActionAudit b = service.createPendingAction(
+                STUDENT_ID, ACTION_TYPE, "101", new LibraryReservationRequest(101L));
+
+        verify(repository).markPendingSupersededForAction(STUDENT_ID, ACTION_TYPE, "101", NOW);
+        verify(repository, never()).markPendingSuperseded(any(), any());
+        assertThat(b.getStatus()).isEqualTo(ActionStatus.PENDING);
+        assertThat(b.getTargetKey()).isEqualTo("101");
+        assertCounter("superseded");
+        assertCounter("prepared");
+    }
+
+    @Test
+    void createPendingActionWithDifferentTargetKeyDoesNotSupersedeOtherPendingActions() {
+        // Two concurrently-pending actions of the same owner for DIFFERENT targets (e.g. two
+        // different seat reservations, G2) must NOT invalidate each other — only
+        // confirm_action's action_id disambiguation decides which one runs.
+        when(repository.markPendingSupersededForAction(eq(STUDENT_ID), eq(ACTION_TYPE), eq("202"), eq(NOW)))
+                .thenReturn(0);
+
+        ActionAudit b = service.createPendingAction(
+                STUDENT_ID, ACTION_TYPE, "202", new LibraryReservationRequest(202L));
+
+        verify(repository).markPendingSupersededForAction(STUDENT_ID, ACTION_TYPE, "202", NOW);
+        assertThat(b.getStatus()).isEqualTo(ActionStatus.PENDING);
+        assertThat(meterRegistry.find("library.action")
+                .tag("action_type", ACTION_TYPE)
+                .tag("status", "superseded")
+                .counter()).isNull();
+    }
+
+    @Test
     void claimPendingActionByIdMovesOwnedPendingActionToExecuting() {
         ActionAudit owned = ActionAudit.pending(STUDENT_ID, ACTION_TYPE, "{\"seatId\":101}", NOW);
         ReflectionTestUtils.setField(owned, "id", 55L);

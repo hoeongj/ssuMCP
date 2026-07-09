@@ -71,9 +71,13 @@ public class LibraryCancelMcpTool {
                     new LibraryPrepareResult(0L, "현재 예약된 좌석이 없습니다."));
         }
 
+        // Target key = charge id of the currently-held reservation: a user only ever has one
+        // active charge, so re-preparing a cancel always supersedes the prior pending cancel
+        // (ADR 0086) — matches the pre-existing owner-wide behavior for this action type.
         long actionId = actionService.createPendingAction(
                 sessionKey,
                 ACTION_TYPE,
+                String.valueOf(current.chargeId()),
                 new LibraryCancelRequest(current.chargeId(), current.roomId(), current.seatId())).getId();
         String message = String.format(
                 "%s %s번 좌석 반납을 준비했습니다 (예약번호: %d, 이용시간: %s~%s). "

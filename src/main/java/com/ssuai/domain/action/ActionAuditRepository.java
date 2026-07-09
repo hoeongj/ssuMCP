@@ -24,9 +24,15 @@ public interface ActionAuditRepository extends JpaRepository<ActionAudit, Long> 
 
     /**
      * Atomically marks every still-PENDING action of {@code studentId} as SUPERSEDED in a
-     * single UPDATE (ADR 0055). Called inside the prepare transaction <em>before</em>
-     * inserting the new PENDING row, so an owner is left with at most one active PENDING
-     * action and a later confirm can never execute a stale, never-re-approved request.
+     * single UPDATE, REGARDLESS of {@code actionType}/{@code targetKey} (ADR 0055; scope
+     * intentionally left owner-wide here — see ADR 0086). Used only by the legacy,
+     * non-{@code action_id} confirm callers ({@code LibraryReservationWebController},
+     * {@code LmsMaterialExportService.confirm}) that pick "the most recent PENDING action" with
+     * no disambiguation: those callers still require the ADR 0055 invariant of at most one
+     * active PENDING action per owner at any time, across every action type. MCP prepare tools
+     * (which support explicit {@code action_id} confirm targeting) use the narrower
+     * {@link #markPendingSupersededForAction} instead so unrelated concurrent actions of the
+     * same owner (e.g. two different pending seat reservations) no longer invalidate each other.
      * Reuses {@code expired_at} as the made-inert timestamp. Returns the rows changed.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -34,6 +40,24 @@ public interface ActionAuditRepository extends JpaRepository<ActionAudit, Long> 
             + "a.expiredAt = :supersededAt "
             + "where a.studentId = :studentId and a.status = com.ssuai.domain.action.ActionStatus.PENDING")
     int markPendingSuperseded(@Param("studentId") String studentId,
+                              @Param("supersededAt") Instant supersededAt);
+
+    /**
+     * Atomically marks PENDING actions of {@code studentId} as SUPERSEDED, scoped to the same
+     * {@code actionType} AND {@code targetKey} (ADR 0086, narrowing ADR 0055's owner-wide scope).
+     * Called inside the prepare transaction <em>before</em> inserting the new PENDING row, so a
+     * re-prepare of the SAME action (e.g. the same seat id, the same charge id) replaces its own
+     * predecessor while a DIFFERENT concurrent action of the same owner is left untouched.
+     * Reuses {@code expired_at} as the made-inert timestamp. Returns the rows changed.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update ActionAudit a set a.status = com.ssuai.domain.action.ActionStatus.SUPERSEDED, "
+            + "a.expiredAt = :supersededAt "
+            + "where a.studentId = :studentId and a.actionType = :actionType and a.targetKey = :targetKey "
+            + "and a.status = com.ssuai.domain.action.ActionStatus.PENDING")
+    int markPendingSupersededForAction(@Param("studentId") String studentId,
+                              @Param("actionType") String actionType,
+                              @Param("targetKey") String targetKey,
                               @Param("supersededAt") Instant supersededAt);
 
     /**

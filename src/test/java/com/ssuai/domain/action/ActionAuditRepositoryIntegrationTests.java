@@ -76,6 +76,39 @@ class ActionAuditRepositoryIntegrationTests {
     }
 
     @Test
+    void actionScopedPrepareSupersedesOnlySameTargetLeavingDifferentTargetPending() {
+        // ADR 0086: the MCP library prepare tools call the 4-arg createPendingAction overload,
+        // which scopes supersede to (studentId, actionType, targetKey). Re-preparing the SAME
+        // seat (same target) supersedes its predecessor; a DIFFERENT seat does not — both stay
+        // concurrently PENDING, reproducing G2's "two concurrent reservations" scenario, which
+        // confirm_action's action_id disambiguation (ADR 0055) then resolves.
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+
+        Long seat101First = template.execute(status -> actionService
+                .createPendingAction(OWNER_X, ACTION_TYPE, "101", new LibraryReservationRequest(101L)).getId());
+        Long seat202 = template.execute(status -> actionService
+                .createPendingAction(OWNER_X, ACTION_TYPE, "202", new LibraryReservationRequest(202L)).getId());
+        Long seat101Second = template.execute(status -> actionService
+                .createPendingAction(OWNER_X, ACTION_TYPE, "101", new LibraryReservationRequest(101L)).getId());
+
+        // Re-preparing seat 101 superseded the FIRST seat-101 row (same target)...
+        assertThat(repository.findById(seat101First).orElseThrow().getStatus())
+                .isEqualTo(ActionStatus.SUPERSEDED);
+        // ...but left the seat-202 row (a different, concurrent action) untouched...
+        assertThat(repository.findById(seat202).orElseThrow().getStatus())
+                .isEqualTo(ActionStatus.PENDING);
+        // ...and the new seat-101 row is PENDING.
+        assertThat(repository.findById(seat101Second).orElseThrow().getStatus())
+                .isEqualTo(ActionStatus.PENDING);
+
+        // Owner X now has exactly two active PENDING actions — confirm_action's no-id path must
+        // refuse and ask for an explicit action_id rather than guess between them.
+        assertThat(repository.findAllByStudentIdAndStatus(OWNER_X, ActionStatus.PENDING))
+                .extracting(ActionAudit::getId)
+                .containsExactlyInAnyOrder(seat202, seat101Second);
+    }
+
+    @Test
     void markPendingSupersededPersistsSupersededStatusAndTouchesOnlyOwner() {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         Long x = template.execute(status ->

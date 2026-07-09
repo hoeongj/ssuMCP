@@ -52,9 +52,17 @@ public class ActionService {
 
     /**
      * Prepares a new PENDING action for {@code studentId}. Before inserting it, every prior
-     * still-PENDING action of the same owner is atomically marked SUPERSEDED (ADR 0055) so a
-     * later confirm can never execute a stale request the user did not re-approve. After this
-     * call the owner has exactly one active PENDING action: the one returned here.
+     * still-PENDING action of the same owner — REGARDLESS of {@code actionType} — is atomically
+     * marked SUPERSEDED (ADR 0055), so the owner has exactly one active PENDING action after this
+     * call: the one returned here.
+     *
+     * <p>Callers: {@code LibraryReservationWebController} (web confirm has no {@code action_id}
+     * and claims "the most recent PENDING action") and {@code LmsMaterialExportService} (same
+     * shape). Both require the ADR 0055 "at most one PENDING per owner" invariant because neither
+     * can disambiguate between several concurrently-pending actions. MCP library prepare tools do
+     * NOT use this overload — they call {@link #createPendingAction(String, String, String,
+     * Object)} instead, which scopes supersede to the specific action (ADR 0086) since
+     * {@code confirm_action} can target one of several pending actions by {@code action_id}.
      */
     @Transactional
     public ActionAudit createPendingAction(String studentId, String actionType, Object payload) {
@@ -65,7 +73,34 @@ public class ActionService {
             meterRegistry.counter("library.action", "action_type", actionType, "status", "superseded")
                     .increment(superseded);
         }
-        ActionAudit action = ActionAudit.pending(studentId, actionType, serialized, now);
+        ActionAudit action = ActionAudit.pending(studentId, actionType, actionType, serialized, now);
+        ActionAudit saved = repository.save(action);
+        count(actionType, "prepared");
+        return saved;
+    }
+
+    /**
+     * Prepares a new PENDING action for {@code studentId}, identified by {@code actionType} +
+     * {@code targetKey} (ADR 0086, narrowing ADR 0055's owner-wide scope). Before inserting it,
+     * only the prior still-PENDING action(s) of the same owner with the SAME
+     * {@code (actionType, targetKey)} are atomically marked SUPERSEDED — a re-prepare of the same
+     * action (e.g. the same seat, the same charge id) replaces its own predecessor, but a
+     * different concurrent action of the same owner (a different seat, a cancel vs. a reserve) is
+     * left PENDING. Used by the MCP library prepare tools, whose {@code confirm_action} can
+     * target one of several concurrently-pending actions via {@code action_id} and refuses to
+     * guess when more than one is pending and no id was given (ADR 0055) — that disambiguation
+     * guard is what makes the narrower scope here safe.
+     */
+    @Transactional
+    public ActionAudit createPendingAction(String studentId, String actionType, String targetKey, Object payload) {
+        String serialized = serialize(payload);
+        Instant now = clock.instant();
+        int superseded = repository.markPendingSupersededForAction(studentId, actionType, targetKey, now);
+        if (superseded > 0) {
+            meterRegistry.counter("library.action", "action_type", actionType, "status", "superseded")
+                    .increment(superseded);
+        }
+        ActionAudit action = ActionAudit.pending(studentId, actionType, targetKey, serialized, now);
         ActionAudit saved = repository.save(action);
         count(actionType, "prepared");
         return saved;

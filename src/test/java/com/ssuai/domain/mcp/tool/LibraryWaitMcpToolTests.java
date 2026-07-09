@@ -1,7 +1,10 @@
 package com.ssuai.domain.mcp.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -83,5 +86,72 @@ class LibraryWaitMcpToolTests {
                 .contains("intentId=11")
                 .contains("WAITING_FOR_SEAT")
                 .contains("autonomously reserve");
+    }
+
+    @Test
+    void getWaitStatusWithoutIntentIdReturnsLatestForSession() {
+        // Backward-compatible default (no intent_id): the pre-existing "latest wait intent"
+        // behavior, used by the plain wait_for_library_seat flow where only one intent matters.
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
+        when(transactions.latestForSession(SESSION_KEY))
+                .thenReturn(Optional.of(intentView(20L, LibraryReservationIntentStatus.RESERVING)));
+
+        McpPrivateToolResponse<String> response = tool.getLibraryWaitStatus(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("intentId=20").contains("RESERVING");
+        verify(transactions, never()).isOwnedBySession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void getWaitStatusWithIntentIdReturnsThatSpecificIntentWhenOwned() {
+        // C1 follow-up: after confirm_action returns ACCEPTED with an intentId for a specific
+        // reservation, get_library_wait_status(intent_id=...) must be able to look up THAT
+        // intent even if a newer, unrelated intent has since become "latest" for the session —
+        // this is what disambiguates concurrent reservations (G2).
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
+        when(transactions.isOwnedBySession(eq(21L), eq(SESSION_KEY))).thenReturn(true);
+        when(transactions.findById(21L))
+                .thenReturn(Optional.of(intentView(21L, LibraryReservationIntentStatus.SUCCEEDED)));
+
+        McpPrivateToolResponse<String> response = tool.getLibraryWaitStatus(SESSION_ID, 21L);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).contains("intentId=21").contains("SUCCEEDED");
+        verify(transactions, never()).latestForSession(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void getWaitStatusWithIntentIdNotOwnedByCallerReturnsNoIntentMessage() {
+        // IDOR guard (mirrors the SSE subscribe endpoint): a guessable intentId belonging to
+        // another session must not leak that session's reservation outcome.
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LIBRARY))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(SESSION_KEY, SESSION_ID)));
+        when(transactions.isOwnedBySession(eq(999L), eq(SESSION_KEY))).thenReturn(false);
+
+        McpPrivateToolResponse<String> response = tool.getLibraryWaitStatus(SESSION_ID, 999L);
+
+        assertThat(response.status()).isEqualTo("OK");
+        assertThat(response.data()).isEqualTo("No library seat wait intent exists.");
+        verify(transactions, never()).findById(org.mockito.ArgumentMatchers.any());
+    }
+
+    private static LibraryReservationIntentView intentView(Long intentId, LibraryReservationIntentStatus status) {
+        boolean terminal = status != LibraryReservationIntentStatus.RESERVING
+                && status != LibraryReservationIntentStatus.WAITING_FOR_SEAT
+                && status != LibraryReservationIntentStatus.REQUESTED;
+        return new LibraryReservationIntentView(
+                intentId,
+                status,
+                0,
+                NOW,
+                NOW.plusSeconds(300),
+                terminal ? NOW : null,
+                terminal ? status.name() : null,
+                terminal ? "done" : null,
+                3179L,
+                77L);
     }
 }
