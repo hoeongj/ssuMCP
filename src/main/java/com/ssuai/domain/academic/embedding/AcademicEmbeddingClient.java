@@ -6,10 +6,13 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+
+import com.ssuai.global.resilience.GlobalLlmSpendBreaker;
 
 /**
  * Calls Gemini's OpenAI-compatible {@code /embeddings} endpoint.
@@ -32,11 +35,22 @@ public class AcademicEmbeddingClient {
 
     private static final Logger log = LoggerFactory.getLogger(AcademicEmbeddingClient.class);
 
+    /** SCALE-ROADMAP audit A3 — meter name for {@link GlobalLlmSpendBreaker}. */
+    private static final String SPEND_METER = "embedding";
+
     private final AcademicEmbeddingProperties properties;
     private final RestClient restClient;
+    private final GlobalLlmSpendBreaker spendBreaker;
 
+    /** Convenience constructor for tests/back-compat: no global spend ceiling enforced. */
     public AcademicEmbeddingClient(AcademicEmbeddingProperties properties) {
+        this(properties, GlobalLlmSpendBreaker.forTesting());
+    }
+
+    @Autowired
+    public AcademicEmbeddingClient(AcademicEmbeddingProperties properties, GlobalLlmSpendBreaker spendBreaker) {
         this.properties = properties;
+        this.spendBreaker = spendBreaker;
         this.restClient = RestClient.builder()
                 .baseUrl(trimTrailingSlash(properties.getBaseUrl()))
                 .build();
@@ -77,6 +91,18 @@ public class AcademicEmbeddingClient {
             if (start > 0 && !sleep(properties.getBatchIntervalMs())) {
                 return vectors;
             }
+            // SCALE-ROADMAP audit A3: global daily/monthly spend ceiling, checked per
+            // batch (each batch is one billable Gemini /embeddings call). A denial here
+            // reuses the exact same "return the successfully embedded prefix so far"
+            // degradation path already used for a failed/rate-limited batch below —
+            // no new error surface, and embedQuery() (a single-batch embed()) naturally
+            // returns float[0], which the caller already treats as "fall back to
+            // lexical search" (AcademicPolicyService.search).
+            if (!spendBreaker.tryAcquire(SPEND_METER)) {
+                log.warn("academic-embedding: global spend ceiling reached at offset {}/{}; "
+                        + "returning {} embedded so far", start, texts.size(), vectors.size());
+                return vectors;
+            }
             List<String> batch = texts.subList(start, Math.min(texts.size(), start + batchSize));
             EmbeddingResponse response = embedBatchWithRetry(batch);
             if (response == null || response.data() == null || response.data().size() != batch.size()) {
@@ -84,6 +110,10 @@ public class AcademicEmbeddingClient {
                         start, texts.size(), vectors.size());
                 return vectors;
             }
+            // Increment ONLY after a successful, fully-decoded batch response — a failed
+            // or rate-limited batch (handled above/in embedBatchWithRetry) must not
+            // consume spend budget.
+            spendBreaker.recordUsage(SPEND_METER);
             for (EmbeddingResponse.Item item : response.data()) {
                 vectors.add(normalizeAndTruncate(item.embedding(), properties.getDimensions()));
             }

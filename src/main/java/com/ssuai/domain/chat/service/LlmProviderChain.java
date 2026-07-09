@@ -30,6 +30,7 @@ import com.ssuai.domain.chat.service.llm.LlmProvider;
 import com.ssuai.domain.chat.service.llm.LlmProviderException;
 import com.ssuai.global.admin.AdminResilienceResponse;
 import com.ssuai.global.exception.ChatUnavailableException;
+import com.ssuai.global.resilience.GlobalLlmSpendBreaker;
 
 @Component
 @ConditionalOnProperty(name = "ssuai.connector.chat", havingValue = "llm")
@@ -37,17 +38,22 @@ public class LlmProviderChain {
 
     private static final Logger log = LoggerFactory.getLogger(LlmProviderChain.class);
 
+    /** SCALE-ROADMAP audit A3 — meter name for {@link GlobalLlmSpendBreaker}. */
+    private static final String SPEND_METER = "chat";
+
     private final Map<String, LlmProvider> providersByName;
     private final LlmChatProperties properties;
     private final LlmProviderCbRegistry circuitBreakers;
     private final ObservationRegistry observationRegistry;
+    private final GlobalLlmSpendBreaker spendBreaker;
 
     @Autowired
     public LlmProviderChain(
             Map<String, LlmProvider> providersByName,
             LlmChatProperties properties,
             MeterRegistry meterRegistry,
-            ObservationRegistry observationRegistry
+            ObservationRegistry observationRegistry,
+            GlobalLlmSpendBreaker spendBreaker
     ) {
         this.providersByName = providersByName.values()
                 .stream()
@@ -55,18 +61,28 @@ public class LlmProviderChain {
         this.properties = properties;
         this.circuitBreakers = new LlmProviderCbRegistry(meterRegistry);
         this.observationRegistry = observationRegistry;
+        this.spendBreaker = spendBreaker;
     }
 
     LlmProviderChain(List<LlmProvider> providers, LlmChatProperties properties) {
         this(providers.stream().collect(Collectors.toUnmodifiableMap(LlmProvider::name, Function.identity())),
                 properties,
                 new SimpleMeterRegistry(),
-                ObservationRegistry.NOOP);
+                ObservationRegistry.NOOP,
+                GlobalLlmSpendBreaker.forTesting());
     }
 
     public LlmCompletionResult complete(LlmCompletionRequest request) {
         List<ProviderAttempt> attempts = providerAttempts(request.privacyMode());
         if (attempts.isEmpty()) {
+            throw new ChatUnavailableException();
+        }
+        // SCALE-ROADMAP audit A3: fail fast on the global spend ceiling BEFORE
+        // attempting any provider — same ChatUnavailableException + same "no LLM
+        // available" degradation path as the attempts.isEmpty() case just above.
+        // No new error surface for callers to handle.
+        if (!spendBreaker.tryAcquire(SPEND_METER)) {
+            log.warn("llm provider chain: global spend ceiling reached; failing fast without a provider attempt");
             throw new ChatUnavailableException();
         }
 
@@ -82,8 +98,16 @@ public class LlmProviderChain {
                     return Observation.createNotStarted("llm.provider.call", observationRegistry)
                             .lowCardinalityKeyValue("provider", attempt.provider().name())
                             .lowCardinalityKeyValue("privacy_mode", attempt.privacyMode().name())
-                            .observe(() -> circuitBreaker.executeSupplier(() ->
-                                    attempt.provider().complete(withPrivacyMode(request, attempt.privacyMode()))));
+                            .observe(() -> {
+                                LlmCompletionResult result = circuitBreaker.executeSupplier(() ->
+                                        attempt.provider().complete(withPrivacyMode(request, attempt.privacyMode())));
+                                // Increment ONLY after the provider call actually succeeded —
+                                // a short-circuited (CallNotPermittedException) or failed
+                                // (LlmProviderException) attempt, caught below, never reaches
+                                // this line and so never consumes spend budget.
+                                spendBreaker.recordUsage(SPEND_METER);
+                                return result;
+                            });
                 } catch (CallNotPermittedException exception) {
                     log.info("llm provider short-circuited: provider={} privacyMode={} pass={} state={}",
                             attempt.provider().name(), attempt.privacyMode(), pass, circuitBreaker.getState());

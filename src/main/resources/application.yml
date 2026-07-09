@@ -185,6 +185,26 @@ ssuai:
       write-timeout: ${SSUAI_PYXIS_WRITE_TIMEOUT:200ms}
       per-user-read-limit-per-second: ${SSUAI_PYXIS_PER_USER_READ_LIMIT_PER_SECOND:2}
       per-user-write-limit-per-second: ${SSUAI_PYXIS_PER_USER_WRITE_LIMIT_PER_SECOND:1}
+    llm-spend:
+      # Global daily/monthly LLM spend circuit breaker (ADR 0081, SCALE-ROADMAP Phase 1
+      # audit A3) — per-IP caps (ratelimit.chat-per-minute) bound ONE caller; they do
+      # nothing to stop MANY distinct IPs (more real users, or one attacker rotating
+      # IPs) from driving an unbounded bill. Redis-shared call-count counters,
+      # fail-open on Redis outage/disable (no ceiling enforced, same as today).
+      redis-enabled: ${SSUAI_LLM_SPEND_REDIS_ENABLED:true}
+      warn-threshold-ratio: ${SSUAI_LLM_SPEND_WARN_THRESHOLD_RATIO:0.8}
+      chat:
+        # LlmProviderChain call-count budget shared across all 10 chat providers.
+        # chatPerMinute=30/IP (ADR 0061) x dozens of real users tops out at a few
+        # thousand calls/day today; set >10x that so current traffic never trips it.
+        daily-call-ceiling: ${SSUAI_LLM_SPEND_CHAT_DAILY_CEILING:5000}
+        monthly-call-ceiling: ${SSUAI_LLM_SPEND_CHAT_MONTHLY_CEILING:100000}
+      embedding:
+        # Gemini gemini-embedding-001 free tier caps at 1000 requests/day
+        # (SCALE-ROADMAP audit H1) — set below that so THIS breaker trips first with a
+        # controlled degrade-to-lexical instead of a raw Gemini 429 mid-request.
+        daily-call-ceiling: ${SSUAI_LLM_SPEND_EMBEDDING_DAILY_CEILING:800}
+        monthly-call-ceiling: ${SSUAI_LLM_SPEND_EMBEDDING_MONTHLY_CEILING:20000}
   retention:
     # Daily terminal-row retention sweep at 04:30 KST (ADR 0072, security follow-up #3).
     # Only terminal rows are ever deleted; PENDING/EXECUTING actions, unpublished outbox
