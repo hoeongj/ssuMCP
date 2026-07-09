@@ -1,0 +1,56 @@
+namespace: ssuai-prod
+replicaCount: 1
+image:
+  # Live image (verified via kubectl 2026-07-09). The Deployment was originally
+  # `kubectl apply`'d with postgres:17-alpine (musl) and later hand-swapped to
+  # pgvector/pgvector:pg17 (glibc) to satisfy the pgvector prod prerequisite —
+  # see docs/adr/0070-pgvector-optional-profile.md and MASTERPLAN's
+  # "pgvector prod 도입" entry (musl->glibc, pre-swap pg_dumpall backup,
+  # post-swap REINDEX DATABASE). This chart pins to the CURRENT live image,
+  # not the original manifest's postgres:17-alpine.
+  repository: pgvector/pgvector
+  tag: pg17
+  pullPolicy: IfNotPresent
+nameOverride: ""
+# Fixed to "postgres" so the rendered object name matches the live Deployment
+# exactly (adoption target, not a fresh release name).
+fullnameOverride: "postgres"
+db:
+  # POSTGRES_DB. Plain env value in the live spec (not a secret).
+  name: ssuai
+existingSecret:
+  # Pre-existing Secret holding POSTGRES_USER/POSTGRES_PASSWORD. NOT created by
+  # this chart — it already holds the live DB credentials; minting a new one
+  # here would either collide or (if renamed) orphan the running credentials.
+  name: ssuai-db-secret
+  usernameKey: username
+  passwordKey: password
+persistence:
+  # Pre-existing PVC holding the live data directory. NOT created by this
+  # chart (see note above — same reasoning as existingSecret).
+  existingClaim: postgres-pvc
+  mountPath: /var/lib/postgresql/data
+# Single-node PVC (ReadWriteOnce, local-path): Recreate avoids two postgres
+# pods contending for the same data directory during a rollout. A
+# RollingUpdate would deadlock waiting for the old pod to release the volume
+# (the new pod can never mount it) since local-path PVCs are node-local RWO.
+strategy:
+  type: Recreate
+resources:
+  # ADR 0078 budget: right-sized from observed usage headroom on the single
+  # Oracle A1 node, not from the (unset) live pod, which currently has none.
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+service:
+  # The live Service (assumed name/port only — kubectl was not re-queried for
+  # its full spec/selector/labels in this task). Kept OFF by default until an
+  # operator confirms the rendered Service is a byte-for-byte match (or
+  # accepts the adoption diff) against `kubectl get svc postgres-service -o yaml`.
+  enabled: false
+  name: postgres-service
+  type: ClusterIP
+  port: 5432

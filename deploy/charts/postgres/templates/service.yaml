@@ -1,0 +1,28 @@
+{{- if .Values.service.enabled }}
+# ADOPTION CAVEAT: this Service's name/port (postgres-service:5432) come from
+# a single confirmed reference — deploy/charts/ssuai-backend/values.yaml's
+# `dbUrl: jdbc:postgresql://postgres-service:5432/ssuai`. The rest of the
+# live Service's spec (type, selector, labels) was NOT re-verified against
+# `kubectl get svc postgres-service -o yaml` for this task. Before flipping
+# service.enabled to true, diff the rendered manifest against the live
+# object; Service selectors/ports are mutable (no forced recreation like the
+# Deployment selector), but an unreviewed diff could still cause a brief
+# routing blip for the backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postgres.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: postgres
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 5432
+      protocol: TCP
+{{- end }}
