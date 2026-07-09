@@ -37,12 +37,12 @@ ssuai:
     academic-calendar: ${SSUAI_CONNECTOR_ACADEMIC_CALENDAR:real}
     chat: ${SSUAI_CONNECTOR_CHAT:mock}
     notice: ${SSUAI_CONNECTOR_NOTICE:real}
-  # Production CORS allowlist — exactly one origin (the deployed Vercel
-  # project), wired into WebCorsProdConfig. The value is supplied at
-  # deploy time via the SSUAI_FRONTEND_ORIGIN env var (set on the
-  # ssuai-backend-config ConfigMap). Empty default makes the binding
-  # explicit; WebCorsProdConfig and SaintSsoCallbackController both fail
-  # fast with a clear message if it resolves to blank.
+  # Production frontend origin. WebCorsProdConfig uses this exact origin for
+  # public read/SSE CORS, and SaintSsoCallbackController uses it for the return
+  # redirect. CORS credentials are not enabled; cookie-bearing browser calls
+  # stay on the ssuAI same-origin proxy path. Empty default makes the binding
+  # explicit; WebCorsProdConfig and SaintSsoCallbackController both fail fast
+  # with a clear message if it resolves to blank.
   frontend:
     origin: ${SSUAI_FRONTEND_ORIGIN:}
   auth:
@@ -57,9 +57,9 @@ ssuai:
       # `POST /api/auth/refresh` fetch from /auth/return. SameSite=Lax
       # would let the cookie ride a top-level GET but blocks cross-site
       # POST (browser drops the cookie → 401, "세션 갱신 실패"). Set
-      # None here; the cookie is already HttpOnly + Secure and our CORS
-      # allowlist (WebCorsProdConfig) pins the exact frontend origin,
-      # so widening SameSite does not open a fresh CSRF path.
+      # None here; the cookie is already HttpOnly + Secure and the browser
+      # reaches credentialed endpoints through the ssuAI same-origin proxy
+      # path. Direct-origin public CORS does not allow credentials.
       same-site: None
   library:
     reservation:

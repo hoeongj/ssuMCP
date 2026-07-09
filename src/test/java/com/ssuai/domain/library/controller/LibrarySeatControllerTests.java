@@ -3,8 +3,6 @@ package com.ssuai.domain.library.controller;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -61,7 +59,7 @@ class LibrarySeatControllerTests {
                         List.of(new LibrarySeatItem("2-A-001", "A-1", "available"))
                 ))
         );
-        when(libraryService.getSeatStatusForSession(eq(LibraryFloor.F2), anyString())).thenReturn(response);
+        when(libraryService.getPublicSeatStatus(eq(LibraryFloor.F2))).thenReturn(response);
 
         mockMvc.perform(get("/api/library/seats").param("floor", "2"))
                 .andExpect(status().isOk())
@@ -82,7 +80,7 @@ class LibrarySeatControllerTests {
                 Instant.parse("2026-05-15T07:30:14Z"),
                 List.of()
         );
-        when(libraryService.getSeatStatusForSession(eq(LibraryFloor.F5), anyString())).thenReturn(response);
+        when(libraryService.getPublicSeatStatus(eq(LibraryFloor.F5))).thenReturn(response);
 
         mockMvc.perform(get("/api/library/seats").param("floor", "5"))
                 .andExpect(status().isOk())
@@ -119,7 +117,7 @@ class LibrarySeatControllerTests {
 
     @Test
     void connectorTimeoutMapsTo504() throws Exception {
-        when(libraryService.getSeatStatusForSession(eq(LibraryFloor.F2), anyString()))
+        when(libraryService.getPublicSeatStatus(eq(LibraryFloor.F2)))
                 .thenThrow(new ConnectorTimeoutException());
 
         mockMvc.perform(get("/api/library/seats").param("floor", "2"))
@@ -129,7 +127,7 @@ class LibrarySeatControllerTests {
 
     @Test
     void connectorUnavailableMapsTo503() throws Exception {
-        when(libraryService.getSeatStatusForSession(eq(LibraryFloor.F2), anyString()))
+        when(libraryService.getPublicSeatStatus(eq(LibraryFloor.F2)))
                 .thenThrow(new ConnectorUnavailableException());
 
         mockMvc.perform(get("/api/library/seats").param("floor", "2"))
@@ -139,7 +137,7 @@ class LibrarySeatControllerTests {
 
     @Test
     void libraryAuthRequiredMapsTo401() throws Exception {
-        when(libraryService.getSeatStatusForSession(eq(LibraryFloor.F2), anyString()))
+        when(libraryService.getPublicSeatStatus(eq(LibraryFloor.F2)))
                 .thenThrow(new LibraryAuthRequiredException());
 
         mockMvc.perform(get("/api/library/seats").param("floor", "2"))
@@ -165,4 +163,3 @@ class LibrarySeatControllerTests {
         verifyNoInteractions(sseRegistry);
     }
 }
-

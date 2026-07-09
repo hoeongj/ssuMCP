@@ -3,7 +3,6 @@ package com.ssuai.domain.library.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,12 +41,10 @@ public class LibrarySeatController {
                     required = true,
                     example = "2"
             )
-            int floor,
-            HttpServletRequest request
+            int floor
     ) {
         LibraryFloor target = LibraryFloor.fromCode(floor);
-        String sessionKey = request.getSession().getId();
-        return ApiResponse.success(libraryService.getSeatStatusForSession(target, sessionKey));
+        return ApiResponse.success(libraryService.getPublicSeatStatus(target));
     }
 
     @GetMapping(value = "/seats/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -67,4 +64,3 @@ public class LibrarySeatController {
         return sseRegistry.createEmitter(floor);
     }
 }
-
