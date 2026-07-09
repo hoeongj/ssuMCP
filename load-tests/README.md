@@ -130,3 +130,47 @@ docker compose up -d postgres wiremock          # (+ redis on :6379)
 주입하고, `resilience4j_circuitbreaker_state{name="pyxis"}`(`/actuator/prometheus`)와 seat
 엔드포인트 WireMock 호출수를 3초 간격으로 찍는다. 관측된 전이 타임라인은
 [`docs/performance/library-agent-load-test.md`](../docs/performance/library-agent-load-test.md) §4-1 ②.
+
+## 7. replica-scale-comparison — 1-vs-2 replica 비교 (P1-10, ADR 0088)
+
+> **위 시나리오들과 달리 이 스크립트는 prod에 직접 돌리는 용도다.** `get_library_seat_catalog`는
+> 정적 카탈로그 조회로 LIBRARY 로그인도, Pyxis 업스트림 호출도 타지 않는 완전 공개(인증 불필요)
+> 도구라서 안전하다 — 나머지 스크립트(`library-seat-read-baseline.js`,
+> `library-reservation-baseline.js`)는 WireMock 로그인 우회에 의존하므로 여전히 prod 금지다.
+
+목적: `replicaCount`를 1 → 2로 바꿨을 때 처리량(throughput)·p95가 실제로 개선되는지 **operator가
+직접 재현 가능한 절차로** 증거를 남긴다. 이 스크립트 자체는 diff를 만들지 않는다 — 한 번 실행에
+한 run의 수치만 낸다. 전/후 두 번 돌려서 사람이 비교한다.
+
+### 절차
+
+```bash
+# 1) baseline (replicaCount=1)
+kubectl -n ssuai-prod scale deployment/ssuai-backend --replicas=1
+# 스케일이 안정될 때까지 대기 (kubectl -n ssuai-prod rollout status deployment/ssuai-backend)
+
+BASE_URL=https://ssumcp.duckdns.org BURST_RPS=20 \
+  k6 run load-tests/k6/replica-scale-comparison.js | tee /tmp/replica-1.log
+
+# 2) 2-replica (HPA가 켜져 있으면 selfHeal이 되돌리지 못하도록 ArgoCD Application의
+#    ignoreDifferences(/spec/replicas)가 이미 반영돼 있어야 한다 — deploy/argocd/application-ssuai-backend.yaml)
+kubectl -n ssuai-prod scale deployment/ssuai-backend --replicas=2
+BASE_URL=https://ssumcp.duckdns.org BURST_RPS=20 \
+  k6 run load-tests/k6/replica-scale-comparison.js | tee /tmp/replica-2.log
+
+# 3) 두 로그의 k6 end-of-test summary에서 아래 값을 비교해 기록한다:
+#    http_reqs (처리량/s), http_req_duration p(95), http_req_failed rate
+diff <(grep -E "http_reqs|http_req_duration|http_req_failed" /tmp/replica-1.log) \
+     <(grep -E "http_reqs|http_req_duration|http_req_failed" /tmp/replica-2.log)
+
+# 4) 원복 (GitOps가 replicaCount=2를 관리하므로 다음 sync에서 자동 복원되지만,
+#    바로 되돌리려면):
+kubectl -n ssuai-prod scale deployment/ssuai-backend --replicas=2
+```
+
+- `BURST_RPS`는 기본 20 — prod가 2 OCPU/12GB 단일노드(ADR 0078) 예산이므로 무리한 burst로
+  다른 워크로드에 영향 주지 않도록 보수적으로 잡았다. 더 큰 burst로 HPA(min 2, max 3, CPU 70%)의
+  실제 스케일아웃 트리거까지 관찰하려면 `BURST_RPS`를 올려서 재현한다.
+- `RAMP_DURATION`(기본 20s), `STEADY_DURATION`(기본 90s)로 프로파일 조정 가능.
+- threshold(`p(95)<800ms`, `error rate<5%`)는 `abortOnFail: false`라 실패해도 런이 끝까지 돈다 —
+  1-replica 런이 이 threshold를 못 넘기는 것 자체가 "2-replica가 왜 필요한가"의 증거 데이터다.

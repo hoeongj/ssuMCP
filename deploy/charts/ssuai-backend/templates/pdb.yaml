@@ -1,0 +1,16 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ssuai-backend.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ssuai-backend.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ssuai-backend.selectorLabels" . | nindent 6 }}
+{{- end }}

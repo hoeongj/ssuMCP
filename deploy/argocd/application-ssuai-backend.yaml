@@ -25,6 +25,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ssuai-prod
+  # P1-10 (ADR 0088): the HPA (autoscaling.enabled, chart) now mutates
+  # Deployment.spec.replicas at runtime. Without this, selfHeal below reverts
+  # every HPA scale-up back to the git-declared replicaCount on the next sync
+  # (default 3-minute poll) — the HPA and GitOps drift-correction would fight
+  # each other, and the chart's maxReplicas would never actually take effect.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: ssuai-backend
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: true
