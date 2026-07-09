@@ -4,7 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.function.Supplier;
 
 import org.redisson.api.RRateLimiter;
@@ -45,10 +47,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 /**
  * Fault tolerance for calls to the school's Pyxis library system (oasis.ssu.ac.kr).
  *
- * <p>One shared {@link CircuitBreaker} ("pyxis") reflects upstream health across all
- * Pyxis callers (seat reads + reservation read/write). When it opens, both reads and
- * writes short-circuit, which protects our threads and stops us hammering a struggling
- * upstream from a single shared egress IP.
+ * <p>Two {@link CircuitBreaker}s reflect upstream health by operation type:
+ * {@code pyxis-read} for seat/current-reservation queries and {@code pyxis-write}
+ * for reserve/discharge mutations. A read-side outage must not block reservations,
+ * and a write-side outage must not suppress still-useful seat status reads.
  *
  * <p>Read vs write is deliberately asymmetric:
  * <ul>
@@ -116,7 +118,8 @@ public class PyxisResilience {
     /** Per-user Redis keys self-expire after this much inactivity (bounds Redis memory). */
     private static final Duration PER_USER_KEY_TTL = Duration.ofMinutes(5);
 
-    private final CircuitBreaker circuitBreaker;
+    private final CircuitBreaker readCircuitBreaker;
+    private final CircuitBreaker writeCircuitBreaker;
     private final Retry readRetry;
     private final RateLimiter readRateLimiter;
     private final RateLimiter writeRateLimiter;
@@ -180,7 +183,8 @@ public class PyxisResilience {
                         ConnectorParseException.class)
                 .build();
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.of(circuitBreakerConfig);
-        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("pyxis");
+        this.readCircuitBreaker = circuitBreakerRegistry.circuitBreaker("pyxis-read");
+        this.writeCircuitBreaker = circuitBreakerRegistry.circuitBreaker("pyxis-write");
         TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(circuitBreakerRegistry).bindTo(meterRegistry);
 
         RetryConfig retryConfig = RetryConfig.custom()
@@ -258,7 +262,7 @@ public class PyxisResilience {
                 properties.getReadTimeout(), readRateLimiter);
 
         Supplier<T> guarded = Retry.decorateSupplier(readRetry,
-                CircuitBreaker.decorateSupplier(circuitBreaker, call));
+                CircuitBreaker.decorateSupplier(readCircuitBreaker, call));
         guarded = RateLimiter.decorateSupplier(readRateLimiter, guarded);
         guarded = Bulkhead.decorateSupplier(bulkhead, guarded);
         return guarded.get();
@@ -275,7 +279,7 @@ public class PyxisResilience {
                 properties.getWriteClusterLimitPerSecond(), properties.getPerUserWriteLimitPerSecond(),
                 properties.getWriteTimeout(), writeRateLimiter);
 
-        Supplier<T> guarded = CircuitBreaker.decorateSupplier(circuitBreaker, call);
+        Supplier<T> guarded = CircuitBreaker.decorateSupplier(writeCircuitBreaker, call);
         guarded = RateLimiter.decorateSupplier(writeRateLimiter, guarded);
         guarded = Bulkhead.decorateSupplier(bulkhead, guarded);
         return guarded.get();
@@ -352,13 +356,49 @@ public class PyxisResilience {
         return (principal == null || principal.isBlank()) ? DEFAULT_PRINCIPAL : principal;
     }
 
-    /** Returns current circuit breaker state for admin monitoring. */
+    /** Returns aggregate circuit breaker state for compatibility with older callers. */
     public CircuitBreaker.State circuitBreakerState() {
-        return circuitBreaker.getState();
+        return List.of(readCircuitBreaker, writeCircuitBreaker).stream()
+                .map(CircuitBreaker::getState)
+                .max(Comparator.comparingInt(PyxisResilience::stateSeverity))
+                .orElse(CircuitBreaker.State.CLOSED);
     }
 
-    /** Returns current failure rate (0–100, or -1.0 if insufficient data). */
+    /** Returns aggregate failure rate (0–100, or -1.0 if insufficient data) for older callers. */
     public float circuitBreakerFailureRate() {
-        return circuitBreaker.getMetrics().getFailureRate();
+        return Math.max(readCircuitBreakerFailureRate(), writeCircuitBreakerFailureRate());
+    }
+
+    public CircuitBreaker.State readCircuitBreakerState() {
+        return readCircuitBreaker.getState();
+    }
+
+    public CircuitBreaker.State writeCircuitBreakerState() {
+        return writeCircuitBreaker.getState();
+    }
+
+    public float readCircuitBreakerFailureRate() {
+        return readCircuitBreaker.getMetrics().getFailureRate();
+    }
+
+    public float writeCircuitBreakerFailureRate() {
+        return writeCircuitBreaker.getMetrics().getFailureRate();
+    }
+
+    public float readCircuitBreakerSlowCallRate() {
+        return readCircuitBreaker.getMetrics().getSlowCallRate();
+    }
+
+    public float writeCircuitBreakerSlowCallRate() {
+        return writeCircuitBreaker.getMetrics().getSlowCallRate();
+    }
+
+    private static int stateSeverity(CircuitBreaker.State state) {
+        return switch (state) {
+            case CLOSED, METRICS_ONLY, DISABLED -> 0;
+            case HALF_OPEN -> 1;
+            case OPEN -> 2;
+            case FORCED_OPEN -> 3;
+        };
     }
 }

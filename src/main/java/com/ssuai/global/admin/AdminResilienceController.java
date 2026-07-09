@@ -53,10 +53,15 @@ public class AdminResilienceController {
         List<AdminResilienceResponse.CircuitBreakerInfo> cbs = new ArrayList<>();
 
         cbs.add(new AdminResilienceResponse.CircuitBreakerInfo(
-                "pyxis",
-                pyxisResilience.circuitBreakerState().name(),
-                pyxisResilience.circuitBreakerFailureRate(),
-                -1.0f));
+                "pyxis-read",
+                pyxisResilience.readCircuitBreakerState().name(),
+                pyxisResilience.readCircuitBreakerFailureRate(),
+                pyxisResilience.readCircuitBreakerSlowCallRate()));
+        cbs.add(new AdminResilienceResponse.CircuitBreakerInfo(
+                "pyxis-write",
+                pyxisResilience.writeCircuitBreakerState().name(),
+                pyxisResilience.writeCircuitBreakerFailureRate(),
+                pyxisResilience.writeCircuitBreakerSlowCallRate()));
 
         llmProviderChain.ifPresent(chain -> cbs.addAll(chain.circuitBreakerStates()));
 

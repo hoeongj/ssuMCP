@@ -25,6 +25,7 @@ import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
@@ -105,6 +106,50 @@ class PyxisResilienceTests {
         })).isInstanceOf(CallNotPermittedException.class);
 
         assertThat(callsWhileOpen.get()).isZero(); // short-circuited: supplier never invoked
+    }
+
+    @Test
+    void readBreakerOpenDoesNotBlockWritePath() {
+        PyxisResilience resilience = newResilience();
+
+        for (int i = 0; i < 10 && resilience.readCircuitBreakerState() != CircuitBreaker.State.OPEN; i++) {
+            assertThatThrownBy(() -> resilience.read(() -> {
+                throw new ConnectorUnavailableException(new RuntimeException("read 5xx"));
+            })).isInstanceOfAny(ConnectorUnavailableException.class, CallNotPermittedException.class);
+        }
+        assertThat(resilience.readCircuitBreakerState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        AtomicInteger writeCalls = new AtomicInteger();
+        String result = resilience.write(() -> {
+            writeCalls.incrementAndGet();
+            return "reserved";
+        });
+
+        assertThat(result).isEqualTo("reserved");
+        assertThat(writeCalls.get()).isEqualTo(1);
+        assertThat(resilience.writeCircuitBreakerState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    void writeBreakerOpenDoesNotBlockReadPath() {
+        PyxisResilience resilience = newResilience();
+
+        for (int i = 0; i < 10; i++) {
+            assertThatThrownBy(() -> resilience.write(() -> {
+                throw new ConnectorUnavailableException(new RuntimeException("write 5xx"));
+            })).isInstanceOf(ConnectorUnavailableException.class);
+        }
+        assertThat(resilience.writeCircuitBreakerState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        AtomicInteger readCalls = new AtomicInteger();
+        String result = resilience.read(() -> {
+            readCalls.incrementAndGet();
+            return "seats";
+        });
+
+        assertThat(result).isEqualTo("seats");
+        assertThat(readCalls.get()).isEqualTo(1);
+        assertThat(resilience.readCircuitBreakerState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     // --- SCALE-ROADMAP Phase 1 audit A1: Pyxis dual cap ---------------------

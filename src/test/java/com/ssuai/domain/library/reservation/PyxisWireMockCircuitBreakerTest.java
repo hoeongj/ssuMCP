@@ -2,6 +2,8 @@ package com.ssuai.domain.library.reservation;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
@@ -35,6 +37,21 @@ class PyxisWireMockCircuitBreakerTest {
 
     private static final String RESERVE_PATH = "/pyxis-api/1/api/seat-charges";
     private static final String STUB_TOKEN = "stub-pyxis-auth-token";
+    private static final String NO_RECORD_BODY =
+            "{\"success\":true,\"code\":\"success.noRecord\",\"message\":\"no record\",\"data\":null}";
+    private static final String RESERVE_SUCCESS_BODY = """
+            {
+              "success": true,
+              "code": "success.charged",
+              "data": {
+                "id": 1968552,
+                "room": { "id": 58, "name": "room" },
+                "seat": { "id": 3179, "code": "3179" },
+                "beginTime": "2026-07-10 09:00",
+                "endTime": "2026-07-10 13:00"
+              }
+            }
+            """;
 
     private WireMockServer wireMockServer;
     private RealLibraryReservationConnector connector;
@@ -103,5 +120,47 @@ class PyxisWireMockCircuitBreakerTest {
         assertThat(wireMockServer.getAllServeEvents().size())
                 .as("No new HTTP request should have been made after circuit opened")
                 .isEqualTo(requestsBeforeOpen);
+
+        stubFor(get(urlEqualTo(RESERVE_PATH))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(NO_RECORD_BODY)));
+
+        assertThat(connector.getCurrentCharge(STUB_TOKEN)).isEmpty();
+        verify(1, getRequestedFor(urlEqualTo(RESERVE_PATH)));
+    }
+
+    @Test
+    void readCircuitOpenDoesNotBlockReservationWrite() {
+        stubFor(get(urlEqualTo(RESERVE_PATH))
+                .willReturn(aResponse().withStatus(500)));
+        stubFor(post(urlEqualTo(RESERVE_PATH))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(RESERVE_SUCCESS_BODY)));
+
+        boolean readCircuitOpened = false;
+        int previousGetRequests = 0;
+        int maxCalls = 10;
+        for (int i = 0; i < maxCalls; i++) {
+            connector.getCurrentCharge(STUB_TOKEN);
+            int getRequests = wireMockServer.findAll(getRequestedFor(urlEqualTo(RESERVE_PATH))).size();
+            if (getRequests == previousGetRequests) {
+                readCircuitOpened = true;
+                break;
+            }
+            previousGetRequests = getRequests;
+        }
+
+        assertThat(readCircuitOpened)
+                .as("Read circuit breaker should eventually short-circuit GET calls")
+                .isTrue();
+
+        LibraryReservationResult result = connector.reserve(STUB_TOKEN, new LibraryReservationRequest(3179L));
+
+        assertThat(result.seatId()).isEqualTo(3179L);
+        verify(1, postRequestedFor(urlEqualTo(RESERVE_PATH)));
     }
 }

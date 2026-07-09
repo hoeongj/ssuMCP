@@ -58,7 +58,7 @@ class PyxisResilienceIntegrationTest {
         }
 
         assertThat(meterRegistry.find("resilience4j.circuitbreaker.state")
-                .tag("name", "pyxis")
+                .tag("name", "pyxis-write")
                 .tag("state", "open")
                 .gauge()
                 .value()).isEqualTo(1.0);

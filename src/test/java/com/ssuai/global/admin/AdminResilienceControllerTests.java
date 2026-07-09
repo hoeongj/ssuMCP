@@ -34,8 +34,9 @@ class AdminResilienceControllerTests {
 
         AdminResilienceResponse response = controller.getResilience(ADMIN);
 
-        assertThat(response.circuitBreakers()).hasSize(1);
-        assertThat(response.circuitBreakers().getFirst().name()).isEqualTo("pyxis");
+        assertThat(response.circuitBreakers()).hasSize(2);
+        assertThat(response.circuitBreakers().stream().map(AdminResilienceResponse.CircuitBreakerInfo::name).toList())
+                .containsExactly("pyxis-read", "pyxis-write");
         assertThat(response.circuitBreakers().getFirst().state()).isEqualTo("CLOSED");
     }
 
@@ -51,9 +52,9 @@ class AdminResilienceControllerTests {
 
         AdminResilienceResponse response = controller.getResilience(ADMIN);
 
-        assertThat(response.circuitBreakers()).hasSize(2);
+        assertThat(response.circuitBreakers()).hasSize(3);
         assertThat(response.circuitBreakers().stream().map(AdminResilienceResponse.CircuitBreakerInfo::name).toList())
-                .containsExactly("llm-groq", "pyxis");
+                .containsExactly("llm-groq", "pyxis-read", "pyxis-write");
     }
 
     @Test
@@ -71,7 +72,7 @@ class AdminResilienceControllerTests {
 
         List<String> names = response.circuitBreakers().stream()
                 .map(AdminResilienceResponse.CircuitBreakerInfo::name).toList();
-        assertThat(names).containsExactly("llm-gemini", "llm-groq", "pyxis");
+        assertThat(names).containsExactly("llm-gemini", "llm-groq", "pyxis-read", "pyxis-write");
     }
 
     @Test
