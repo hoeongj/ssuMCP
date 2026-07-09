@@ -10,7 +10,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -72,77 +71,56 @@ class ConfirmActionMcpToolTests {
     }
 
     @Test
-    void reservationSuccessIsObserveOnlyAndDoesNotCompleteAudit() {
-        // The sync path observes a terminal intent and maps it to a message. It must NOT write
-        // the audit terminal outcome: the worker finalized the linked audit in the same
-        // transaction that made the intent SUCCEEDED (single source of truth).
+    void reservationConfirmReturnsAcceptedImmediatelyWithoutCompletingAudit() {
+        // C1 fix: confirm_action for a reserve action NEVER waits for the async worker to
+        // resolve the intent — it creates the intent and returns ACCEPTED right away. It must
+        // NOT write the audit terminal outcome (the worker finalizes the linked audit in the
+        // same transaction that makes the intent terminal — single source of truth), and it must
+        // NEVER even read the intent's status back (that would still be an observe step, just a
+        // one-shot poll instead of a loop — this proves there's no lingering read either).
         reservationAction();
         when(intentTransactions.createImmediateReservation(
                 eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
                 .thenReturn(intentView(11L, LibraryReservationIntentStatus.REQUESTED, null));
-        when(intentTransactions.findById(11L))
-                .thenReturn(Optional.of(intentView(
-                        11L,
-                        LibraryReservationIntentStatus.SUCCEEDED,
-                        "room 74 reserved, chargeId=1966693, time=14:59~18:59")));
 
         McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
         assertThat(response.data())
-                .contains("예약 intent 큐 처리 완료")
+                .contains("접수")
                 .contains("intentId=11")
-                .contains("74")
-                .contains("1966693");
+                .contains("get_library_wait_status");
         verify(actionService, never()).completeAction(any(), any(), any());
         verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
+        verify(intentTransactions, never()).findById(any());
     }
 
     @Test
-    void reservationRaceIsObserveOnlyAndDoesNotCompleteAudit() {
+    void reservationConfirmNeverBlocksTheCallingThreadEvenWhenTheWorkerNeverResolves() {
+        // Thread-model proof for C1: with the intent stubbed to represent a worker that never
+        // finishes (findById would forever return a non-terminal status, IF confirm_action ever
+        // called it — it must not), confirm_action still returns essentially instantly. Before
+        // this fix, this exact scenario would have held the calling thread for the full
+        // reservationIntentWait (up to 8s in production) via a sleep/poll loop.
         reservationAction();
         when(intentTransactions.createImmediateReservation(
                 eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
-                .thenReturn(intentView(12L, LibraryReservationIntentStatus.REQUESTED, null));
-        when(intentTransactions.findById(12L))
-                .thenReturn(Optional.of(intentView(
-                        12L,
-                        LibraryReservationIntentStatus.FAILED_RACE,
-                        "Seat was already taken upstream.")));
+                .thenReturn(intentView(14L, LibraryReservationIntentStatus.REQUESTED, null));
+        when(intentTransactions.findById(14L))
+                .thenReturn(Optional.of(intentView(14L, LibraryReservationIntentStatus.RESERVING, null)));
 
+        long startNanos = System.nanoTime();
         McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
+        long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
 
         assertThat(response.status()).isEqualTo("OK");
-        assertThat(response.data()).contains("이미 선점").contains("intentId=12");
+        assertThat(response.data()).contains("intentId=14");
+        // Generous bound (real servlet-thread math: 200 threads / 8s ceiling before this fix vs.
+        // effectively unbounded throughput after) — a regression to any sleep/poll loop, even a
+        // short one, would still fail this on a loaded CI box far below the old 8s.
+        assertThat(elapsedMillis).isLessThan(2_000);
+        verify(intentTransactions, never()).findById(any());
         verify(actionService, never()).completeAction(any(), any(), any());
-        verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
-    }
-
-    @Test
-    void reservationSyncTimeoutLeavesAuditExecutingAndReportsProcessing() {
-        // The worker never resolves the intent within the (test-shrunk) sync window. The sync
-        // path must NOT terminally fail the audit (leave it EXECUTING for the still-running
-        // worker) and must tell the caller the reservation is being completed in the background.
-        // No real reservation happens: reservationConnector.reserve is never called.
-        ReflectionTestUtils.setField(tool, "reservationIntentWait", Duration.ofMillis(20));
-        ReflectionTestUtils.setField(tool, "reservationIntentPoll", Duration.ofMillis(5));
-        reservationAction();
-        when(intentTransactions.createImmediateReservation(
-                eq(SESSION_KEY), eq(ACTION_ID), eq(3179L), eq(ActionService.ACTION_TTL)))
-                .thenReturn(intentView(13L, LibraryReservationIntentStatus.REQUESTED, null));
-        // Intent stays non-terminal (RESERVING) for the whole sync wait → timeout.
-        when(intentTransactions.findById(13L))
-                .thenReturn(Optional.of(intentView(13L, LibraryReservationIntentStatus.RESERVING, null)));
-
-        McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
-
-        assertThat(response.status()).isEqualTo("OK");
-        assertThat(response.data())
-                .contains("백그라운드")
-                .contains("intentId=13");
-        // The bug fix: timeout is a response state, never a terminal audit outcome here.
-        verify(actionService, never()).completeAction(any(), any(), any());
-        verify(reservationConnector, never()).reserve(eq(TOKEN), any(LibraryReservationRequest.class));
     }
 
     @Test
@@ -339,15 +317,23 @@ class ConfirmActionMcpToolTests {
 
     @Test
     void noIdWithMultiplePendingRefusesAndAsksForActionId() {
-        // Only reachable via a concurrent-prepare race; confirm must refuse, not guess.
+        // Reachable either via a concurrent-prepare race, OR — since ADR 0086 scoped supersede
+        // to (actionType, targetKey) — via two legitimately different concurrent actions of the
+        // same owner (e.g. two different pending seat reservations). Either way confirm must
+        // refuse, not guess, and must list every candidate action_id so the caller can pick.
         ActionAudit a = ActionAudit.pending(SESSION_KEY, LibraryCancelMcpTool.ACTION_TYPE, "{}", Instant.now());
+        ReflectionTestUtils.setField(a, "id", 101L);
         ActionAudit b = ActionAudit.pending(SESSION_KEY, LibraryReservationMcpTool.ACTION_TYPE, "{}", Instant.now());
+        ReflectionTestUtils.setField(b, "id", 102L);
         when(actionService.findActivePendingActions(SESSION_KEY)).thenReturn(List.of(a, b));
 
         McpPrivateToolResponse<String> response = tool.confirmAction(SESSION_ID, null);
 
         assertThat(response.status()).isEqualTo("OK");
-        assertThat(response.data()).contains("action_id를 지정");
+        assertThat(response.data())
+                .contains("action_id를 지정")
+                .contains("action_id=101")
+                .contains("action_id=102");
         verify(actionService, never()).claimPendingActionById(any(), any());
         verify(reservationConnector, never()).discharge(any(), anyLong());
         verify(reservationConnector, never()).reserve(any(), any(LibraryReservationRequest.class));

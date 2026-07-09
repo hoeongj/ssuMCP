@@ -1,8 +1,7 @@
 package com.ssuai.domain.mcp.tool;
 
-import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +20,6 @@ import com.ssuai.domain.library.reservation.LibraryReservationConnector;
 import com.ssuai.domain.library.reservation.LibraryReservationRequest;
 import com.ssuai.domain.library.reservation.LibraryReservationResult;
 import com.ssuai.domain.library.reservation.LibrarySwapRequest;
-import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentStatus;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentTransactions;
 import com.ssuai.domain.library.reservation.intent.LibraryReservationIntentView;
 import com.ssuai.global.exception.ConnectorTimeoutException;
@@ -31,8 +29,9 @@ import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 /**
  * Shared confirm step for library write actions (ADR 0015).
  *
- * <p>Reserve confirms now create an immediate reservation intent and wait briefly
- * for the queue worker. Cancel/swap execute synchronously; only the reserve path is
+ * <p>Reserve confirms create an immediate reservation intent and return ACCEPTED right away
+ * (ADR 0086 / C1) — the async worker resolves it and the caller polls
+ * {@code get_library_wait_status}. Cancel/swap execute synchronously; only the reserve path is
  * routed through the intent queue.
  */
 @Component
@@ -40,11 +39,6 @@ public class ConfirmActionMcpTool {
 
     private static final Logger log = LoggerFactory.getLogger(ConfirmActionMcpTool.class);
     private static final String NOT_AVAILABLE_STATE_CODE = "warning.smuf.notAvailableState";
-
-    // Non-final so tests can shrink the sync wait without a real 8s sleep. Production keeps
-    // the defaults; the values are not configurable at runtime (mirrors the web controller).
-    private Duration reservationIntentWait = Duration.ofSeconds(8);
-    private Duration reservationIntentPoll = Duration.ofMillis(200);
 
     private final ActionService actionService;
     private final LibrarySessionStore sessionStore;
@@ -71,9 +65,13 @@ public class ConfirmActionMcpTool {
     @Tool(
             name = "confirm_action",
             description = "준비된 사용자 승인 대기 액션을 최종 확인하고 실행합니다. "
-                    + "기본적으로 현재 대기 중인 단 하나의 액션을 실행하며, 새 prepare 호출 시 이전 대기 액션은 자동 무효화(superseded)됩니다. "
-                    + "특정 액션을 지정하려면 prepare 응답의 actionId를 action_id로 전달하세요(생략 가능). "
-                    + "prepare_reserve_library_seat(좌석 예약)는 예약 intent 큐를 통해 실행하고, "
+                    + "대기 중인 액션이 하나뿐이면 action_id 없이 그 액션을 실행합니다. "
+                    + "같은 좌석/예약을 다시 prepare하면 이전 대기 액션이 자동 무효화(superseded)되지만, "
+                    + "서로 다른 좌석 등 별개의 액션을 여러 개 prepare하면 각각 별도로 대기하며 "
+                    + "이 경우 confirm_action은 실행하지 않고 대기 중인 action_id 목록을 안내합니다. "
+                    + "특정 액션을 지정하려면 prepare 응답의 actionId를 action_id로 전달하세요. "
+                    + "prepare_reserve_library_seat(좌석 예약)는 예약 intent 큐를 통해 비동기로 접수만 하고 즉시 반환하며, "
+                    + "최종 결과는 get_library_wait_status로 확인합니다. "
                     + "prepare_cancel_library_seat(좌석 반납)와 prepare_swap_library_seat(자리 변경)는 직접 실행합니다. "
                     + "mcp_session_id 필요(LIBRARY 로그인)."
     )
@@ -104,10 +102,13 @@ public class ConfirmActionMcpTool {
                         mcpSessionId, McpProviderType.LIBRARY.name(), "대기 중인 액션이 없습니다.");
             }
             if (pendingActions.size() > 1) {
-                // Only reachable via a concurrent-prepare race; never guess which to execute.
+                // Multiple concurrent actions of the same owner (e.g. two different pending seat
+                // reservations, ADR 0086) or a concurrent-prepare race; never guess which to
+                // execute — list every candidate so the caller can pick the right action_id.
                 return McpPrivateToolResponse.ok(
                         mcpSessionId, McpProviderType.LIBRARY.name(),
-                        "확정 대기 중인 액션이 여러 개입니다. 실행할 액션의 action_id를 지정해 다시 호출하세요.");
+                        "확정 대기 중인 액션이 여러 개입니다. 실행할 액션의 action_id를 지정해 다시 호출하세요. 대기 중: "
+                                + describePendingActions(pendingActions));
             }
             targetId = pendingActions.get(0).getId();
         }
@@ -151,6 +152,16 @@ public class ConfirmActionMcpTool {
                 mcpSessionId, McpProviderType.LIBRARY.name(), "지원하지 않는 대기 액션입니다.");
     }
 
+    /**
+     * Creates the immediate reservation intent and returns IMMEDIATELY (ADR 0086 / C1) —
+     * never blocks the calling servlet thread waiting for the async worker. See
+     * {@link #acceptedReservationResponse} for why: the MCP transport here is SYNC/Streamable
+     * HTTP (spring-ai {@code mcp-spring-webmvc}), which invokes {@code @Tool} methods, including
+     * this one, directly on the Tomcat request thread and offers no async-dispatch escape hatch
+     * — so ANY in-method sleep/poll, however short, still consumes one pooled thread per
+     * in-flight confirm. Removing the wait entirely (rather than shortening it) is what actually
+     * fixes the N-concurrent-confirms-exhaust-the-pool failure mode C1 describes.
+     */
     private McpPrivateToolResponse<String> executeReservationViaIntent(
             String mcpSessionId,
             String sessionKey,
@@ -161,71 +172,26 @@ public class ConfirmActionMcpTool {
                 claimed.getId(),
                 request.seatId(),
                 ActionService.ACTION_TTL);
-        return awaitReservationIntent(mcpSessionId, intent.intentId());
+        return acceptedReservationResponse(mcpSessionId, intent.intentId());
     }
 
     /**
-     * Synchronously waits a short time for the async reservation worker to drive the intent to
-     * a terminal state, then maps that observed state to a user-facing message. This path is
-     * deliberately <em>observe-only</em>: it NEVER writes the {@link ActionAudit} terminal
-     * outcome. The worker is the single source of truth for the audit (it finalizes the linked
-     * audit in the same transaction that makes the intent terminal). On timeout the
-     * audit is intentionally left EXECUTING so the still-running worker can finalize it; a
-     * timeout is a response state, not a business failure.
+     * Deterministic, non-blocking response for an accepted (not-yet-resolved) reservation
+     * intent. This path is <em>observe-only</em> with respect to the {@link ActionAudit}: it
+     * NEVER writes the audit's terminal outcome. The async reservation worker
+     * ({@code LibraryReservationWorker}, woken immediately after commit) is the single source of
+     * truth for both the intent's terminal state and the linked audit's terminal outcome
+     * (finalized together in one transaction). The caller (LLM or ssuAgent HITL loop) always has
+     * a deterministic way to learn the outcome: {@code get_library_wait_status(mcp_session_id,
+     * intent_id)}.
      */
-    private McpPrivateToolResponse<String> awaitReservationIntent(
-            String mcpSessionId,
-            Long intentId) {
-        long deadline = System.nanoTime() + reservationIntentWait.toNanos();
-        while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
-            Optional<LibraryReservationIntentView> current = intentTransactions.findById(intentId);
-            if (current.isPresent() && isTerminal(current.get().status())) {
-                return describeReservationFromIntent(mcpSessionId, current.get());
-            }
-            sleepQuietly();
-        }
-        // Timeout: do NOT terminally fail the audit. The worker keeps running and may still
-        // succeed; it owns the terminal audit outcome. Leave the audit EXECUTING and tell the
-        // caller their reservation is being completed in the background.
+    private McpPrivateToolResponse<String> acceptedReservationResponse(String mcpSessionId, Long intentId) {
         return McpPrivateToolResponse.ok(
                 mcpSessionId,
                 McpProviderType.LIBRARY.name(),
-                "예약을 백그라운드에서 계속 처리하고 있습니다. intentId=" + intentId
-                        + ". 같은 mcp_session_id로 get_library_wait_status를 호출해 최종 결과를 확인하세요.");
-    }
-
-    private McpPrivateToolResponse<String> describeReservationFromIntent(
-            String mcpSessionId,
-            LibraryReservationIntentView intent) {
-        String detail = intent.outcomeMessage() == null ? "intentId=" + intent.intentId() : intent.outcomeMessage();
-        if (intent.status() == LibraryReservationIntentStatus.SUCCEEDED) {
-            return McpPrivateToolResponse.ok(
-                    mcpSessionId,
-                    McpProviderType.LIBRARY.name(),
-                    "예약 intent 큐 처리 완료. intentId=" + intent.intentId()
-                            + ". " + detail);
-        }
-        if (intent.status() == LibraryReservationIntentStatus.FAILED_RACE) {
-            return McpPrivateToolResponse.ok(
-                    mcpSessionId,
-                    McpProviderType.LIBRARY.name(),
-                    "좌석이 이미 선점됐습니다. intentId=" + intent.intentId()
-                            + ". recommend_library_seats와 prepare_reserve_library_seat로 다른 좌석을 다시 시도해주세요.");
-        }
-        if (intent.status() == LibraryReservationIntentStatus.FAILED_AUTH) {
-            return authHelper.<String>buildAuthRequired(mcpSessionId, McpProviderType.LIBRARY);
-        }
-        if (intent.status() == LibraryReservationIntentStatus.EXPIRED) {
-            return McpPrivateToolResponse.ok(
-                    mcpSessionId,
-                    McpProviderType.LIBRARY.name(),
-                    "예약 intent가 실행 전에 만료됐습니다. intentId=" + intent.intentId() + ".");
-        }
-        return McpPrivateToolResponse.ok(
-                mcpSessionId,
-                McpProviderType.LIBRARY.name(),
-                "예약 intent 실행에 실패했습니다. intentId=" + intent.intentId()
-                        + ". get_library_wait_status로 상세 상태를 확인하세요.");
+                "예약 요청을 접수했습니다. intentId=" + intentId
+                        + ". 보통 수 초 내 처리됩니다. 같은 mcp_session_id로 get_library_wait_status(intent_id="
+                        + intentId + ")를 호출해 최종 결과를 확인하세요.");
     }
 
     private McpPrivateToolResponse<String> executeCancellation(
@@ -377,11 +343,10 @@ public class ConfirmActionMcpTool {
                         + ". prepare_reserve_library_seat로 좌석을 다시 예약해주세요.");
     }
 
-    private static boolean isTerminal(LibraryReservationIntentStatus status) {
-        return switch (status) {
-            case SUCCEEDED, FAILED_RACE, FAILED_AUTH, FAILED_UPSTREAM, CANCELLED, EXPIRED -> true;
-            case REQUESTED, WAITING_FOR_SEAT, RESERVING -> false;
-        };
+    private static String describePendingActions(List<ActionAudit> pendingActions) {
+        return pendingActions.stream()
+                .map(action -> "action_id=" + action.getId() + "(" + action.getActionType() + ")")
+                .collect(Collectors.joining(", "));
     }
 
     private static boolean isNotAvailableState(LibrarySeatNotAvailableException exception) {
@@ -398,13 +363,5 @@ public class ConfirmActionMcpTool {
         return "아직 입실 전이라 자리 변경을 할 수 없어요. 기존 예약은 그대로 유지됐습니다. "
                 + "도서관 게이트/NFC로 입실한 뒤 다시 시도해주세요. "
                 + "미입실 배정 좌석은 도서관 정책에 따라 일정 시간 후 자동 취소될 수 있습니다.";
-    }
-
-    private void sleepQuietly() {
-        try {
-            Thread.sleep(reservationIntentPoll.toMillis());
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

@@ -1,0 +1,11 @@
+-- ADR 0086: narrow confirm_action supersede scope from owner-wide to
+-- (student_id, action_type, target_key) for the MCP library prepare tools, so preparing a new
+-- action no longer silently invalidates a DIFFERENT still-pending action of the same owner (e.g.
+-- two concurrently-pending seat reservations for different seats).
+--
+-- Nullable: legacy/in-flight PENDING rows created before this migration deploys (bounded to the
+-- 5-minute ACTION_TTL window) simply keep target_key = NULL, which cannot match any new
+-- markPendingSupersededForAction() predicate (a NULL never equals a bind parameter). They are
+-- left untouched and resolve normally via TTL expiry or an explicit confirm — never silently
+-- superseded, never blocked from being claimed by id.
+ALTER TABLE action_audit ADD COLUMN target_key VARCHAR(160);

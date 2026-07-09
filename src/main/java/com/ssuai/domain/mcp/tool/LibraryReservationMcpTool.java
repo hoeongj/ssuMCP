@@ -86,7 +86,11 @@ public class LibraryReservationMcpTool {
                     mcpSessionId, McpProviderType.LIBRARY.name(), new LibraryPrepareResult(0L, alreadyMsg));
         }
 
-        long actionId = actionService.createPendingAction(sessionKey, ACTION_TYPE, request).getId();
+        // Target key = seat id: re-preparing a reserve for the SAME seat supersedes the prior
+        // pending reserve of that seat; a DIFFERENT seat is a separate concurrent action left
+        // PENDING (ADR 0086) — confirm_action's action_id disambiguates which to confirm.
+        long actionId = actionService.createPendingAction(
+                sessionKey, ACTION_TYPE, String.valueOf(request.seatId()), request).getId();
         String message = SeatDisplay.describe(catalogService, request.seatId()) + " 예약을 준비했습니다. "
                 + "confirm_action을 호출해 최종 확인하세요."
                 + SeatDisplay.graduateOnlyWarning(catalogService, request.seatId());

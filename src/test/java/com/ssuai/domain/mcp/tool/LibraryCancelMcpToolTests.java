@@ -97,7 +97,7 @@ class LibraryCancelMcpToolTests {
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit = mockAudit(10L);
-        when(actionService.createPendingAction(any(), any(), any())).thenReturn(audit);
+        when(actionService.createPendingAction(any(), any(), any(), any())).thenReturn(audit);
 
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareCancelLibrarySeat(SESSION_ID);
 
@@ -107,9 +107,12 @@ class LibraryCancelMcpToolTests {
                 .contains("74번")
                 .contains("1966801")
                 .contains("confirm_action");
+        // Target key = the charge id being cancelled (ADR 0086): a re-prepared cancel of the
+        // same charge supersedes its predecessor.
         verify(actionService).createPendingAction(
                 SESSION_KEY,
                 LibraryCancelMcpTool.ACTION_TYPE,
+                "1966801",
                 new LibraryCancelRequest(1966801L));
     }
 

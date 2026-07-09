@@ -26,6 +26,16 @@ public class ActionAudit {
     @Column(name = "action_type", length = 64, nullable = false)
     private String actionType;
 
+    /**
+     * Identifies "the same action" within {@code (studentId, actionType)} for supersede scoping
+     * (ADR 0086, amending ADR 0055). E.g. the seat id for a reserve, the charge id for a cancel
+     * or swap. A re-prepare with the SAME target supersedes its own predecessor; a DIFFERENT
+     * target is a distinct concurrent action and is left untouched — {@code confirm_action}'s
+     * {@code action_id} disambiguation (ADR 0055) is what keeps that safe.
+     */
+    @Column(name = "target_key", length = 160)
+    private String targetKey;
+
     @Column(name = "status", length = 16, nullable = false)
     @Enumerated(EnumType.STRING)
     private ActionStatus status;
@@ -57,16 +67,29 @@ public class ActionAudit {
         // JPA
     }
 
-    private ActionAudit(String studentId, String actionType, ActionStatus status, String payload, Instant createdAt) {
+    private ActionAudit(String studentId, String actionType, String targetKey, ActionStatus status,
+            String payload, Instant createdAt) {
         this.studentId = requireNonBlank(studentId, "studentId");
         this.actionType = requireNonBlank(actionType, "actionType");
+        this.targetKey = requireNonBlank(targetKey, "targetKey");
         this.status = Objects.requireNonNull(status, "status");
         this.payload = requireNonBlank(payload, "payload");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
     }
 
+    public static ActionAudit pending(
+            String studentId, String actionType, String targetKey, String payload, Instant createdAt) {
+        return new ActionAudit(studentId, actionType, targetKey, ActionStatus.PENDING, payload, createdAt);
+    }
+
+    /**
+     * Test/legacy convenience overload: derives {@code targetKey} from {@code actionType} when
+     * the caller does not care about supersede scoping (e.g. unit tests exercising claim/complete
+     * transitions in isolation). Production code always goes through the 4-arg factory with a
+     * real target key.
+     */
     public static ActionAudit pending(String studentId, String actionType, String payload, Instant createdAt) {
-        return new ActionAudit(studentId, actionType, ActionStatus.PENDING, payload, createdAt);
+        return new ActionAudit(studentId, actionType, actionType, ActionStatus.PENDING, payload, createdAt);
     }
 
     /** Claims a PENDING action for execution (PENDING -> EXECUTING). */
@@ -124,6 +147,10 @@ public class ActionAudit {
 
     public String getActionType() {
         return actionType;
+    }
+
+    public String getTargetKey() {
+        return targetKey;
     }
 
     public ActionStatus getStatus() {

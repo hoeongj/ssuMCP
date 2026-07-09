@@ -79,9 +79,13 @@ public class LibrarySwapMcpTool {
                     0L, "현재 예약된 좌석이 없습니다. prepare_reserve_library_seat를 사용하세요."));
         }
 
+        // Target key = charge id of the seat being swapped AWAY FROM: re-preparing a swap of the
+        // same currently-held seat supersedes the prior pending swap regardless of the new
+        // destination seat (ADR 0086) — matches the pre-existing owner-wide behavior for this type.
         long actionId = actionService.createPendingAction(
                 sessionKey,
                 ACTION_TYPE,
+                String.valueOf(current.chargeId()),
                 new LibrarySwapRequest(current.chargeId(), newSeatId, current.roomId(), current.seatId())).getId();
         String message = String.format(
                 "현재 %s %s번(예약번호: %d) → 새 %s으로 변경을 준비했습니다. "

@@ -101,7 +101,7 @@ class LibrarySwapMcpToolTests {
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit42 = mockAudit(42L);
-        when(actionService.createPendingAction(any(), any(), any())).thenReturn(audit42);
+        when(actionService.createPendingAction(any(), any(), any(), any())).thenReturn(audit42);
 
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareSwapLibrarySeat(SESSION_ID, "3196");
 
@@ -111,9 +111,12 @@ class LibrarySwapMcpToolTests {
                 .contains("마루열람실(6F) 91번 좌석")
                 .contains("confirm_action")
                 .doesNotContain("3196번");
+        // Target key = the charge id of the seat being swapped away from (ADR 0086): a
+        // re-prepared swap of the same held seat supersedes its predecessor.
         verify(actionService).createPendingAction(
                 SESSION_KEY,
                 LibrarySwapMcpTool.ACTION_TYPE,
+                "1968552",
                 new LibrarySwapRequest(1968552L, 3196L));
     }
 
@@ -126,7 +129,7 @@ class LibrarySwapMcpToolTests {
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit43 = mockAudit(43L);
-        when(actionService.createPendingAction(any(), any(), any())).thenReturn(audit43);
+        when(actionService.createPendingAction(any(), any(), any(), any())).thenReturn(audit43);
 
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareSwapLibrarySeat(SESSION_ID, "999999");
 
@@ -145,7 +148,7 @@ class LibrarySwapMcpToolTests {
         when(sessionStore.token(SESSION_KEY)).thenReturn(Optional.of(TOKEN));
         when(reservationConnector.getCurrentCharge(TOKEN)).thenReturn(Optional.of(current));
         ActionAudit audit44 = mockAudit(44L);
-        when(actionService.createPendingAction(any(), any(), any())).thenReturn(audit44);
+        when(actionService.createPendingAction(any(), any(), any(), any())).thenReturn(audit44);
 
         // externalSeatId 3044 is in 대학원열람실(6F), audience graduate_only
         McpPrivateToolResponse<LibraryPrepareResult> response = tool.prepareSwapLibrarySeat(SESSION_ID, "3044");
