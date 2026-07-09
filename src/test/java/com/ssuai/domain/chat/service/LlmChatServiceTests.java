@@ -1002,8 +1002,8 @@ class LlmChatServiceTests {
                 {
                   "year":2026,
                   "semester":"1학기",
-                  "absenceAllowedMinutes":2,
-                  "absenceUsedMinutes":1,
+                  "absenceAllowedCount":2,
+                  "absenceUsedCount":1,
                   "result":"진행중",
                   "absenceApplications":[
                     {"category":"병무관계","startDate":"2026.05.14","endDate":"2026.05.20",
@@ -1015,7 +1015,7 @@ class LlmChatServiceTests {
         String compact = chatService.compactAndCap("get_my_chapel_info", rawChapelJson);
 
         assertThat(compact)
-                .contains("\"absenceUsedMinutes\":1")
+                .contains("\"absenceUsedCount\":1")
                 .contains("\"result\":\"진행중\"")
                 .doesNotContain("absenceApplications")
                 .doesNotContain("병무관계")

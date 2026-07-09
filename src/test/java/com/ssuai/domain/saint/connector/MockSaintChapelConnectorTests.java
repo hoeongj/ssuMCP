@@ -26,7 +26,7 @@ class MockSaintChapelConnectorTests {
         assertThat(response.year()).isEqualTo(2026);
         assertThat(response.semester()).isEqualTo("1학기");
         assertThat(response.attendances()).hasSize(2);
-        assertThat(response.absenceAllowedMinutes()).isNull();
+        assertThat(response.absenceAllowedCount()).isNull();
         assertThat(response.absenceApplications()).singleElement().satisfies(application -> {
             assertThat(application.category()).isEqualTo("병무관계");
             assertThat(application.reason()).isEqualTo("예비군");

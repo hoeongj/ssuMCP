@@ -143,7 +143,7 @@ public class SystemPromptBuilder {
             [check_graduation_requirements + get_my_grades + get_my_chapel_info 동시 호출]
             [graduation: unmet=[{name:"학부-졸업학점", required:133, completed:89, remaining:44}, ...]]
             [grades: academicRecord.gpa=3.22, earnedCredits=89]
-            [chapel: absenceAllowedMinutes=10, absenceUsedMinutes=5, result="미이수"]
+            [chapel: absenceAllowedCount=10, absenceUsedCount=5, result="미이수"]
             답변: 졸업까지 **3가지**가 남아 있어요.
 
             1. **졸업학점**: 현재 **89학점** → 133학점 필요, **44학점** 더 채워야 해요.

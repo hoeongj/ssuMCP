@@ -8,8 +8,8 @@ public record ChapelInfo(
         String chapelTime,
         String chapelRoom,
         String seatNumber,
-        Integer absenceAllowedMinutes,
-        int absenceUsedMinutes,
+        Integer absenceAllowedCount,
+        int absenceUsedCount,
         String result,
         List<ChapelAttendanceEntry> attendances,
         List<ChapelAbsenceApplication> absenceApplications

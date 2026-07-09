@@ -229,8 +229,8 @@ public class ToolResultCompactor {
         ObjectNode compact = objectMapper.createObjectNode();
         copyIntIfPresent(node, compact, "year");
         copyTextIfPresent(node, compact, "semester");
-        copyIntIfPresent(node, compact, "absenceAllowedMinutes");
-        copyIntIfPresent(node, compact, "absenceUsedMinutes");
+        copyIntIfPresent(node, compact, "absenceAllowedCount");
+        copyIntIfPresent(node, compact, "absenceUsedCount");
         copyTextIfPresent(node, compact, "result");
         return compact;
     }
