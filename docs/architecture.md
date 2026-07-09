@@ -758,8 +758,12 @@ Claude Desktop / IDE
 이미 임베딩된 청크를 건너뛰고 새/변경 청크만 임베딩하므로, pod 재시작·주기 갱신이
 무료 티어 일일 임베딩 쿼터를 재소진하지 않는다(이전엔 in-memory 전용이라 재시작마다
 전체 재임베딩 → 429 → lexical 고착). 벡터는 base64 float32 TEXT로 저장한다 — 코사인은
-수백 청크 규모라 인메모리로 충분해 pgvector 인덱스가 불필요하고 prod Postgres에 확장도
-없다. 임베딩이 비활성/실패하면 lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
+수백 청크 규모라 인메모리로 충분해 라이브 검색 서빙 경로는 이 인메모리 코사인을 그대로
+쓴다. 다만 prod Postgres에는 `vector` 확장(0.8.4)이 이미 설치돼 있고
+`academic_embeddings.embedding_vec`에 217행 전량 벡터가 채워져 있으며 HNSW 인덱스도
+존재한다(ADR 0070이 만든 옵션 프로파일이 prod에도 켜짐) — 단 이 ANN 경로를 호출하는
+서빙 코드는 아직 없다(ADR 0020/0070 2026-07-09 개정). 임베딩이 비활성/실패하면
+lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
 
 학사일정(`get_academic_calendar`·`find_academic_calendar_events`)은 메인 사이트
 `ssu.ac.kr/학사/학사일정/?years={year}`의 서버 렌더링 월 블록(`id="calendarYYYYMM"` 앵커,

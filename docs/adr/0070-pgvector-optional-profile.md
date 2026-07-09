@@ -53,3 +53,24 @@
 1. 평문 테이블을 왜 안 바꿨고 pgvector를 왜 프로파일로만 뒀나? (규모: 수백 청크엔 exact 코사인 충분, prod 확장 부재. 역량은 프로파일+IT로 증명, 강제는 과설계)
 2. HNSW vs IVFFlat, cosine ops를 고른 이유는? (증분 삽입·build-once → HNSW, 임베딩 정규화 가정상 cosine)
 3. 이중쓰기(TEXT + vector) 일관성은? (같은 행 UPDATE라 원자적; 라이브는 TEXT만 쓰고 ANN 경로는 프로파일에서만 vector 사용)
+
+---
+
+## 2026-07-09 Amendment — pgvector 프로파일이 prod에 켜짐 ("prod엔 강제하지 않았다" 전제 갱신)
+
+- **상태**: SSH 실측 확인.
+
+### 갱신 배경
+
+본문 "prod엔 왜 강제하지 않았나" 절은 "prod 기본 경로는 그대로 두고... prod엔 강제하지 않았다"를 결정 근거로 삼았고, 그 근거는 "prod에 `vector` 확장이 없다"는 전제였다. 이 전제가 이후 해소됐다(prod Postgres가 `pgvector/pgvector:pg17`로 교체, ADR 0020 2026-07-09 개정 참고). 그 결과:
+
+- `deploy/charts/ssuai-backend/values.yaml`이 `springProfilesActive: prod,pgvector,json-logs`로 **pgvector 프로파일을 prod에서 활성화**했다(주석: "prerequisite satisfied 2026-07-02").
+- prod에서 V14 마이그레이션(`CREATE EXTENSION vector` + `embedding_vec` 컬럼 + HNSW 인덱스)이 이미 실행됐고, SSH 확인 결과 확장 `0.8.4`, `academic_embeddings` 217행 전량 벡터 populate, HNSW 인덱스(#151) 확인.
+
+### 무엇이 superseded 되고 무엇이 안 바뀌었나
+
+- **superseded**: "결정" 절의 "prod 기본 마이그레이션 경로에 새 migration이 0개"는 더 이상 사실이 아니다 — pgvector 프로파일이 prod `springProfilesActive`에 포함되므로 V14가 prod Flyway 경로에 들어간다.
+- **superseded**: "prod엔 강제하지 않았다"는 "격리 증명 상태 그대로 둔다"가 아니라, "증명해 둔 capability를 코퍼스 성장에 대비해 prod에 미리 켜 둔" 상태로 갱신해서 읽어야 한다(values.yaml 주석 참고).
+- **안 바뀐 것**: "동작 방식" 4번(`라이브 RAG(비-pgvector)는 PersistentAcademicEmbeddingStore 인메모리 코사인 그대로`)은 여전히 사실이다. `PgVectorAnnIndex`를 호출하는 서비스 코드는 없고, 라이브 RRF 검색은 ANN 경로를 쓰지 않는다. 즉 prod는 "인덱스·데이터 준비 완료, 서빙 경로 미전환" 상태다.
+
+예상 면접 질문 1에 답할 때는 "지금은 prod에 확장이 없다"가 아니라 "확장은 prod에 이미 있고 켜져 있지만, 217청크 규모에서 인메모리가 이미 충분해 서빙 경로 전환의 실익이 없어 아직 전환하지 않았다"로 갱신해서 답해야 한다.

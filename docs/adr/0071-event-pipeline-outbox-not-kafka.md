@@ -60,3 +60,24 @@
 1. 이벤트 기반인데 왜 Kafka를 안 썼나? (규모: 분당 수백 건·<5 소비자 → LISTEN/NOTIFY·Redis로 충분, 단일노드 Kafka 운영비용이 가치보다 큼. "graduate 트리거"를 ADR로 명문화)
 2. Transactional Outbox가 푸는 문제는? (DB 커밋과 메시지 발행의 dual-write 비원자성 → 같은 트랜잭션 insert + 폴러 relay로 at-least-once)
 3. 언제 Kafka로 가나? (처리량 수천 msg/s·다소비자 리플레이·이벤트 보존·멀티팀 계약 경계 중 하나라도 충족 시. 그전엔 Outbox로 relay 타깃만 교체)
+
+---
+
+## 2026-07-09 Amendment — Outbox는 library reservation 범위에서 이미 prod 가동 중 (본문 "지금은 테이블을 만들지 않는다"의 범위 갱신)
+
+- **상태**: 사실관계 갱신. 코드 변경 없음.
+
+### 갱신 배경
+
+본문 "대안과 기각 이유 > Transactional Outbox 도입" 절은 "지금은 테이블/마이그레이션을 만들지 않는다"고 적었다. 이 문장은 본 ADR이 다루는 좌석/예약 이벤트 전파 **전반**에 대한 서술로 읽히지만, 본문이 ADR 0022를 연관 문서로 인용하지 않아 리뷰어가 "outbox는 이 저장소에 아직 없다"로 오독할 여지가 있었다. 실제로는 **library reservation 도메인에 한해 outbox가 이미 구축·가동 중**이다.
+
+- `library_reservation_outbox` 테이블과 폴링 릴레이(`LibraryReservationEventRelay`)는 ADR 0022(2026-06-11, PR1)에서 이미 구축·배포됐고, 지금도 prod에서 동작한다: 워커가 상태 변경과 outbox 이벤트를 같은 트랜잭션에 커밋 → 릴레이가 미발행 행을 폴링해 발행 → `published_at` 스탬프(ADR 0022 D5/D2).
+- 해당 테이블의 보존(retention)은 ADR 0072(2026-07-02)가 `published_at IS NOT NULL`을 terminal 판정으로 삼아 30일 후 정리하도록 이미 처리한다.
+- 좌석 상태 변경 SSE fan-out(ADR 0048) 쪽도 D1에서 "기존 outbox → Spring Event 파이프라인 재사용... 추가 transactional outbox가 불필요"라고 밝혔으므로, 이 영역 역시 outbox가 "미구축"은 아니다.
+- 따라서 본문의 "지금은 테이블을 만들지 않는다"는 **위 두 도메인 외에, 아직 outbox가 필요해지지 않은 다른 신규 이벤트 종류**에 한정해서 읽어야 한다.
+
+### 안 바뀐 것
+
+"Kafka로 graduate하는 트리거" 목록(처리량 수천 msg/s·5+ 소비자·이벤트 소싱/감사 리플레이·멀티팀 계약 경계)은 여전히 유효한 기준이다. library reservation outbox가 이미 존재한다는 사실 자체가 이 트리거 조건을 충족시키는 것은 아니다 — 소비자는 여전히 단일 relay이고 처리량도 트리거 문턱에 한참 못 미친다.
+
+관련: ADR 0022(intent queue + outbox 원본 구현), ADR 0072(outbox retention).
