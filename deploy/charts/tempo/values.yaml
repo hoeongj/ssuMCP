@@ -8,9 +8,9 @@
 tempo:
   # Anonymous usage reporting off (matches load-tests/tempo/tempo.yaml).
   reportingEnabled: false
-  # Compactor block_retention — short 72h window keeps disk + memory bounded on the
-  # shared 24GB node (ADR 0069 single-node memory budget).
-  retention: 72h
+  # Compactor block_retention — short 24h window keeps disk + memory bounded on the
+  # halved Oracle free tier (2 OCPU / 12GB single-node budget).
+  retention: 24h
   # The chart's default 1024Mi Go ballast alone would exceed the 512Mi limit and
   # OOM-kill the pod at startup. Disable it for this low-volume, sampled workload.
   memBallastSizeMbs: 0
@@ -33,10 +33,10 @@ tempo:
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 384Mi
 
 # Persist trace blocks across pod restarts on the node-local provisioner.
 persistence:

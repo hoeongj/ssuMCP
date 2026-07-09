@@ -48,10 +48,10 @@ singleBinary:
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 384Mi
 read:
   replicas: 0
 write:

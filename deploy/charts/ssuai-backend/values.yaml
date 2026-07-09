@@ -107,7 +107,7 @@ redis:
   maxmemory: 64mb
   resources:
     requests:
-      cpu: 25m
+      cpu: 50m
       memory: 64Mi
     limits:
       cpu: 100m
@@ -156,7 +156,7 @@ ingress:
     hsts: hsts
 resources:
   requests:
-    cpu: 100m
+    cpu: 250m
     memory: 512Mi
   limits:
     cpu: 1000m

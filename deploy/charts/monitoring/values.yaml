@@ -24,12 +24,16 @@ prometheus:
     serviceMonitorNamespaceSelector: {}
     podMonitorSelectorNilUsesHelmValues: false
     retention: 7d
+    # Oracle free tier halved (2 OCPU / 12GB single-node budget) - default scrape
+    # interval widened 30s -> 60s cluster-wide to cut sample volume/storage churn.
+    # Per-ServiceMonitor `interval` still overrides this where set.
+    scrapeInterval: 60s
     resources:
       requests:
-        memory: 256Mi
+        memory: 512Mi
         cpu: 100m
       limits:
-        memory: 512Mi
+        memory: 768Mi
         cpu: 500m
     storageSpec:
       volumeClaimTemplate:
@@ -78,10 +82,10 @@ grafana:
     passwordKey: admin-password
   resources:
     requests:
-      memory: 128Mi
+      memory: 256Mi
       cpu: 50m
     limits:
-      memory: 256Mi
+      memory: 512Mi
       cpu: 200m
   persistence:
     enabled: true

@@ -9,6 +9,14 @@ dex:
 notifications:
   enabled: false
 
+# Not used: Applications here are all managed as plain Application manifests,
+# not ApplicationSet generators. This chart version has no enabled/disabled
+# switch for the controller (its Deployment template is unconditional), so
+# scale it to zero replicas to free a pod on the halved Oracle free tier
+# (2 OCPU / 12GB single-node budget).
+applicationSet:
+  replicas: 0
+
 server:
   extraArgs:
     - --insecure
