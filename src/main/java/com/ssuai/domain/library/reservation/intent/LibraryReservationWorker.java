@@ -2,9 +2,11 @@ package com.ssuai.domain.library.reservation.intent;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
@@ -28,6 +30,7 @@ import com.ssuai.global.exception.LibrarySeatNotAvailableException;
 public class LibraryReservationWorker {
 
     private static final Logger log = LoggerFactory.getLogger(LibraryReservationWorker.class);
+    private static final int MAX_FRESH_RESELECTIONS = 2;
 
     private final LibraryReservationIntentTransactions transactions;
     private final LibraryReservationSeatSelector seatSelector;
@@ -90,7 +93,9 @@ public class LibraryReservationWorker {
         Map<Long, List<ReadyIntent>> bySeat = new LinkedHashMap<>();
         for (LibraryReservationIntent intent : claimed) {
             Optional<ReadyIntent> ready = prepare(intent);
-            ready.ifPresent(value -> bySeat.computeIfAbsent(value.seatId(), ignored -> new ArrayList<>()).add(value));
+            ready.ifPresent(value -> bySeat.computeIfAbsent(
+                    value.selection().seatId(),
+                    ignored -> new ArrayList<>()).add(value));
         }
         bySeat.forEach(this::processSeatGroup);
     }
@@ -103,7 +108,15 @@ public class LibraryReservationWorker {
         }
         try {
             if (intent.isImmediateReservation()) {
-                return Optional.of(new ReadyIntent(intent.getId(), token, intent.getTargetSeatId()));
+                Optional<LibraryReservationSeatSelection> selection =
+                        seatSelector.selectionForTargetSeat(intent.getTargetSeatId());
+                if (selection.isEmpty()) {
+                    transactions.failUpstream(
+                            intent.getId(),
+                            "Unable to resolve library room for target seat before reservation.");
+                    return Optional.empty();
+                }
+                return Optional.of(new ReadyIntent(intent, token, selection.get()));
             }
             Optional<LibraryReservationResult> current;
             try {
@@ -126,12 +139,12 @@ public class LibraryReservationWorker {
                                 + successMessage(result));
                 return Optional.empty();
             }
-            Optional<Long> seatId = seatSelector.findAvailableSeat(intent);
-            if (seatId.isEmpty()) {
+            Optional<LibraryReservationSeatSelection> selection = seatSelector.findAvailableSeat(intent);
+            if (selection.isEmpty()) {
                 transactions.returnToWaiting(intent.getId());
                 return Optional.empty();
             }
-            return Optional.of(new ReadyIntent(intent.getId(), token, seatId.get()));
+            return Optional.of(new ReadyIntent(intent, token, selection.get()));
         } catch (LibraryAuthRequiredException exception) {
             transactions.failAuth(intent.getId(), "Library session token is missing or expired.");
             return Optional.empty();
@@ -157,10 +170,36 @@ public class LibraryReservationWorker {
                     seatId,
                     "Another local wait intent already attempted this seat in the same worker tick.");
         }
-        executeWithSeatLock(winner, seatId);
+        executeWithSeatLock(winner, winner.selection());
     }
 
-    private void executeWithSeatLock(ReadyIntent intent, Long seatId) {
+    private void executeWithSeatLock(ReadyIntent intent, LibraryReservationSeatSelection initialSelection) {
+        LibraryReservationSeatSelection selection = initialSelection;
+        Set<Long> staleSeatIds = new LinkedHashSet<>();
+        int reselections = 0;
+        while (true) {
+            SeatLockAttemptResult result = executeWithSeatLockOnce(intent, selection, staleSeatIds);
+            if (result.done()) {
+                return;
+            }
+            if (reselections >= MAX_FRESH_RESELECTIONS) {
+                transactions.failRace(
+                        intent.intentId(),
+                        selection.seatId(),
+                        "Fresh library seat availability changed too many times before reservation.");
+                return;
+            }
+            staleSeatIds.add(selection.seatId());
+            selection = result.nextSelection().orElseThrow();
+            reselections++;
+        }
+    }
+
+    private SeatLockAttemptResult executeWithSeatLockOnce(
+            ReadyIntent intent,
+            LibraryReservationSeatSelection selection,
+            Set<Long> staleSeatIds) {
+        long seatId = selection.seatId();
         String lockName = redisProperties.seatLockName(seatId);
         Optional<LibraryDistributedLockClient.LockLease> lease;
         try {
@@ -175,7 +214,7 @@ public class LibraryReservationWorker {
             redisMetrics.countSeatLock("deferred");
             redisMetrics.countFailure("seat_lock_acquire", exception);
             deferForRetry(intent, seatId, "Seat lock acquisition was interrupted; retrying later.");
-            return;
+            return SeatLockAttemptResult.completed();
         } catch (RuntimeException exception) {
             // Fail-CLOSED: same reasoning as the interrupt branch — a Redis/lock
             // failure must not let the worker reserve without holding the lock.
@@ -183,7 +222,7 @@ public class LibraryReservationWorker {
             redisMetrics.countSeatLock("deferred");
             redisMetrics.countFailure("seat_lock_acquire", exception);
             deferForRetry(intent, seatId, "Seat lock was unavailable; retrying later.");
-            return;
+            return SeatLockAttemptResult.completed();
         }
         if (lease.isEmpty()) {
             // Could not acquire within the wait window: another pod currently holds the seat lock.
@@ -192,11 +231,32 @@ public class LibraryReservationWorker {
             // resolves cleanly (upstream "taken" → FAILED_RACE) or succeeds once the lock frees.
             redisMetrics.countSeatLock("skipped");
             deferForRetry(intent, seatId, "Another pod holds the seat reservation lock; retrying later.");
-            return;
+            return SeatLockAttemptResult.completed();
         }
         redisMetrics.countSeatLock("acquired");
         try {
+            Optional<LibraryReservationSeatSelection> freshSelection;
+            try {
+                freshSelection = seatSelector.findFreshAvailableSeat(
+                        intent.intent(), selection, intent.token(), staleSeatIds);
+            } catch (LibraryAuthRequiredException exception) {
+                transactions.failAuth(intent.intentId(), "Library session was rejected by upstream.");
+                return SeatLockAttemptResult.completed();
+            } catch (RuntimeException exception) {
+                log.warn("library reservation intent fresh seat read failed: intentId={} seatId={}",
+                        intent.intentId(), seatId, exception);
+                transactions.failUpstream(intent.intentId(), "Unable to read fresh library seat availability.");
+                return SeatLockAttemptResult.completed();
+            }
+            if (freshSelection.isEmpty()) {
+                transactions.failRace(intent.intentId(), seatId, "Seat was already taken upstream.");
+                return SeatLockAttemptResult.completed();
+            }
+            if (freshSelection.get().seatId() != seatId) {
+                return SeatLockAttemptResult.retry(freshSelection.get());
+            }
             executeReservation(intent, seatId);
+            return SeatLockAttemptResult.completed();
         } finally {
             try {
                 lease.get().close();
@@ -280,6 +340,24 @@ public class LibraryReservationWorker {
                 result.endTime());
     }
 
-    private record ReadyIntent(Long intentId, String token, Long seatId) {
+    private record ReadyIntent(
+            LibraryReservationIntent intent,
+            String token,
+            LibraryReservationSeatSelection selection) {
+
+        Long intentId() {
+            return intent.getId();
+        }
+    }
+
+    private record SeatLockAttemptResult(boolean done, Optional<LibraryReservationSeatSelection> nextSelection) {
+
+        static SeatLockAttemptResult completed() {
+            return new SeatLockAttemptResult(true, Optional.empty());
+        }
+
+        static SeatLockAttemptResult retry(LibraryReservationSeatSelection selection) {
+            return new SeatLockAttemptResult(false, Optional.of(selection));
+        }
     }
 }

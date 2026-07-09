@@ -2,9 +2,11 @@ package com.ssuai.domain.library.reservation.intent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +34,7 @@ class LibraryReservationWorkerTests {
 
     private static final Instant NOW = Instant.parse("2026-06-11T00:00:00Z");
     private static final long SEAT_ID = 3179L;
+    private static final int ROOM_ID = 57;
     private static final String TOKEN = "pyxis-token";
 
     private LibraryReservationIntentTransactions transactions;
@@ -55,6 +58,13 @@ class LibraryReservationWorkerTests {
                 new LibraryRedisProperties());
 
         when(transactions.claimExpiredLeases()).thenReturn(List.of());
+        when(seatSelector.selectionForTargetSeat(SEAT_ID)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findFreshAvailableSeat(
+                any(LibraryReservationIntent.class),
+                any(LibraryReservationSeatSelection.class),
+                any(),
+                anySet()))
+                .thenAnswer(invocation -> Optional.of(invocation.getArgument(1)));
     }
 
     @Test
@@ -64,8 +74,8 @@ class LibraryReservationWorkerTests {
         when(transactions.claimWaitingBatch()).thenReturn(List.of(first, second));
         when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
         when(sessionStore.token("session-2")).thenReturn(Optional.of(TOKEN));
-        when(seatSelector.findAvailableSeat(first)).thenReturn(Optional.of(SEAT_ID));
-        when(seatSelector.findAvailableSeat(second)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(first)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findAvailableSeat(second)).thenReturn(Optional.of(selection(SEAT_ID)));
         when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
                 .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
 
@@ -141,7 +151,7 @@ class LibraryReservationWorkerTests {
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
         when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
-        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
         when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
                 .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
 
@@ -151,6 +161,86 @@ class LibraryReservationWorkerTests {
         verify(seatSelector).findAvailableSeat(intent);
         verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
         verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+    }
+
+    @Test
+    void staleCacheSecondSameSeatIntentFailsRaceWithoutDoomedReserve() {
+        LibraryReservationIntent first = claimedIntent(1L, "session-1");
+        LibraryReservationIntent second = claimedIntent(2L, "session-2");
+        when(transactions.claimWaitingBatch())
+                .thenReturn(List.of(first))
+                .thenReturn(List.of(second));
+        when(sessionStore.token("session-1")).thenReturn(Optional.of(TOKEN));
+        when(sessionStore.token("session-2")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+        when(seatSelector.findAvailableSeat(first)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findAvailableSeat(second)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findFreshAvailableSeat(eq(first), eq(selection(SEAT_ID)), eq(TOKEN), anySet()))
+                .thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findFreshAvailableSeat(eq(second), eq(selection(SEAT_ID)), eq(TOKEN), anySet()))
+                .thenReturn(Optional.empty());
+        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
+                .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
+
+        worker.poll();
+        worker.poll();
+
+        verify(connector, times(1)).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
+        verify(transactions).succeed(eq(1L), eq(SEAT_ID), any());
+        verify(transactions).failRace(2L, SEAT_ID, "Seat was already taken upstream.");
+    }
+
+    @Test
+    void freshReadRetargetsBroadWaitBeforeReservation() {
+        long replacementSeatId = 3180L;
+        LibraryReservationIntent intent = claimedBroadIntent(20L, "session-20");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-20")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findFreshAvailableSeat(eq(intent), eq(selection(SEAT_ID)), eq(TOKEN), anySet()))
+                .thenReturn(Optional.of(selection(replacementSeatId)));
+        when(seatSelector.findFreshAvailableSeat(eq(intent), eq(selection(replacementSeatId)), eq(TOKEN), anySet()))
+                .thenReturn(Optional.of(selection(replacementSeatId)));
+        when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
+                .thenReturn(new LibraryReservationResult(100L, "room", "75", "09:00", "13:00",
+                        ROOM_ID, replacementSeatId));
+
+        worker.poll();
+
+        verify(connector, never()).reserve(eq(TOKEN), eq(new LibraryReservationRequest(SEAT_ID)));
+        verify(connector).reserve(eq(TOKEN), eq(new LibraryReservationRequest(replacementSeatId)));
+        verify(transactions).succeed(eq(20L), eq(replacementSeatId), any());
+    }
+
+    @Test
+    void freshReadReselectionExhaustionFailsRaceWithoutReserve() {
+        LibraryReservationIntent intent = claimedBroadIntent(21L, "session-21");
+        when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
+        when(sessionStore.token("session-21")).thenReturn(Optional.of(TOKEN));
+        when(connector.getCurrentCharge(TOKEN)).thenReturn(Optional.empty());
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
+        when(seatSelector.findFreshAvailableSeat(
+                eq(intent),
+                any(LibraryReservationSeatSelection.class),
+                eq(TOKEN),
+                anySet()))
+                .thenReturn(Optional.of(selection(3180L)))
+                .thenReturn(Optional.of(selection(3181L)))
+                .thenReturn(Optional.of(selection(3182L)));
+
+        worker.poll();
+
+        verify(connector, never()).reserve(any(), any());
+        verify(seatSelector, times(3)).findFreshAvailableSeat(
+                eq(intent),
+                any(LibraryReservationSeatSelection.class),
+                eq(TOKEN),
+                anySet());
+        verify(transactions).failRace(
+                21L,
+                3181L,
+                "Fresh library seat availability changed too many times before reservation.");
     }
 
     @Test
@@ -228,7 +318,7 @@ class LibraryReservationWorkerTests {
         LibraryReservationIntent intent = claimedIntent(10L, "session-10");
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-10")).thenReturn(Optional.of(TOKEN));
-        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
         when(connector.reserve(eq(TOKEN), any(LibraryReservationRequest.class)))
                 .thenReturn(new LibraryReservationResult(100L, "room", "74", "09:00", "13:00"));
 
@@ -254,7 +344,7 @@ class LibraryReservationWorkerTests {
         LibraryReservationIntent intent = claimedIntent(11L, "session-11");
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-11")).thenReturn(Optional.of(TOKEN));
-        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
 
         lockedWorker.poll();
 
@@ -278,7 +368,7 @@ class LibraryReservationWorkerTests {
         LibraryReservationIntent intent = claimedIntent(12L, "session-12");
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-12")).thenReturn(Optional.of(TOKEN));
-        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
 
         lockedWorker.poll();
 
@@ -301,7 +391,7 @@ class LibraryReservationWorkerTests {
         LibraryReservationIntent intent = claimedIntent(13L, "session-13");
         when(transactions.claimWaitingBatch()).thenReturn(List.of(intent));
         when(sessionStore.token("session-13")).thenReturn(Optional.of(TOKEN));
-        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(SEAT_ID));
+        when(seatSelector.findAvailableSeat(intent)).thenReturn(Optional.of(selection(SEAT_ID)));
 
         lockedWorker.poll();
 
@@ -351,6 +441,22 @@ class LibraryReservationWorkerTests {
         return intent;
     }
 
+    private static LibraryReservationIntent claimedBroadIntent(long id, String sessionKey) {
+        LibraryReservationIntent intent = LibraryReservationIntent.requested(
+                sessionKey,
+                sessionKey,
+                null,
+                null,
+                null,
+                null,
+                NOW,
+                NOW.plus(Duration.ofHours(2)));
+        intent.markWaitingForSeat(NOW);
+        intent.claimForReservation(NOW, Duration.ofSeconds(30));
+        ReflectionTestUtils.setField(intent, "id", id);
+        return intent;
+    }
+
     private static LibraryReservationIntent claimedImmediateIntent(long id, String sessionKey) {
         LibraryReservationIntent intent = LibraryReservationIntent.immediateReservation(
                 sessionKey,
@@ -362,5 +468,9 @@ class LibraryReservationWorkerTests {
         intent.claimForReservation(NOW, Duration.ofSeconds(30));
         ReflectionTestUtils.setField(intent, "id", id);
         return intent;
+    }
+
+    private static LibraryReservationSeatSelection selection(long seatId) {
+        return new LibraryReservationSeatSelection(seatId, ROOM_ID);
     }
 }

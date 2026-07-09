@@ -116,6 +116,23 @@ public class LibrarySeatCatalogService {
         return matches.isEmpty() ? Optional.empty() : Optional.of(matches.getFirst());
     }
 
+    public Optional<Integer> findRoomIdByExternalSeatId(String externalSeatId) {
+        String normalizedExternalSeatId = normalizeExternalSeatId(externalSeatId);
+        if (normalizedExternalSeatId == null) {
+            return Optional.empty();
+        }
+        List<Integer> matches = entriesByRoomAndExternalSeatId.entrySet().stream()
+                .filter(entry -> entry.getValue().containsKey(normalizedExternalSeatId))
+                .map(Map.Entry::getKey)
+                .toList();
+        if (matches.size() > 1) {
+            log.warn("Ambiguous externalSeatId {} found in {} rooms; returning first roomId",
+                    normalizedExternalSeatId,
+                    matches.size());
+        }
+        return matches.isEmpty() ? Optional.empty() : Optional.of(matches.getFirst());
+    }
+
     private static List<LibrarySeatCatalogEntry> load(Resource catalogResource, ObjectMapper objectMapper) {
         try (InputStream input = catalogResource.getInputStream()) {
             List<LibrarySeatCatalogEntry> loaded =
