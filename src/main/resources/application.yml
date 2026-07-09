@@ -161,6 +161,30 @@ ssuai:
     # Prod injects the owner ID via the SSUAI_ADMIN_STUDENT_IDS secret
     # (NOT committed — the repo is public). ADR 0063.
     student-ids: ${SSUAI_ADMIN_STUDENT_IDS:}
+  ratelimit:
+    # Per-IP inbound throttling (ADR 0061) — Redis-shared across pods with a
+    # per-pod fallback on outage (ADR next, SCALE-ROADMAP Phase 1 audit A1).
+    # Defaults need NO change at replica=1: redis-enabled=true is behaviorally
+    # identical to per-pod-only counting until replicas > 1.
+    redis-enabled: ${SSUAI_RATELIMIT_REDIS_ENABLED:true}
+    # Trusted X-Forwarded-For hop count for ClientIpResolver (audit A2) — 1 covers
+    # the standard Traefik-only ingress path with no config change; routes also
+    # fronted by Vercel need 2.
+    trusted-proxy-count: ${SSUAI_RATELIMIT_TRUSTED_PROXY_COUNT:1}
+  resilience:
+    pyxis:
+      # Dual rate cap on oasis.ssu.ac.kr calls (ADR 0029 legacy single per-pod cap
+      # -> ADR next Redis-shared cluster cap + per-user fairness cap). Defaults
+      # preserve ADR 0029's exact numbers (read 5/s, write 2/s) as the cluster
+      # budget; per-user fairness is a tighter sub-budget so no single caller can
+      # consume it alone.
+      redis-enabled: ${SSUAI_PYXIS_RATELIMIT_REDIS_ENABLED:true}
+      read-cluster-limit-per-second: ${SSUAI_PYXIS_READ_CLUSTER_LIMIT_PER_SECOND:5}
+      read-timeout: ${SSUAI_PYXIS_READ_TIMEOUT:500ms}
+      write-cluster-limit-per-second: ${SSUAI_PYXIS_WRITE_CLUSTER_LIMIT_PER_SECOND:2}
+      write-timeout: ${SSUAI_PYXIS_WRITE_TIMEOUT:200ms}
+      per-user-read-limit-per-second: ${SSUAI_PYXIS_PER_USER_READ_LIMIT_PER_SECOND:2}
+      per-user-write-limit-per-second: ${SSUAI_PYXIS_PER_USER_WRITE_LIMIT_PER_SECOND:1}
   retention:
     # Daily terminal-row retention sweep at 04:30 KST (ADR 0072, security follow-up #3).
     # Only terminal rows are ever deleted; PENDING/EXECUTING actions, unpublished outbox

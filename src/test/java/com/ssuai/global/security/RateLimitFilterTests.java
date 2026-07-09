@@ -138,26 +138,9 @@ class RateLimitFilterTests {
         assertThat(filter.shouldNotFilter(get)).isTrue();
     }
 
-    // --- X-Forwarded-For parsing: left-most hop is the client --------------
-
-    @Test
-    void xffPicksLeftMostClientHopNotRemoteAddr() {
-        // chain: client, proxy1, ingress  → client = 203.0.113.7
-        MockHttpServletRequest request = post("/api/chat", "203.0.113.7, 70.0.0.1, 10.0.0.2");
-        assertThat(ClientIpResolver.resolve(request)).isEqualTo("203.0.113.7");
-    }
-
-    @Test
-    void xffSingleEntryIsTrimmed() {
-        MockHttpServletRequest request = post("/api/chat", "  198.51.100.5  ");
-        assertThat(ClientIpResolver.resolve(request)).isEqualTo("198.51.100.5");
-    }
-
-    @Test
-    void fallsBackToRemoteAddrWhenXffAbsent() {
-        MockHttpServletRequest request = post("/api/chat", null);
-        assertThat(ClientIpResolver.resolve(request)).isEqualTo("10.0.0.1");
-    }
+    // --- X-Forwarded-For resolution (right-trusted-hop): see ClientIpResolverTests
+    // for the full matrix (forged prefixes, multi-hop, malformed headers). This
+    // file only keeps filter-level integration coverage below.
 
     @Test
     void differentXffClientsBypassSharedIngressRemoteAddr() throws Exception {

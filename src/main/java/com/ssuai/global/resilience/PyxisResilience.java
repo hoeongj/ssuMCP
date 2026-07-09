@@ -1,8 +1,18 @@
 package com.ssuai.global.resilience;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.function.Supplier;
 
+import org.redisson.api.RRateLimiter;
+import org.redisson.api.RateType;
+import org.redisson.api.RedissonClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +36,7 @@ import io.github.resilience4j.micrometer.tagged.TaggedRetryMetrics;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
@@ -50,9 +61,60 @@ import io.micrometer.core.instrument.MeterRegistry;
  * {@code LibraryAuthRequiredException}, {@code ConnectorParseException}) are ignored by
  * the breaker — "seat is taken" or "please log in" is not an infrastructure failure and
  * must not trip the circuit. Only transient infra failures (timeout, 5xx) count.
+ *
+ * <h2>Dual rate cap (SCALE-ROADMAP Phase 1 audit A1)</h2>
+ * <p>Before ADR-next, the read/write {@link RateLimiter} below (limitForPeriod 5/s,
+ * 2/s — ADR 0029) was the <em>only</em> upstream cap, and it lived per-pod: with N
+ * replicas the real ceiling on requests to oasis.ssu.ac.kr became {@code limit × N}, not
+ * {@code limit}. It also had no notion of "one user" — a single heavy caller could
+ * consume the whole budget.
+ *
+ * <p>{@link #read} and {@link #write} now check two Redis-shared
+ * {@link RRateLimiter}s (via {@link #acquireDistributed}) before reaching the existing
+ * decorator chain below, in this order:
+ * <ol>
+ *   <li><b>per-user fairness cap</b> — an {@code RRateLimiter} keyed by a SHA-256
+ *       fingerprint of the caller's Pyxis auth token (never the raw token — same
+ *       privacy stance as ADR 0024 D3 and {@code LibrarySessionStore.fingerprint}), at a
+ *       tighter budget so one principal cannot alone exhaust the cluster cap. Checked
+ *       FIRST so a fairness-denied caller wastes only its own budget — if the cluster
+ *       permit were taken first, each denied attempt would still consume a slice of the
+ *       shared budget and one greedy user could drain it while being "denied".</li>
+ *   <li><b>cluster cap</b> — one Redisson {@code RRateLimiter} per operation type,
+ *       keyed the same regardless of which pod calls it, configured at the real
+ *       school-protection budget ({@link PyxisResilienceProperties#getReadClusterLimitPerSecond()}
+ *       / {@code getWriteClusterLimitPerSecond()}). N replicas now share this one
+ *       budget instead of multiplying it.</li>
+ * </ol>
+ *
+ * <p>Both use {@code RRateLimiter.tryAcquire(1, timeout)} — a bounded
+ * <em>wait</em> for a free slot, not an instant reject — with the exact same
+ * {@code timeoutDuration} the local resilience4j {@link RateLimiter} already used
+ * (500ms read / 200ms write). This preserves the existing failure mode: on denial we
+ * throw the exact same {@link RequestNotPermitted} exception the local limiter would
+ * have thrown, which is not specifically caught by {@code GlobalExceptionHandler} and
+ * therefore surfaces as the same generic-500 path as before — only the counter's scope
+ * changed, not what happens when the cap is hit.
+ *
+ * <h2>Redis-outage semantics: fail-open to the existing per-pod limiter</h2>
+ * <p>Any {@code RuntimeException} while talking to Redis (timeout, connection refused)
+ * is caught in {@link #acquireDistributed}: we log a WARN, record
+ * {@code pyxis.ratelimit.redis.fallback}, and simply skip the distributed checks for
+ * that call. Execution falls straight through to the unchanged local resilience4j
+ * {@link RateLimiter} below — which is already configured at the same real limit (5/s
+ * read, 2/s write) — so a Redis blip degrades this feature back to today's per-pod
+ * behavior instead of blocking all Pyxis traffic. The same happens by construction when
+ * Redis is disabled ({@link PyxisResilienceProperties#isRedisEnabled()} false) or no
+ * Redisson bean is available.
  */
 @Component
 public class PyxisResilience {
+
+    private static final Logger log = LoggerFactory.getLogger(PyxisResilience.class);
+    private static final String DEFAULT_PRINCIPAL = "unknown";
+    private static final String KEY_PREFIX = "ssuai:resilience:pyxis:v1";
+    /** Per-user Redis keys self-expire after this much inactivity (bounds Redis memory). */
+    private static final Duration PER_USER_KEY_TTL = Duration.ofMinutes(5);
 
     private final CircuitBreaker circuitBreaker;
     private final Retry readRetry;
@@ -60,18 +122,29 @@ public class PyxisResilience {
     private final RateLimiter writeRateLimiter;
     private final Bulkhead bulkhead;
 
+    private final RedissonClient redissonClient;
+    private final PyxisResilienceProperties properties;
+    private final PyxisRedisMetrics redisMetrics;
+
     @Autowired
-    public PyxisResilience(MeterRegistry meterRegistry) {
+    public PyxisResilience(
+            MeterRegistry meterRegistry,
+            PyxisResilienceProperties properties,
+            PyxisRedisMetrics redisMetrics,
+            ObjectProvider<RedissonClient> redissonClientProvider) {
         this(meterRegistry,
+                properties.isRedisEnabled() ? redissonClientProvider.getIfAvailable() : null,
+                properties,
+                redisMetrics,
                 RateLimiterConfig.custom()
-                        .limitForPeriod(5)
+                        .limitForPeriod(properties.getReadClusterLimitPerSecond())
                         .limitRefreshPeriod(Duration.ofSeconds(1))
-                        .timeoutDuration(Duration.ofMillis(500))
+                        .timeoutDuration(properties.getReadTimeout())
                         .build(),
                 RateLimiterConfig.custom()
-                        .limitForPeriod(2)
+                        .limitForPeriod(properties.getWriteClusterLimitPerSecond())
                         .limitRefreshPeriod(Duration.ofSeconds(1))
-                        .timeoutDuration(Duration.ofMillis(200))
+                        .timeoutDuration(properties.getWriteTimeout())
                         .build(),
                 BulkheadConfig.custom()
                         .maxConcurrentCalls(10)
@@ -80,9 +153,16 @@ public class PyxisResilience {
     }
 
     PyxisResilience(MeterRegistry meterRegistry,
+                    RedissonClient redissonClient,
+                    PyxisResilienceProperties properties,
+                    PyxisRedisMetrics redisMetrics,
                     RateLimiterConfig readRlConfig,
                     RateLimiterConfig writeRlConfig,
                     BulkheadConfig bulkheadConfig) {
+        this.redissonClient = redissonClient;
+        this.properties = properties;
+        this.redisMetrics = redisMetrics;
+
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
                 .failureRateThreshold(50f)
                 .slowCallRateThreshold(100f)
@@ -124,6 +204,9 @@ public class PyxisResilience {
 
     public static PyxisResilience forTesting(MeterRegistry meterRegistry) {
         return new PyxisResilience(meterRegistry,
+                null, // no Redis in tests — exercises the exact same per-pod path as before
+                new PyxisResilienceProperties(),
+                new PyxisRedisMetrics(meterRegistry),
                 RateLimiterConfig.custom()
                         .limitForPeriod(100_000)
                         .limitRefreshPeriod(Duration.ofSeconds(1))
@@ -140,8 +223,40 @@ public class PyxisResilience {
                         .build());
     }
 
-    /** Idempotent reads: Bulkhead → RateLimiter → CircuitBreaker → Retry (innermost first in wrapping). */
+    /** Test-only factory that wires in a real/fake Redisson client to exercise the dual cap. */
+    static PyxisResilience forTestingWithRedis(MeterRegistry meterRegistry, RedissonClient redissonClient,
+                                                PyxisResilienceProperties properties) {
+        return new PyxisResilience(meterRegistry,
+                redissonClient,
+                properties,
+                new PyxisRedisMetrics(meterRegistry),
+                RateLimiterConfig.custom()
+                        .limitForPeriod(100_000)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ZERO)
+                        .build(),
+                RateLimiterConfig.custom()
+                        .limitForPeriod(100_000)
+                        .limitRefreshPeriod(Duration.ofSeconds(1))
+                        .timeoutDuration(Duration.ZERO)
+                        .build(),
+                BulkheadConfig.custom()
+                        .maxConcurrentCalls(100_000)
+                        .maxWaitDuration(Duration.ZERO)
+                        .build());
+    }
+
+    /** Idempotent reads, anonymous principal (kept for callers with no natural per-user key). */
     public <T> T read(Supplier<T> call) {
+        return read(DEFAULT_PRINCIPAL, call);
+    }
+
+    /** Idempotent reads: distributed dual cap, then Bulkhead → RateLimiter → CircuitBreaker → Retry. */
+    public <T> T read(String principal, Supplier<T> call) {
+        acquireDistributed("read", principal,
+                properties.getReadClusterLimitPerSecond(), properties.getPerUserReadLimitPerSecond(),
+                properties.getReadTimeout(), readRateLimiter);
+
         Supplier<T> guarded = Retry.decorateSupplier(readRetry,
                 CircuitBreaker.decorateSupplier(circuitBreaker, call));
         guarded = RateLimiter.decorateSupplier(readRateLimiter, guarded);
@@ -149,12 +264,92 @@ public class PyxisResilience {
         return guarded.get();
     }
 
-    /** Non-idempotent writes (reserve/discharge): Bulkhead → RateLimiter → CircuitBreaker (no retry). */
+    /** Non-idempotent writes (reserve/discharge), anonymous principal. */
     public <T> T write(Supplier<T> call) {
+        return write(DEFAULT_PRINCIPAL, call);
+    }
+
+    /** Non-idempotent writes: distributed dual cap, then Bulkhead → RateLimiter → CircuitBreaker (no retry). */
+    public <T> T write(String principal, Supplier<T> call) {
+        acquireDistributed("write", principal,
+                properties.getWriteClusterLimitPerSecond(), properties.getPerUserWriteLimitPerSecond(),
+                properties.getWriteTimeout(), writeRateLimiter);
+
         Supplier<T> guarded = CircuitBreaker.decorateSupplier(circuitBreaker, call);
         guarded = RateLimiter.decorateSupplier(writeRateLimiter, guarded);
         guarded = Bulkhead.decorateSupplier(bulkhead, guarded);
         return guarded.get();
+    }
+
+    /**
+     * Fingerprints an upstream auth token into a stable per-user key. Never
+     * stores/keys on the raw token (privacy — same stance as
+     * {@code LibrarySessionStore.fingerprint}, ADR 0024 D3).
+     */
+    public static String principalOf(String pyxisAuthToken) {
+        if (pyxisAuthToken == null || pyxisAuthToken.isBlank()) {
+            return DEFAULT_PRINCIPAL;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(pyxisAuthToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hashed).substring(0, 16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+    }
+
+    /**
+     * Checks the per-user fairness cap and then the cluster-wide cap (both Redisson
+     * {@link RRateLimiter}s) before the call reaches the local decorator chain — see
+     * the ordering rationale inline: fairness must be judged before any shared budget
+     * is spent. Denial throws the same {@link RequestNotPermitted} the local
+     * {@link RateLimiter} would throw (preserving the existing failure mode); any
+     * Redis-side {@code RuntimeException} is treated as an outage and falls through
+     * silently (WARN + metric), letting the unchanged local per-pod chain below act
+     * as the safety net.
+     */
+    private void acquireDistributed(
+            String operation,
+            String principal,
+            int clusterLimit,
+            int perUserLimit,
+            Duration timeout,
+            RateLimiter localLimiterForExceptionIdentity) {
+        if (redissonClient == null) {
+            return;
+        }
+        try {
+            // Per-user fairness cap FIRST: a fairness-denied caller must waste only its
+            // OWN budget. If the cluster permit were acquired first, every denied attempt
+            // by one greedy principal would still consume a slice of the shared
+            // school-protection budget — draining it for everyone and defeating the
+            // fairness cap's purpose. The reverse waste (user permit consumed, then the
+            // cluster cap denies) only harms that same caller, which is acceptable.
+            String principalKey = KEY_PREFIX + ":" + operation + ":user:" + safePrincipal(principal);
+            RRateLimiter perUser = redissonClient.getRateLimiter(principalKey);
+            perUser.trySetRate(RateType.OVERALL, perUserLimit, Duration.ofSeconds(1));
+            perUser.expire(PER_USER_KEY_TTL);
+            if (!perUser.tryAcquire(1, timeout)) {
+                throw RequestNotPermitted.createRequestNotPermitted(localLimiterForExceptionIdentity);
+            }
+
+            RRateLimiter cluster = redissonClient.getRateLimiter(KEY_PREFIX + ":" + operation + ":cluster");
+            cluster.trySetRate(RateType.OVERALL, clusterLimit, Duration.ofSeconds(1));
+            if (!cluster.tryAcquire(1, timeout)) {
+                throw RequestNotPermitted.createRequestNotPermitted(localLimiterForExceptionIdentity);
+            }
+        } catch (RequestNotPermitted exception) {
+            throw exception; // genuine denial — propagate exactly like the local limiter would.
+        } catch (RuntimeException exception) {
+            log.warn("Pyxis distributed rate limiter unavailable — falling back to per-pod cap: operation={}",
+                    operation, exception);
+            redisMetrics.countFallback(operation, exception);
+        }
+    }
+
+    private static String safePrincipal(String principal) {
+        return (principal == null || principal.isBlank()) ? DEFAULT_PRINCIPAL : principal;
     }
 
     /** Returns current circuit breaker state for admin monitoring. */

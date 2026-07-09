@@ -1,8 +1,10 @@
 package com.ssuai.global.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,23 +32,24 @@ class RateLimitFilterConfig {
     @Bean
     FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(
             RateLimitProperties properties,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ObjectProvider<RedissonClient> redissonClientProvider,
+            RateLimitRedisMetrics redisMetrics) {
+
+        RedissonClient redissonClient = properties.isRedisEnabled() ? redissonClientProvider.getIfAvailable() : null;
 
         log.info("Per-IP rate limiting active — login={}/window, chat={}/window, "
-                        + "confirm={}/window, refresh={}/window, window={}",
-                properties.getLoginPerMinute(),
-                properties.getChatPerMinute(),
-                properties.getConfirmPerMinute(),
-                properties.getRefreshPerMinute(),
-                properties.getWindow());
-
-        RateLimitFilter filter = RateLimitFilter.forRules(
+                        + "confirm={}/window, refresh={}/window, window={}, "
+                        + "redisShared={}, trustedProxyCount={}",
                 properties.getLoginPerMinute(),
                 properties.getChatPerMinute(),
                 properties.getConfirmPerMinute(),
                 properties.getRefreshPerMinute(),
                 properties.getWindow(),
-                objectMapper);
+                redissonClient != null,
+                properties.getTrustedProxyCount());
+
+        RateLimitFilter filter = RateLimitFilter.forSharedRules(properties, redissonClient, redisMetrics, objectMapper);
 
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>(filter);
         registration.addUrlPatterns("/api/*");

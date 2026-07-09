@@ -89,7 +89,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     // Reads are idempotent → circuit breaker + retry.
     private String get(String pyxisAuthToken, String path, String referer) {
-        return pyxisResilience.read(() -> {
+        return pyxisResilience.read(PyxisResilience.principalOf(pyxisAuthToken), () -> {
             try {
                 return restClient.get()
                         .uri(path)
@@ -115,7 +115,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
 
     // Writes (reserve/discharge) are NOT idempotent → circuit breaker only, never retried.
     private String post(String pyxisAuthToken, String path, String referer, Map<String, Object> body) {
-        return pyxisResilience.write(() -> {
+        return pyxisResilience.write(PyxisResilience.principalOf(pyxisAuthToken), () -> {
             try {
                 return restClient.post()
                         .uri(path)

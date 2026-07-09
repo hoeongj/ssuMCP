@@ -9,6 +9,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -43,23 +44,32 @@ import com.ssuai.global.response.ErrorResponse;
  * <p>Generous by design — this stops abuse, it must not lock out a normal user
  * clicking around. Defaults live in {@link RateLimitProperties}
  * ({@code ssuai.ratelimit.*}) and are tunable per environment. The limiter is
- * per-IP (see {@link ClientIpResolver}) and per-pod (see {@link IpRateLimiter}
- * for the multi-replica caveat).</p>
+ * per-IP (see {@link ClientIpResolver}, which resolves the client from a
+ * trusted-hop position in {@code X-Forwarded-For} — SCALE-ROADMAP Phase 1
+ * audit A2) and, in production, Redis-shared across pods via
+ * {@link SharedIpRateLimiter} with a per-pod fallback (audit A1). The plain
+ * per-pod {@link IpRateLimiter} still exists as that fallback and as the
+ * simple local limiter {@link #forRules} builds for tests.</p>
  */
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitFilter.class);
 
+    /** Trusted proxy hop default used by the legacy (test-only) local-limiter factory. */
+    private static final int DEFAULT_TRUSTED_PROXY_COUNT = 1;
+
     /** A single (path, limiter) rule. */
-    record Rule(String path, IpRateLimiter limiter) {
+    record Rule(String path, RateLimiterGate limiter) {
     }
 
     private final List<Rule> rules;
     private final ObjectMapper objectMapper;
+    private final int trustedProxyCount;
 
-    RateLimitFilter(List<Rule> rules, ObjectMapper objectMapper) {
+    RateLimitFilter(List<Rule> rules, ObjectMapper objectMapper, int trustedProxyCount) {
         this.rules = List.copyOf(rules);
         this.objectMapper = objectMapper;
+        this.trustedProxyCount = trustedProxyCount;
     }
 
     @Override
@@ -84,7 +94,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        String clientIp = ClientIpResolver.resolve(request);
+        String clientIp = ClientIpResolver.resolve(request, trustedProxyCount);
         IpRateLimiter.Outcome outcome = rule.limiter().tryAcquire(clientIp);
         if (outcome.allowed()) {
             filterChain.doFilter(request, response);
@@ -122,8 +132,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 
-    // --- package-private factory used by the config + tests ----------------
+    // --- package-private factories used by the config + tests --------------
 
+    /**
+     * Builds a filter backed purely by per-pod {@link IpRateLimiter}s (no
+     * Redis). Used by unit tests that exercise filter/path-matching behavior
+     * without needing a Redisson client, and equivalent to the old (pre-A1)
+     * behavior at replica=1.
+     */
     static RateLimitFilter forRules(
             int loginLimit,
             int chatLimit,
@@ -136,6 +152,32 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 new Rule("/api/chat", new IpRateLimiter(chatLimit, window)),
                 new Rule("/api/library/reservations/confirm", new IpRateLimiter(confirmLimit, window)),
                 new Rule("/api/auth/refresh", new IpRateLimiter(refreshLimit, window))),
-                objectMapper);
+                objectMapper, DEFAULT_TRUSTED_PROXY_COUNT);
+    }
+
+    /**
+     * Builds the production filter: each rule is backed by a
+     * {@link SharedIpRateLimiter} (Redis-shared across pods with a per-pod
+     * fallback — SCALE-ROADMAP Phase 1 audit A1). {@code redissonClient} may
+     * be {@code null} (feature disabled via {@link RateLimitProperties#isRedisEnabled()}
+     * or no Redisson bean available) — {@link SharedIpRateLimiter} treats that
+     * identically to a Redis outage and runs purely per-pod.
+     */
+    static RateLimitFilter forSharedRules(
+            RateLimitProperties properties,
+            RedissonClient redissonClient,
+            RateLimitRedisMetrics redisMetrics,
+            ObjectMapper objectMapper) {
+        Duration window = properties.getWindow();
+        return new RateLimitFilter(List.of(
+                new Rule("/api/library/login",
+                        new SharedIpRateLimiter(redissonClient, "login", properties.getLoginPerMinute(), window, redisMetrics)),
+                new Rule("/api/chat",
+                        new SharedIpRateLimiter(redissonClient, "chat", properties.getChatPerMinute(), window, redisMetrics)),
+                new Rule("/api/library/reservations/confirm",
+                        new SharedIpRateLimiter(redissonClient, "confirm", properties.getConfirmPerMinute(), window, redisMetrics)),
+                new Rule("/api/auth/refresh",
+                        new SharedIpRateLimiter(redissonClient, "refresh", properties.getRefreshPerMinute(), window, redisMetrics))),
+                objectMapper, properties.getTrustedProxyCount());
     }
 }

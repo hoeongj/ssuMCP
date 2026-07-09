@@ -33,11 +33,18 @@ import java.util.function.LongSupplier;
  * when full, opportunistically evict buckets whose window has already expired
  * before inserting a new one. Under a flood of unique IPs this bounds memory at
  * the cost of occasionally resetting a stale counter early (harmless).</p>
+ *
+ * <h2>Role since the multi-pod rollout (SCALE-ROADMAP Phase 1 A1)</h2>
+ * <p>This class is no longer the only limiter: {@link SharedIpRateLimiter}
+ * wraps it as the per-pod fallback used when Redis is disabled or briefly
+ * unavailable (fail-open — see its javadoc). At replica=1 the two are
+ * equivalent; the caveat above only applies when this class runs standalone
+ * without a shared backing store.</p>
  */
-final class IpRateLimiter {
+final class IpRateLimiter implements RateLimiterGate {
 
     /** Default ceiling on tracked IPs — bounds worst-case memory. */
-    private static final int DEFAULT_MAX_ENTRIES = 100_000;
+    static final int DEFAULT_MAX_ENTRIES = 100_000;
 
     private final int limit;
     private final long windowMillis;
@@ -66,7 +73,8 @@ final class IpRateLimiter {
      * seconds until the current window resets (for a {@code Retry-After}
      * header). Atomic per key via {@link ConcurrentHashMap#compute}.
      */
-    Outcome tryAcquire(String key) {
+    @Override
+    public Outcome tryAcquire(String key) {
         long now = clock.getAsLong();
         if (buckets.size() >= maxEntries && !buckets.containsKey(key)) {
             evictExpired(now);

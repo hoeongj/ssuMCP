@@ -104,7 +104,7 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
 
     private String callUpstream(String token) {
         randomDelay();
-        return pyxisResilience.read(() -> {
+        return pyxisResilience.read(PyxisResilience.principalOf(token), () -> {
             try {
                 return restClient.get()
                         .uri(SEAT_ROOMS_PATH)
@@ -210,7 +210,7 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
     }
 
     private String callRoomSeatsUpstream(int roomId, String token) {
-        return pyxisResilience.read(() -> {
+        return pyxisResilience.read(PyxisResilience.principalOf(token), () -> {
             try {
                 return restClient.get()
                         .uri("/pyxis-api/1/api/rooms/{roomId}/seats", roomId)

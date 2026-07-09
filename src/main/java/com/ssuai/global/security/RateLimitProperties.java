@@ -41,6 +41,27 @@ public class RateLimitProperties {
      */
     private int refreshPerMinute = 60;
 
+    /**
+     * Whether the inbound per-IP limiter shares its counters via Redis
+     * (SCALE-ROADMAP Phase 1 audit A1). Defaults on: at replica=1 this is
+     * behaviorally identical to the old per-pod-only counter, and it removes
+     * the "limit × replicas" leak the moment replicas &gt; 1 — no config
+     * change needed to get correct multi-pod behavior. A Redis outage or a
+     * missing Redisson bean falls back to the exact same per-pod counting
+     * this flag would otherwise disable (see {@link SharedIpRateLimiter}).
+     */
+    private boolean redisEnabled = true;
+
+    /**
+     * Number of trusted reverse-proxy hops between the client and this
+     * service that append to {@code X-Forwarded-For}
+     * ({@link ClientIpResolver}). Default {@code 1} covers the standard k3s
+     * Traefik ingress deployment with no config change. Routes additionally
+     * fronted by a Vercel proxy need {@code 2}. {@code 0} disables XFF
+     * trust entirely (always uses {@code getRemoteAddr()}).
+     */
+    private int trustedProxyCount = 1;
+
     public Duration getWindow() {
         return window;
     }
@@ -79,5 +100,24 @@ public class RateLimitProperties {
 
     public void setRefreshPerMinute(int refreshPerMinute) {
         this.refreshPerMinute = refreshPerMinute;
+    }
+
+    public boolean isRedisEnabled() {
+        return redisEnabled;
+    }
+
+    public void setRedisEnabled(boolean redisEnabled) {
+        this.redisEnabled = redisEnabled;
+    }
+
+    public int getTrustedProxyCount() {
+        return trustedProxyCount;
+    }
+
+    public void setTrustedProxyCount(int trustedProxyCount) {
+        if (trustedProxyCount < 0) {
+            throw new IllegalArgumentException("trustedProxyCount must be >= 0");
+        }
+        this.trustedProxyCount = trustedProxyCount;
     }
 }

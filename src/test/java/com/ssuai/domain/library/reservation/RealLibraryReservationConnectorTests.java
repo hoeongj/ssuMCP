@@ -48,7 +48,7 @@ class RealLibraryReservationConnectorTests {
         server = MockRestServiceServer.bindTo(builder).build();
         connector = new RealLibraryReservationConnector(
                 properties, new ObjectMapper(), builder.build(),
-                new PyxisResilience(new SimpleMeterRegistry()));
+                PyxisResilience.forTesting(new SimpleMeterRegistry()));
     }
 
     @Test

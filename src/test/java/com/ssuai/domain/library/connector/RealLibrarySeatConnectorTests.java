@@ -51,7 +51,7 @@ class RealLibrarySeatConnectorTests {
         server = MockRestServiceServer.bindTo(builder).build();
         connector = new RealLibrarySeatConnector(
                 properties, new ObjectMapper(), builder.build(),
-                new PyxisResilience(new SimpleMeterRegistry()));
+                PyxisResilience.forTesting(new SimpleMeterRegistry()));
     }
 
     @Test
