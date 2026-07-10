@@ -33,7 +33,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum by (result) (rate(mcp_toolcall_event_total{application=\"ssuai\"}[5m]))",
+            "expr": "sum by (result) (rate(mcp_toolcall_event_total{job=\"ssuai-backend\"}[5m]))",
             "legendFormat": "{{ "{{" }}result{{ "}}" }}"
           }],
           "fieldConfig": {
@@ -48,7 +48,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum by (result) (rate(library_intent_bus_event_total{application=\"ssuai\"}[5m]))",
+            "expr": "sum by (result) (rate(library_intent_bus_event_total{job=\"ssuai-backend\"}[5m]))",
             "legendFormat": "{{ "{{" }}result{{ "}}" }}"
           }],
           "fieldConfig": {
@@ -63,7 +63,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum by (topic) (kafka_consumer_fetch_manager_records_lag{application=\"ssuai\", topic=~\".+\\\\.v1\"})",
+            "expr": "sum by (topic) (kafka_consumer_fetch_manager_records_lag{job=\"ssuai-backend\", topic=~\".+\\\\.v1\"})",
             "legendFormat": "{{ "{{" }}topic{{ "}}" }}"
           }],
           "fieldConfig": {
@@ -78,7 +78,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum(rate(mcp_toolcall_event_total{application=\"ssuai\", result=~\"dropped.*\"}[5m])) / clamp_min(sum(rate(mcp_toolcall_event_total{application=\"ssuai\"}[5m])), 1e-9)",
+            "expr": "sum(rate(mcp_toolcall_event_total{job=\"ssuai-backend\", result=~\"dropped.*\"}[5m])) / clamp_min(sum(rate(mcp_toolcall_event_total{job=\"ssuai-backend\"}[5m])), 1e-9)",
             "legendFormat": "drop fraction"
           }],
           "fieldConfig": {
@@ -140,7 +140,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
             "datasource": { "type": "prometheus", "uid": "${datasource}" },
-            "expr": "sum(kafka_consumer_coordinator_failed_rebalance_total{application=\"ssuai\"})",
+            "expr": "sum(kafka_consumer_coordinator_failed_rebalance_total{job=\"ssuai-backend\"})",
             "legendFormat": "failed rebalances"
           }],
           "fieldConfig": {

@@ -124,4 +124,7 @@ Phase 2 Kafka EDA 관측성 마무리로 `ssuAI — Kafka / Event-Driven Archite
 
 메트릭 출처는 Micrometer counter `mcp.toolcall.event`/`library.intent.bus.event`의 `result` 태그, Spring Kafka/Micrometer가 노출하는 `kafka_consumer_*` 계열, 그리고 kube-state-metrics의 HPA 메트릭이다.
 
+구현 결정: 대시보드 PromQL은 `application` 공통 태그가 아니라 `job="ssuai-backend"`/`namespace="ssuai-prod"`로 필터한다.
+백엔드는 `spring.application.name`만 설정하며 Micrometer `application` 공통 태그를 방출하지 않는다. 적대적 검증에서 prod Prometheus 기준 Kafka 5/6 패널과 RED HTTP 패널이 빈 것을 실측·확인했다.
+
 프로비저닝은 `deploy/charts/ssuai-backend/templates/grafana-dashboard-kafka.yaml` ConfigMap으로 처리한다. kube-prometheus-stack Grafana sidecar가 `monitoring` 네임스페이스에서 `grafana_dashboard=1` 라벨이 붙은 ConfigMap을 자동 로드한다.

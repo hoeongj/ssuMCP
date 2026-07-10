@@ -31,7 +31,7 @@ data:
           "title": "Request Rate",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
-            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\"}[1m]))",
+            "expr": "sum(rate(http_server_requests_seconds_count{job=\"ssuai-backend\"}[1m]))",
             "legendFormat": "req/s"
           }],
           "fieldConfig": {
@@ -45,7 +45,7 @@ data:
           "title": "Error Rate",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
-            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\",status=~\"5..\"}[1m])) / sum(rate(http_server_requests_seconds_count{application=\"ssuai\"}[1m]))",
+            "expr": "sum(rate(http_server_requests_seconds_count{job=\"ssuai-backend\",status=~\"5..\"}[1m])) / sum(rate(http_server_requests_seconds_count{job=\"ssuai-backend\"}[1m]))",
             "legendFormat": "error %"
           }],
           "fieldConfig": {
@@ -68,7 +68,7 @@ data:
           "title": "p99 Latency",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
-            "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application=\"ssuai\"}[5m])) by (le))",
+            "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"ssuai-backend\"}[5m])) by (le))",
             "legendFormat": "p99"
           }],
           "fieldConfig": {
@@ -92,7 +92,7 @@ data:
           "title": "5xx Timeline",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [{
-            "expr": "sum(rate(http_server_requests_seconds_count{application=\"ssuai\",status=~\"5..\"}[1m])) by (uri)",
+            "expr": "sum(rate(http_server_requests_seconds_count{job=\"ssuai-backend\",status=~\"5..\"}[1m])) by (uri)",
             "legendFormat": "{{ "{{" }} uri {{ "}}" }}"
           }],
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 }
