@@ -12,10 +12,11 @@ import org.springframework.stereotype.Component;
  * {@code academic_embeddings.embedding_vec}, active only under the {@code pgvector} profile.
  *
  * <p>Prod stays on the in-memory cosine store ({@link PersistentAcademicEmbeddingStore},
- * ADR 0020) because a few hundred chunks do not need an ANN index and prod Postgres has no
- * {@code vector} extension. This component demonstrates the pgvector capability in isolation
- * (proven by {@code PgVectorAnnIndexIT}) without changing the live RAG retrieval path — the
- * integration seam is documented in ADR 0070.
+ * ADR 0020) for the live RAG serving path because a few hundred chunks do not need an ANN index.
+ * The {@code vector} extension IS present in prod now (pgvector/pgvector:pg17, and the prod profile
+ * includes {@code pgvector}), so {@code embedding_vec} and its HNSW index exist — but this component
+ * still has no production caller. It demonstrates the pgvector capability in isolation (proven by
+ * {@code PgVectorAnnIndexIT}); the integration seam is documented in ADR 0070 (2026-07-09 amendment).
  *
  * <p>{@code embedding_vec} is deliberately NOT mapped on {@link AcademicEmbeddingEntity}
  * (avoids a hibernate-vector dependency); all access here is native via {@link JdbcTemplate}.
