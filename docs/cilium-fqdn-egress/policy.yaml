@@ -1,0 +1,39 @@
+# LAB-VALIDATED REFERENCE — NOT deployed to prod (see ADR 0094).
+# Validated on kind + Cilium 1.19.5. For prod (Track B) run in PolicyAuditMode
+# under CNI-chaining first to enumerate real provider subdomains before enforcing.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: backend-egress, namespace: demo }
+spec:
+  endpointSelector: { matchLabels: { app: backend } }
+  egress:
+    # DNS L7 visibility MUST come first, or toFQDNs silently blackholes.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports: [ { port: "53", protocol: ANY } ]
+          rules: { dns: [ { matchPattern: "*" } ] }
+    - toFQDNs:
+        - matchName: "api.anthropic.com"
+      toPorts:
+        - ports: [ { port: "443", protocol: TCP } ]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: agent-egress, namespace: demo }
+spec:
+  endpointSelector: { matchLabels: { app: agent } }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports: [ { port: "53", protocol: ANY } ]
+          rules: { dns: [ { matchPattern: "*" } ] }
+    - toFQDNs:
+        - matchName: "one.one.one.one"
+      toPorts:
+        - ports: [ { port: "443", protocol: TCP } ]
