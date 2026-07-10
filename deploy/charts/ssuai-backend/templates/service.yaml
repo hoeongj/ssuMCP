@@ -7,6 +7,12 @@ metadata:
     {{- include "ssuai-backend.labels" . | nindent 4 }}
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    {{- if .Values.service.stickyCookie.enabled }}
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: {{ .Values.service.stickyCookie.name | quote }}
+    traefik.ingress.kubernetes.io/service.sticky.cookie.secure: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+    {{- end }}
 spec:
   type: {{ .Values.service.type }}
   selector:

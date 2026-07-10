@@ -155,6 +155,13 @@ secretTemplate:
 service:
   type: ClusterIP
   port: 8080
+  # Traefik balances across pod endpoints directly (nativeLB off), so a Service
+  # sessionAffinity is bypassed. MCP streamable-HTTP sessions are pod-local, so
+  # pin a client to one backend pod for the life of its session via a Traefik
+  # sticky cookie. See ADR 0092.
+  stickyCookie:
+    enabled: true
+    name: mcp_lb_affinity
 ingress:
   enabled: true
   className: traefik
