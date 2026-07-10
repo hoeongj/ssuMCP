@@ -73,22 +73,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
+          # Use tcpSocket probes instead of exec: JVM-launch CLI exceeds the 1s default probe timeout on this constrained node.
           startupProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - localhost:9092
+            tcpSocket:
+              port: 9092
             failureThreshold: 30
             periodSeconds: 5
           readinessProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - localhost:9092
+            tcpSocket:
+              port: 9092
             periodSeconds: 10
-            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             tcpSocket:
