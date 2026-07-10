@@ -2,6 +2,8 @@
 
 **한국어** [README.md](README.md) · **English** (this document)
 
+> 🧩 **Soongsil Campus AI Platform** (1 of 4 services) · **ssuMCP** · [ssuAI](https://github.com/hoeongj/ssuAI) · [ssuAgent](https://github.com/hoeongj/ssuAgent) · [ssu-ai-service](https://github.com/hoeongj/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
+
 [![CI](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml)
 
 A public server that exposes Soongsil University campus information as **MCP (Model Context Protocol) standard tools**.  
