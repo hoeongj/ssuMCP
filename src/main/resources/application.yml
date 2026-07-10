@@ -204,6 +204,7 @@ ssuai:
       write-timeout: ${SSUAI_PYXIS_WRITE_TIMEOUT:200ms}
       per-user-read-limit-per-second: ${SSUAI_PYXIS_PER_USER_READ_LIMIT_PER_SECOND:2}
       per-user-write-limit-per-second: ${SSUAI_PYXIS_PER_USER_WRITE_LIMIT_PER_SECOND:1}
+      retry-after-cap-ms: ${SSUAI_PYXIS_RETRY_AFTER_CAP_MS:10000}
     llm-spend:
       # Global daily/monthly LLM spend circuit breaker (ADR 0081, SCALE-ROADMAP Phase 1
       # audit A3) — per-IP caps (ratelimit.chat-per-minute) bound ONE caller; they do

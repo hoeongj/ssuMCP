@@ -1,6 +1,7 @@
 package com.ssuai.domain.library.connector;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -12,11 +13,16 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,6 +32,7 @@ import org.springframework.web.client.RestClient;
 import com.ssuai.domain.library.dto.BookStatus;
 import com.ssuai.domain.library.dto.LibraryBookSearchResponse;
 import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 
@@ -122,6 +129,42 @@ class RealLibraryBookConnectorTests {
 
         assertThatThrownBy(() -> connector.search("파이썬", 0, 10))
                 .isInstanceOf(ConnectorParseException.class);
+    }
+
+    @Test
+    void rateLimitWithDeltaSecondsRetryAfterMapsToConnectorRateLimited() {
+        server.expect(requestTo(expectedUri("파이썬", 0, 10)))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, "2"));
+
+        assertThatExceptionOfType(ConnectorRateLimitedException.class)
+                .isThrownBy(() -> connector.search("파이썬", 0, 10))
+                .satisfies(exception -> assertThat(exception.getRetryAfter()).isEqualTo(Duration.ofSeconds(2)));
+    }
+
+    @Test
+    void rateLimitWithHttpDateRetryAfterMapsToPositiveDuration() {
+        String retryAfter = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+                ZonedDateTime.now(ZoneOffset.UTC).plusSeconds(30));
+        server.expect(requestTo(expectedUri("파이썬", 0, 10)))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, retryAfter));
+
+        assertThatExceptionOfType(ConnectorRateLimitedException.class)
+                .isThrownBy(() -> connector.search("파이썬", 0, 10))
+                .satisfies(exception -> assertThat(exception.getRetryAfter())
+                        .isPositive()
+                        .isLessThanOrEqualTo(Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void rateLimitWithoutRetryAfterMapsToConnectorRateLimitedWithoutDuration() {
+        server.expect(requestTo(expectedUri("파이썬", 0, 10)))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatExceptionOfType(ConnectorRateLimitedException.class)
+                .isThrownBy(() -> connector.search("파이썬", 0, 10))
+                .satisfies(exception -> assertThat(exception.getRetryAfter()).isNull());
     }
 
     @Test

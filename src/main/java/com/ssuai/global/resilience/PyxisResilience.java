@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
@@ -30,7 +31,7 @@ import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.core.IntervalFunction;
+import io.github.resilience4j.core.IntervalBiFunction;
 import io.github.resilience4j.micrometer.tagged.TaggedBulkheadMetrics;
 import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
 import io.github.resilience4j.micrometer.tagged.TaggedRateLimiterMetrics;
@@ -54,7 +55,8 @@ import io.micrometer.core.instrument.MeterRegistry;
  *
  * <p>Read vs write is deliberately asymmetric:
  * <ul>
- *   <li>{@link #read} adds retry with exponential backoff — reads are idempotent.</li>
+ *   <li>{@link #read} adds retry — reads are idempotent. HTTP 429 honors
+ *       upstream {@code Retry-After}; other transient failures use exponential backoff.</li>
  *   <li>{@link #write} never retries — reserve/discharge are NOT idempotent, so a retry
  *       could double-book a seat. The circuit breaker still guards it.</li>
  * </ul>
@@ -62,7 +64,9 @@ import io.micrometer.core.instrument.MeterRegistry;
  * <p>Business/auth exceptions ({@code LibrarySeatNotAvailableException},
  * {@code LibraryAuthRequiredException}, {@code ConnectorParseException}) are ignored by
  * the breaker — "seat is taken" or "please log in" is not an infrastructure failure and
- * must not trip the circuit. Only transient infra failures (timeout, 5xx) count.
+ * must not trip the circuit. {@code ConnectorRateLimitedException} is also ignored by
+ * the breaker and handled by retry/HTTP mapping instead. Only transient infra failures
+ * (timeout, 5xx) count.
  *
  * <h2>Dual rate cap (SCALE-ROADMAP Phase 1 audit A1)</h2>
  * <p>Before ADR-next, the read/write {@link RateLimiter} below (limitForPeriod 5/s,
@@ -117,6 +121,8 @@ public class PyxisResilience {
     private static final String KEY_PREFIX = "ssuai:resilience:pyxis:v1";
     /** Per-user Redis keys self-expire after this much inactivity (bounds Redis memory). */
     private static final Duration PER_USER_KEY_TTL = Duration.ofMinutes(5);
+    private static final long READ_RETRY_BASE_MS = 200L;
+    private static final double READ_RETRY_MULTIPLIER = 2.0;
 
     private final CircuitBreaker readCircuitBreaker;
     private final CircuitBreaker writeCircuitBreaker;
@@ -180,7 +186,8 @@ public class PyxisResilience {
                 .ignoreExceptions(
                         LibrarySeatNotAvailableException.class,
                         LibraryAuthRequiredException.class,
-                        ConnectorParseException.class)
+                        ConnectorParseException.class,
+                        ConnectorRateLimitedException.class)
                 .build();
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.of(circuitBreakerConfig);
         this.readCircuitBreaker = circuitBreakerRegistry.circuitBreaker("pyxis-read");
@@ -189,8 +196,11 @@ public class PyxisResilience {
 
         RetryConfig retryConfig = RetryConfig.custom()
                 .maxAttempts(3)
-                .intervalFunction(IntervalFunction.ofExponentialBackoff(Duration.ofMillis(200), 2.0))
-                .retryExceptions(ConnectorTimeoutException.class, ConnectorUnavailableException.class)
+                .intervalBiFunction(retryIntervalBiFunction(properties.getRetryAfterCapMs()))
+                .retryExceptions(
+                        ConnectorTimeoutException.class,
+                        ConnectorUnavailableException.class,
+                        ConnectorRateLimitedException.class)
                 .build();
         RetryRegistry retryRegistry = RetryRegistry.of(retryConfig);
         this.readRetry = retryRegistry.retry("pyxis-read");
@@ -207,9 +217,15 @@ public class PyxisResilience {
     }
 
     public static PyxisResilience forTesting(MeterRegistry meterRegistry) {
+        PyxisResilienceProperties properties = new PyxisResilienceProperties();
+        properties.setRetryAfterCapMs(1);
+        return forTesting(meterRegistry, properties);
+    }
+
+    public static PyxisResilience forTesting(MeterRegistry meterRegistry, PyxisResilienceProperties properties) {
         return new PyxisResilience(meterRegistry,
                 null, // no Redis in tests — exercises the exact same per-pod path as before
-                new PyxisResilienceProperties(),
+                properties,
                 new PyxisRedisMetrics(meterRegistry),
                 RateLimiterConfig.custom()
                         .limitForPeriod(100_000)
@@ -225,6 +241,30 @@ public class PyxisResilience {
                         .maxConcurrentCalls(100_000)
                         .maxWaitDuration(Duration.ZERO)
                         .build());
+    }
+
+    private static IntervalBiFunction<Object> retryIntervalBiFunction(long retryAfterCapMs) {
+        return (attempt, result) -> retryIntervalMillis(
+                attempt,
+                result.isLeft() ? result.getLeft() : null,
+                retryAfterCapMs);
+    }
+
+    static long retryIntervalMillis(int attempt, Throwable throwable, long retryAfterCapMs) {
+        if (throwable instanceof ConnectorRateLimitedException exception && exception.getRetryAfter() != null) {
+            long retryAfterMillis = Math.max(0L, exception.getRetryAfter().toMillis());
+            return Math.min(retryAfterMillis, retryAfterCapMs);
+        }
+        return exponentialBackoffMillis(attempt);
+    }
+
+    private static long exponentialBackoffMillis(int attempt) {
+        int exponent = Math.max(0, attempt - 1);
+        double millis = READ_RETRY_BASE_MS * Math.pow(READ_RETRY_MULTIPLIER, exponent);
+        if (millis >= Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+        return (long) millis;
     }
 
     /** Test-only factory that wires in a real/fake Redisson client to exercise the dual cap. */

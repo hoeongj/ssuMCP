@@ -8,6 +8,7 @@ public enum ErrorCode {
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error"),
     CONNECTOR_TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "외부 서비스 응답 시간이 초과되었습니다."),
     CONNECTOR_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "외부 서비스를 일시적으로 사용할 수 없습니다."),
+    UPSTREAM_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "외부 서비스 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
     CIRCUIT_OPEN(HttpStatus.SERVICE_UNAVAILABLE, "외부 연동 서비스가 일시적으로 차단되어 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요."),
     CONNECTOR_PARSE_ERROR(HttpStatus.BAD_GATEWAY, "외부 서비스 응답을 해석하지 못했습니다."),
     CONNECTOR_ERROR(HttpStatus.BAD_GATEWAY, "외부 서비스 처리 중 오류가 발생했습니다."),

@@ -3,6 +3,7 @@ package com.ssuai.domain.library.connector;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -24,9 +26,11 @@ import com.ssuai.domain.library.dto.LibraryBook;
 import com.ssuai.domain.library.dto.LibraryBookSearchResponse;
 import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
+import com.ssuai.global.exception.RetryAfter;
 
 /**
  * Reads books from the Soongsil University central library via the Pyxis
@@ -82,6 +86,11 @@ public class RealLibraryBookConnector implements LibraryBookConnector {
                     status.value(), query == null ? 0 : query.length());
             if (status.is5xxServerError()) {
                 throw new ConnectorUnavailableException(exception);
+            }
+            if (status.value() == 429) {
+                Duration retryAfter = RetryAfter.parse(exception.getResponseHeaders() != null
+                        ? exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER) : null).orElse(null);
+                throw new ConnectorRateLimitedException(retryAfter, exception);
             }
             throw new ConnectorParseException(exception);
         }

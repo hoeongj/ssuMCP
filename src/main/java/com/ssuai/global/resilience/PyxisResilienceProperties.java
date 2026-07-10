@@ -36,6 +36,7 @@ public class PyxisResilienceProperties {
     private Duration writeTimeout = Duration.ofMillis(200);
     private int perUserReadLimitPerSecond = 2;
     private int perUserWriteLimitPerSecond = 1;
+    private long retryAfterCapMs = 10_000;
 
     public boolean isRedisEnabled() {
         return redisEnabled;
@@ -93,6 +94,14 @@ public class PyxisResilienceProperties {
         this.perUserWriteLimitPerSecond = requirePositive(perUserWriteLimitPerSecond, "perUserWriteLimitPerSecond");
     }
 
+    public long getRetryAfterCapMs() {
+        return retryAfterCapMs;
+    }
+
+    public void setRetryAfterCapMs(long retryAfterCapMs) {
+        this.retryAfterCapMs = requireNonNegative(retryAfterCapMs, "retryAfterCapMs");
+    }
+
     private static int requirePositive(int value, String field) {
         if (value < 1) {
             throw new IllegalArgumentException(field + " must be >= 1");
@@ -102,6 +111,13 @@ public class PyxisResilienceProperties {
 
     private static Duration requireNonNegative(Duration value, String field) {
         if (value == null || value.isNegative()) {
+            throw new IllegalArgumentException(field + " must be zero or positive");
+        }
+        return value;
+    }
+
+    private static long requireNonNegative(long value, String field) {
+        if (value < 0) {
             throw new IllegalArgumentException(field + " must be zero or positive");
         }
         return value;

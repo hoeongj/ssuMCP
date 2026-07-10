@@ -20,6 +20,7 @@ import org.redisson.api.RateType;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.RedisException;
 
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
@@ -49,6 +50,38 @@ class PyxisResilienceTests {
 
         assertThat(result).isEqualTo("ok");
         assertThat(calls.get()).isEqualTo(3); // retried twice, succeeded on the 3rd
+    }
+
+    @Test
+    void readRetriesRateLimitedFailuresThenSucceeds() {
+        PyxisResilienceProperties properties = new PyxisResilienceProperties();
+        properties.setRetryAfterCapMs(1);
+        PyxisResilience resilience = PyxisResilience.forTesting(new SimpleMeterRegistry(), properties);
+        AtomicInteger calls = new AtomicInteger();
+
+        String result = resilience.read(() -> {
+            if (calls.incrementAndGet() < 3) {
+                throw new ConnectorRateLimitedException(Duration.ofSeconds(2), new RuntimeException("429"));
+            }
+            return "ok";
+        });
+
+        assertThat(result).isEqualTo("ok");
+        assertThat(calls.get()).isEqualTo(3);
+    }
+
+    @Test
+    void rateLimitedRetryIntervalHonorsRetryAfterAndCap() {
+        ConnectorRateLimitedException rateLimited =
+                new ConnectorRateLimitedException(Duration.ofMillis(250), new RuntimeException("429"));
+        ConnectorRateLimitedException aboveCap =
+                new ConnectorRateLimitedException(Duration.ofSeconds(20), new RuntimeException("429"));
+        ConnectorRateLimitedException withoutRetryAfter =
+                new ConnectorRateLimitedException(null, new RuntimeException("429"));
+
+        assertThat(PyxisResilience.retryIntervalMillis(1, rateLimited, 10_000)).isEqualTo(250);
+        assertThat(PyxisResilience.retryIntervalMillis(1, aboveCap, 10_000)).isEqualTo(10_000);
+        assertThat(PyxisResilience.retryIntervalMillis(2, withoutRetryAfter, 10_000)).isEqualTo(400);
     }
 
     @Test

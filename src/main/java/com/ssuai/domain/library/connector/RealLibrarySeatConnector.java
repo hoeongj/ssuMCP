@@ -1,6 +1,7 @@
 package com.ssuai.domain.library.connector;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -26,10 +28,12 @@ import com.ssuai.domain.library.dto.LibrarySeatZone;
 import com.ssuai.domain.library.dto.PyxisSeatInfo;
 import com.ssuai.global.exception.ConnectorException;
 import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.ErrorCode;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
+import com.ssuai.global.exception.RetryAfter;
 import com.ssuai.global.resilience.PyxisResilience;
 
 /**
@@ -122,6 +126,11 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
                 log.warn("library seat connector http error: status={}", status.value());
                 if (status.is5xxServerError()) {
                     throw new ConnectorUnavailableException(exception);
+                }
+                if (status.value() == 429) {
+                    Duration retryAfter = RetryAfter.parse(exception.getResponseHeaders() != null
+                            ? exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER) : null).orElse(null);
+                    throw new ConnectorRateLimitedException(retryAfter, exception);
                 }
                 throw new ConnectorParseException(exception);
             }
@@ -228,6 +237,11 @@ public class RealLibrarySeatConnector implements LibrarySeatConnector {
                 log.warn("library per-seat connector http error: roomId={} status={}", roomId, status.value());
                 if (status.is5xxServerError()) {
                     throw new ConnectorUnavailableException(exception);
+                }
+                if (status.value() == 429) {
+                    Duration retryAfter = RetryAfter.parse(exception.getResponseHeaders() != null
+                            ? exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER) : null).orElse(null);
+                    throw new ConnectorRateLimitedException(retryAfter, exception);
                 }
                 throw new ConnectorParseException(exception);
             }

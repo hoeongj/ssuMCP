@@ -1,5 +1,6 @@
 package com.ssuai.domain.library.reservation;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 
@@ -9,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -17,10 +19,12 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
 import com.ssuai.global.exception.ConnectorTimeoutException;
 import com.ssuai.global.exception.ConnectorUnavailableException;
 import com.ssuai.global.exception.LibraryAuthRequiredException;
 import com.ssuai.global.exception.LibrarySeatNotAvailableException;
+import com.ssuai.global.exception.RetryAfter;
 import com.ssuai.global.resilience.PyxisResilience;
 
 @Component
@@ -59,7 +63,7 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
         try {
             String body = get(pyxisAuthToken, CURRENT_CHARGE_PATH, properties.getDischargeReferer());
             return parseCurrentChargeResponse(body);
-        } catch (LibraryAuthRequiredException exception) {
+        } catch (LibraryAuthRequiredException | ConnectorRateLimitedException exception) {
             throw exception;
         } catch (Exception exception) {
             log.warn("library getCurrentCharge failed", exception);
@@ -108,6 +112,11 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
                 if (status.is5xxServerError()) {
                     throw new ConnectorUnavailableException(exception);
                 }
+                if (status.value() == 429) {
+                    Duration retryAfter = RetryAfter.parse(exception.getResponseHeaders() != null
+                            ? exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER) : null).orElse(null);
+                    throw new ConnectorRateLimitedException(retryAfter, exception);
+                }
                 throw new ConnectorParseException(exception);
             }
         });
@@ -135,6 +144,11 @@ public class RealLibraryReservationConnector implements LibraryReservationConnec
                 log.warn("library reservation connector http error: path={} status={}", path, status.value());
                 if (status.is5xxServerError()) {
                     throw new ConnectorUnavailableException(exception);
+                }
+                if (status.value() == 429) {
+                    Duration retryAfter = RetryAfter.parse(exception.getResponseHeaders() != null
+                            ? exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER) : null).orElse(null);
+                    throw new ConnectorRateLimitedException(retryAfter, exception);
                 }
                 throw new ConnectorParseException(exception);
             }

@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -154,6 +155,23 @@ public class GlobalExceptionHandler {
         return error(ErrorCode.CONNECTOR_UNAVAILABLE);
     }
 
+    @ExceptionHandler(ConnectorRateLimitedException.class)
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleConnectorRateLimitedException(
+            ConnectorRateLimitedException exception
+    ) {
+        log.warn("Connector exception: code={} type={}",
+                ErrorCode.UPSTREAM_RATE_LIMITED.name(), exception.getClass().getSimpleName(), exception);
+
+        ErrorResponse errorResponse = new ErrorResponse(
+                ErrorCode.UPSTREAM_RATE_LIMITED.name(),
+                ErrorCode.UPSTREAM_RATE_LIMITED.getDefaultMessage());
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ErrorCode.UPSTREAM_RATE_LIMITED.getStatus());
+        if (exception.getRetryAfter() != null) {
+            response.header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds(exception.getRetryAfter())));
+        }
+        return response.body(ApiResponse.error(errorResponse));
+    }
+
     @ExceptionHandler(CallNotPermittedException.class)
     public ResponseEntity<ApiResponse<ErrorResponse>> handleCallNotPermittedException(
             CallNotPermittedException exception
@@ -258,6 +276,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(errorCode.getStatus())
                 .body(ApiResponse.error(errorResponse));
+    }
+
+    private static long retryAfterSeconds(java.time.Duration retryAfter) {
+        long millis = Math.max(0L, retryAfter.toMillis());
+        return (millis + 999) / 1000;
     }
 
     private String formatFieldError(FieldError fieldError) {

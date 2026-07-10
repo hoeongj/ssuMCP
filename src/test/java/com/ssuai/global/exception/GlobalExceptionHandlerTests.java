@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -45,6 +48,18 @@ class GlobalExceptionHandlerTests {
                 handler.handleConnectorParseException(new ConnectorParseException());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void connectorRateLimitedReturns429WithRetryAfter() {
+        ResponseEntity<ApiResponse<ErrorResponse>> response =
+                handler.handleConnectorRateLimitedException(
+                        new ConnectorRateLimitedException(Duration.ofSeconds(2), new RuntimeException("429")));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("2");
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo(ErrorCode.UPSTREAM_RATE_LIMITED.name());
     }
 
     @Test
