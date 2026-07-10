@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka
+  namespace: argocd
+  # NOTE: no argocd-image-updater annotations. apache/kafka:4.3.0 is a pinned
+  # PUBLIC upstream image, not built by our CI. Bump the tag in
+  # deploy/charts/kafka/values.yaml manually; do not add this app to
+  # deploy/argocd/image-updater/imageupdater-cr.yaml.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ghdtjdwn/ssuMCP.git
+    targetRevision: main
+    path: deploy/charts/kafka
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ssuai-prod
+  # Fresh greenfield app, not an adoption like postgres, so auto-sync is safe.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true

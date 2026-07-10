@@ -1,0 +1,25 @@
+namespace: ssuai-prod
+replicaCount: 1
+image:
+  repository: apache/kafka
+  tag: "4.3.0"
+  pullPolicy: IfNotPresent
+
+# Fixed base64 UUID so a re-mounted PVC's stored meta.properties matches.
+clusterId: "lhsmkW4aQTOdrb4iGBLPMg"
+
+persistence:
+  size: 5Gi
+  storageClass: local-path
+  mountPath: /var/lib/kafka/data
+
+resources:
+  # Heap -Xmx640m is about 50% of the 1.25Gi (1280Mi) limit; Kafka relies on
+  # OS page cache for the rest. Idle RSS was measured at about 295MiB. ADR
+  # 0078 pre-reserved this Kafka line.
+  requests:
+    cpu: 500m
+    memory: 768Mi
+  limits:
+    cpu: 1000m
+    memory: 1280Mi

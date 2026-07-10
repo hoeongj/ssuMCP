@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths-ignore:
       - 'deploy/charts/ssuai-backend/values.yaml'
+      # Kafka chart is deploy-only and uses a pinned public image, so don't rebuild the backend image on it.
+      - 'deploy/charts/kafka/**'
       # ArgoCD Application / ImageUpdater manifests are cluster wiring only — they
       # never affect the backend build, so don't rebuild+redeploy the image on them.
       - 'deploy/argocd/**'

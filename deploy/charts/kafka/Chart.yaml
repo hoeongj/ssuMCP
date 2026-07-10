@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kafka
+description: Prod Apache Kafka KRaft single broker for ssuAI Phase 2 event pipeline
+type: application
+version: 0.1.0
+# Tracks the pinned public upstream image tag (apache/kafka:4.3.0). Bump alongside values.yaml.
+appVersion: "4.3.0"
