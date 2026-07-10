@@ -3,13 +3,16 @@ package com.ssuai.domain.mcp.config;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.ai.mcp.customizer.McpSyncServerCustomizer;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -40,9 +43,11 @@ import com.ssuai.domain.mcp.tool.NoticeMcpTools;
 import com.ssuai.domain.mcp.tool.SaintExtendedMcpTools;
 import com.ssuai.domain.mcp.tool.SaintGradesMcpTool;
 import com.ssuai.domain.mcp.tool.SaintScheduleMcpTool;
+import com.ssuai.global.kafka.ToolCallEventProducer;
 
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 
 @Configuration
@@ -145,7 +150,8 @@ class McpServerConfig {
      */
     @Primary
     @Bean
-    McpSyncServerCustomizer ssuaiToolAnnotationsCustomizer() {
+    McpSyncServerCustomizer ssuaiToolAnnotationsCustomizer(ObjectProvider<ToolCallEventProducer> producerProvider) {
+        ToolCallEventProducer producer = producerProvider.getIfAvailable();
         return spec -> {
             // WebMVC servlet mode requires immediate (non-deferred) execution.
             // This mirrors what the auto-configured servletMcpSyncServerCustomizer does.
@@ -162,7 +168,7 @@ class McpServerConfig {
                         (List<McpServerFeatures.SyncToolSpecification>) toolsField.get(spec);
 
                 List<McpServerFeatures.SyncToolSpecification> annotated = tools.stream()
-                        .map(McpServerConfig::withAnnotations)
+                        .map(tool -> withAnnotations(tool, producer))
                         .collect(Collectors.toList());
 
                 tools.clear();
@@ -176,7 +182,8 @@ class McpServerConfig {
     }
 
     private static McpServerFeatures.SyncToolSpecification withAnnotations(
-            McpServerFeatures.SyncToolSpecification original) {
+            McpServerFeatures.SyncToolSpecification original,
+            ToolCallEventProducer producer) {
 
         String name = original.tool().name();
         boolean readOnly = !WRITE_TOOLS.contains(name);
@@ -200,7 +207,35 @@ class McpServerConfig {
 
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(annotatedTool)
-                .callHandler(original.callHandler())
+                .callHandler(producer == null ? original.callHandler() : wrapCallHandler(original, producer))
                 .build();
+    }
+
+    static BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> wrapCallHandler(
+            McpServerFeatures.SyncToolSpecification original,
+            ToolCallEventProducer producer) {
+
+        var delegate = original.callHandler();
+        String toolName = original.tool().name();
+        return (exchange, request) -> {
+            long start = System.nanoTime();
+            String requestId = MDC.get("requestId");
+            String outcome = "ok";
+            try {
+                McpSchema.CallToolResult result = delegate.apply(exchange, request);
+                if (result != null && Boolean.TRUE.equals(result.isError())) {
+                    outcome = "tool_error";
+                }
+                return result;
+            } catch (RuntimeException ex) {
+                outcome = "exception";
+                throw ex;
+            } finally {
+                try {
+                    producer.tryEmit(toolName, requestId, (System.nanoTime() - start) / 1_000_000L, outcome);
+                } catch (Throwable ignored) {
+                }
+            }
+        };
     }
 }

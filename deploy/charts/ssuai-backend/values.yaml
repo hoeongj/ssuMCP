@@ -62,6 +62,9 @@ env:
   connectorLmsAssignments: real
   connectorLmsMaterials: real
   connectorChat: llm
+  # broker = Unit 0 / ADR 0089; fail-open so a broker outage never affects tool calls.
+  kafkaEnabled: "true"
+  springKafkaBootstrapServers: "kafka-0.kafka.ssuai-prod.svc.cluster.local:9092"
   mistralTrainingOptOutConfirmed: "false"
   llmMaxTokens: "400"
   llmAvailabilityVerificationPasses: "0"

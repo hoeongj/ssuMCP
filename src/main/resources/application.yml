@@ -3,6 +3,8 @@ spring:
     name: ssuai
   profiles:
     default: dev
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:}
   jackson:
     datatype:
       datetime:
@@ -122,6 +124,13 @@ springdoc:
     path: /swagger-ui.html
 
 ssuai:
+  kafka:
+    enabled: false
+    bootstrap-servers: ${SSUAI_KAFKA_BOOTSTRAP_SERVERS:${SPRING_KAFKA_BOOTSTRAP_SERVERS:}}
+    topic: mcp.toolcall.events.v1
+    partitions: 6
+    queue-capacity: 1000
+    max-block-ms: 500
   connector:
     meal: mock # mock | real
     dorm-meal: mock # mock | real
