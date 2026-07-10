@@ -65,9 +65,9 @@ env:
   # broker = Unit 0 / ADR 0089; fail-open so a broker outage never affects tool calls.
   kafkaEnabled: "true"
   springKafkaBootstrapServers: "kafka-0.kafka.ssuai-prod.svc.cluster.local:9092"
-  # Phase 2-C / ADR 0091: reservation intent-status fan-out over Kafka. "true" = graduated to Kafka
-  # (live cutover 2026-07-10). Rollback = set "false" (restores Redisson RTopic path, no redeploy).
-  kafkaIntentBusEnabled: "true"
+  # Phase 2-C / ADR 0091: reservation intent-status fan-out over Kafka. Keep "false" (dormant, path
+  # stays on Redisson RTopic) until the live-path cutover is greenlit; flipping to "true" graduates it.
+  kafkaIntentBusEnabled: "false"
   mistralTrainingOptOutConfirmed: "false"
   llmMaxTokens: "400"
   llmAvailabilityVerificationPasses: "0"
