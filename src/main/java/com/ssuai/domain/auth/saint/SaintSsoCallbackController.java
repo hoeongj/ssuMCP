@@ -161,15 +161,25 @@ public class SaintSsoCallbackController {
         return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
     }
 
+    // Returns a 200 that carries the refresh Set-Cookie and forwards the browser to the
+    // frontend via a JS navigation (NOT a redirect, NOT a meta-refresh). This is deliberate:
+    // Vercel's rewrite proxy DROPS the app's Set-Cookie when the proxied response is a
+    // redirect (302/307) — and it re-labels a proxied meta-refresh page as a redirect and/or
+    // as publicly cacheable, both of which strip the cookie. A plain non-cacheable 200 whose
+    // navigation runs in the page's own script keeps the response a genuine 200, so Vercel
+    // forwards the Set-Cookie and the refresh cookie finally lands in the browser. Without
+    // this, `POST /api/auth/refresh` runs with no cookie -> 401 -> "세션을 만들지 못했어요"
+    // on every login (incognito included). (ADR 0074 login-cookie follow-up.)
     private static ResponseEntity<String> htmlRedirect(URI location, String setCookie) {
-        String url = location.toString()
-                .replace("&", "&amp;")
-                .replace("\"", "&quot;");
-        String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
-                + "<meta http-equiv=\"refresh\" content=\"0;url=" + url + "\">"
-                + "</head><body></body></html>";
+        String raw = location.toString();
+        String htmlAttr = raw.replace("&", "&amp;").replace("\"", "&quot;");
+        String jsStr = raw.replace("\\", "\\\\").replace("\"", "\\\"").replace("<", "\\u003C");
+        String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>ssuAI</title>"
+                + "<script>location.replace(\"" + jsStr + "\");</script>"
+                + "</head><body><a href=\"" + htmlAttr + "\">계속하기</a></body></html>";
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, setCookie)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .header(HttpHeaders.CONTENT_TYPE, "text/html; charset=UTF-8")
                 .body(html);
     }
