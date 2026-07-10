@@ -4,6 +4,8 @@
 
 > 🇺🇸 English version: [README.en.md](README.en.md)
 
+> 🧩 **숭실대 캠퍼스 AI 플랫폼** (4-서비스 중 하나) · **ssuMCP** · [ssuAI](https://github.com/ghdtjdwn/ssuAI) · [ssuAgent](https://github.com/ghdtjdwn/ssuAgent) · [ssu-ai-service](https://github.com/ghdtjdwn/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
+
 숭실대학교 캠퍼스 정보를 **MCP(Model Context Protocol) 표준 도구**로 제공하는 공개 서버.  
 동시에 [ssuAI](https://github.com/ghdtjdwn/ssuAI) 웹 클라이언트를 위한 REST API 서버다.
 
