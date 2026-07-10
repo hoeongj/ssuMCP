@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 날짜 | 2026-07-10 |
-| 상태 | Accepted (코드 머지, prod cutover는 flag 대기) |
+| 상태 | Accepted — 라이브 cutover 완료·검증 (2026-07-10, PR #192→#195 `825745e`) |
 | 범위 | 도서관 예약 intent-status의 크로스-포드 fan-out을 Redisson RTopic → Kafka로 승격 (Phase 2-C) |
 | 연관 문서 | ADR 0071(Kafka graduation trigger), ADR 0089(Kafka broker), ADR 0090(tool-call pipeline·재사용 패턴), ADR 0022(event payload privacy), ADR 0088(멀티포드 HA) |
 
@@ -31,7 +31,8 @@ library_reservation_outbox (테이블)
 
 - **publish**: `LibraryIntentStatusMessage`를 JSON 직렬화 → Kafka 토픽 `library.reservation.events.v1`에 **key=intentId**로 발행.
 - **subscribe**: **포드마다 고유한 consumer group**으로 구독(브로드캐스트 fan-out).
-- **게이트**: 툴콜 파이프라인(`ssuai.kafka.enabled`)과 **독립된** 별도 플래그 `ssuai.kafka.intent-bus.enabled`(기본 false, dormant). 켜져 있으면 Kafka 버스 빈이 존재하고 Redisson보다 **우선** 선택된다. 꺼지면 Redisson RTopic(→ noop) 경로로 코드 변경 없이 되돌아간다.
+- **게이트**: 툴콜 파이프라인(`ssuai.kafka.enabled`)과 **독립된** 별도 플래그 `ssuai.kafka.intent-bus.enabled`(prod=true, cutover 완료). 켜지면 Kafka 버스 빈이 존재하고 **`@Primary`가 붙은** `libraryIntentStatusBus`가 그 인스턴스를 반환해 Redisson보다 **우선** 선택된다. 꺼지면 Redisson RTopic(→ noop) 경로로 코드 변경 없이 되돌아간다.
+- **`@Primary` 필수(사고로 확인)**: 플래그가 켜지면 `libraryIntentStatusBus`(정식 빈)와 `kafkaLibraryIntentStatusBus`(그 delegate) **두 개**가 `LibraryIntentStatusBus` 타입으로 존재한다. 단일 인자 소비자(`LibraryIntentSseRegistry`, `LibraryReservationEventListener`)가 모호해지므로 정식 빈에 `@Primary`를 붙여 해소한다. (1차 cutover가 이 모호성으로 crash-loop 했고 `@Primary`로 근본수정 — 하단 Cutover 결과 참조.)
 
 ## Why Kafka, not Redis pub/sub
 
@@ -83,3 +84,11 @@ RTopic(at-most-once)과 달리 Kafka는 at-least-once라 중복 전달이 가능
 3. **"왜 RTopic을 두고 Kafka로?"** → 영속성 + offset replay + 무손실 컨슈머 교체(ADR 0071 graduation 트리거). RTopic은 at-most-once·비영속.
 4. **"라이브 예약 경로에 브로커를 끼우면 위험하지 않나?"** → fail-open: publish는 non-blocking offload라 relay를 절대 안 막고, 브로커가 죽어도 예약은 outbox로 진행·알림만 지연. 플래그로 즉시 Redisson 롤백.
 5. **"at-least-once 중복은?"** → terminal은 키 제거로 멱등 no-op, non-terminal은 상태 재전송이라 멱등.
+
+## Cutover 결과 (2026-07-10, 라이브 검증)
+
+- **코드 머지**: PR #192 `cc05c28`(dormant, 런타임 영향 0). **라이브 cutover**: prod `SSUAI_KAFKA_INTENTBUS_ENABLED=true` 플립(PR #195 `825745e`).
+- **프로드 실측**: 파드 2/2 Ready(flag ON), 토픽 `library.reservation.events.v1` 생성, **포드당 유일 consumer group 2개(`library-intent-sse-<UUID>`) = 브로드캐스트 fan-out 실증**, 기동 로그 `KafkaLibraryIntentStatusBus subscribed`, argocd Synced/Healthy, health 200.
+- **fail-open 드릴**: `kubectl delete pod kafka-0 --force` → 백엔드 health 32초 outage 내내 200 유지 → kafka-0 ~47초 자동복구, 토픽은 local-path PVC로 유지. 라이브 예약 경로가 브로커 장애에 안전함을 실증.
+- **1차 cutover 사고 → @Primary 근본수정**: 최초 flip이 **bean 모호성**으로 crash-loop(`LibraryIntentSseRegistry`가 `LibraryIntentStatusBus` 단일 빈을 기대하는데 `libraryIntentStatusBus`·`kafkaLibraryIntentStatusBus` 2개 발견). 무중단(`maxUnavailable:0`이 구 파드 유지). 회귀 IT가 `@SpringBootTest(classes=...)` 슬라이스라 두 빈 생산자를 한 컨텍스트에 안 올려 못 잡았음. 수정 = 정식 빈에 `@Primary`(PR #194 `0bf4fd8`) + `IntentBusCutoverContextIT`(전체 앱 컨텍스트 + 플래그 ON + EmbeddedKafka; @Primary 없이 FAIL함을 실증). 상세 = `TROUBLESHOOTING.md` 2026-07-10.
+- **롤백**: `kafkaIntentBusEnabled: false`(코드 재배포 불필요, RTopic 복원). **남은 검증** = 실제 예약 → intent-status SSE 종단(실계정+현장).
