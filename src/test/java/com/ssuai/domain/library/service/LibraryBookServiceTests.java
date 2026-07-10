@@ -102,6 +102,7 @@ class LibraryBookServiceTests {
     @Test
     void searchResponseDerivedPaginationHandlesEdgeCases() {
         assertThat(new LibraryBookSearchResponse(10, 0, 0, List.of()).totalPages()).isZero();
+        assertThat(new LibraryBookSearchResponse(10, 0, 0, List.of()).hasNext()).isFalse();
         assertThat(new LibraryBookSearchResponse(0, 0, 10, List.of()).hasNext()).isFalse();
         assertThat(new LibraryBookSearchResponse(10, 1, 5, List.of()).hasNext()).isFalse();
     }

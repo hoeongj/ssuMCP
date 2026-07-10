@@ -33,7 +33,7 @@ public final class RetryAfter {
         }
         BigInteger seconds = new BigInteger(value);
         if (seconds.signum() < 0) {
-            return Optional.of(Duration.ZERO);
+            return Optional.empty();
         }
         BigInteger cappedSeconds = seconds.min(BigInteger.valueOf(MAX_RETRY_AFTER.toSeconds()));
         return Optional.of(Duration.ofSeconds(cappedSeconds.longValue()));
@@ -42,19 +42,19 @@ public final class RetryAfter {
     private static Optional<Duration> parseHttpDate(String value) {
         try {
             Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-            return Optional.of(clamp(Duration.between(Instant.now(), retryAt)));
+            return clamp(Duration.between(Instant.now(), retryAt));
         } catch (DateTimeParseException exception) {
             return Optional.empty();
         }
     }
 
-    private static Duration clamp(Duration duration) {
+    private static Optional<Duration> clamp(Duration duration) {
         if (duration.isNegative()) {
-            return Duration.ZERO;
+            return Optional.empty();
         }
         if (duration.compareTo(MAX_RETRY_AFTER) > 0) {
-            return MAX_RETRY_AFTER;
+            return Optional.of(MAX_RETRY_AFTER);
         }
-        return duration;
+        return Optional.of(duration);
     }
 }

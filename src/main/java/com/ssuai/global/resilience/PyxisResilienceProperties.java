@@ -36,7 +36,7 @@ public class PyxisResilienceProperties {
     private Duration writeTimeout = Duration.ofMillis(200);
     private int perUserReadLimitPerSecond = 2;
     private int perUserWriteLimitPerSecond = 1;
-    private long retryAfterCapMs = 10_000;
+    private long retryAfterCapMs = 2_000;
 
     public boolean isRedisEnabled() {
         return redisEnabled;

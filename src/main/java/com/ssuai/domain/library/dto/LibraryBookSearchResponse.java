@@ -31,6 +31,6 @@ public record LibraryBookSearchResponse(
 
     @JsonProperty("hasNext")
     public boolean hasNext() {
-        return (long) (page + 1) * (long) size < (long) total;
+        return size > 0 && (long) (page + 1) * (long) size < (long) total;
     }
 }

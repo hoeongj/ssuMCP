@@ -37,6 +37,13 @@ class PyxisResilienceTests {
     }
 
     @Test
+    void defaultRetryAfterCapBoundsBulkheadHold() {
+        PyxisResilienceProperties properties = new PyxisResilienceProperties();
+
+        assertThat(properties.getRetryAfterCapMs()).isEqualTo(2_000);
+    }
+
+    @Test
     void readRetriesTransientFailuresThenSucceeds() {
         PyxisResilience resilience = newResilience();
         AtomicInteger calls = new AtomicInteger();
