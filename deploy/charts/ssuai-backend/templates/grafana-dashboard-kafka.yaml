@@ -1,0 +1,161 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ssuai-backend.fullname" . }}-grafana-dashboard-kafka
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+data:
+  ssuai-kafka.json: |
+    {
+      "uid": "ssuai-kafka-eda",
+      "title": "ssuAI — Kafka / Event-Driven Architecture",
+      "schemaVersion": 38,
+      "version": 2,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "tags": ["ssuai", "kafka", "eda"],
+      "templating": {
+        "list": [{
+          "name": "datasource",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {}
+        }]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "MCP Tool-Call Events (rate by result)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "expr": "sum by (result) (rate(mcp_toolcall_event_total{application=\"ssuai\"}[5m]))",
+            "legendFormat": "{{ "{{" }}result{{ "}}" }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "ops" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Intent-Status Bus Events (rate by result)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "expr": "sum by (result) (rate(library_intent_bus_event_total{application=\"ssuai\"}[5m]))",
+            "legendFormat": "{{ "{{" }}result{{ "}}" }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "ops" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Kafka Consumer Lag (records, by topic)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "expr": "sum by (topic) (kafka_consumer_fetch_manager_records_lag{application=\"ssuai\", topic=~\".+\\\\.v1\"})",
+            "legendFormat": "{{ "{{" }}topic{{ "}}" }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 }
+        },
+        {
+          "id": 4,
+          "type": "gauge",
+          "title": "Tool-Call Drop Fraction (5m)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "expr": "sum(rate(mcp_toolcall_event_total{application=\"ssuai\", result=~\"dropped.*\"}[5m])) / clamp_min(sum(rate(mcp_toolcall_event_total{application=\"ssuai\"}[5m])), 1e-9)",
+            "legendFormat": "drop fraction"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 }
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "HPA Replicas (ssuai-backend)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"ssuai-prod\", horizontalpodautoscaler=\"ssuai-backend\"}",
+              "legendFormat": "current"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"ssuai-prod\", horizontalpodautoscaler=\"ssuai-backend\"}",
+              "legendFormat": "desired"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "kube_horizontalpodautoscaler_spec_min_replicas{namespace=\"ssuai-prod\", horizontalpodautoscaler=\"ssuai-backend\"}",
+              "legendFormat": "min"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"ssuai-prod\", horizontalpodautoscaler=\"ssuai-backend\"}",
+              "legendFormat": "max"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0
+            }
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 }
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Kafka Consumer Failed Rebalances (total)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [{
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "expr": "sum(kafka_consumer_coordinator_failed_rebalance_total{application=\"ssuai\"})",
+            "legendFormat": "failed rebalances"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 }
+        }
+      ]
+    }

@@ -109,3 +109,19 @@
 **추가 면접 질문:**
 4. "로컬 compose에선 됐는데 prod k3s에서 안 될 때?" → 런타임 환경 차이(distroless probe, k3s 로그 경로, Boot 프로퍼티/의존성)를 하나씩 배제. 특히 로그·설정으로 안 잡히면 `gradle dependencies`로 autoconfig 모듈 존재를 확인.
 5. "저수준 라이브러리 대신 Boot 스타터를 써야 하는 이유?" → 스타터 = 라이브러리 + **autoconfiguration** + 기본값 묶음. Boot 4에서 OTLP autoconfig가 스타터로 이관돼 저수준 deps만으론 자동설정이 안 붙음.
+
+## Kafka/EDA Grafana 대시보드
+
+Phase 2 Kafka EDA 관측성 마무리로 `ssuAI — Kafka / Event-Driven Architecture` 대시보드를 추가한다. Kafka로 전환된 툴콜 이벤트 파이프라인과 library intent-status 버스가 실제로 방출·소비되고 있는지, 드롭·lag·리밸런스 같은 조기 경보가 생기는지 한 화면에서 확인하는 목적이다.
+
+패널은 다음 질문에 답한다.
+- **MCP Tool-Call Events**: 툴콜 이벤트가 `result`별로 초당 얼마나 방출되며, 드롭 계열 결과가 발생하는가?
+- **Intent-Status Bus Events**: 예약 intent 상태 버스가 `sent`/`dropped_*` 결과로 얼마나 발행되는가?
+- **Kafka Consumer Lag**: dotted topic(`*.v1`) 기준 consumer lag가 누적되어 소비 지연이 생기는가?
+- **Tool-Call Drop Fraction**: 최근 5분 툴콜 이벤트 중 드롭 비율이 1%/5% 임계치를 넘는가?
+- **HPA Replicas**: `ssuai-backend` HPA의 current/desired/min/max replica가 Kafka 부하에 맞게 움직이는가?
+- **Kafka Consumer Failed Rebalances**: failed rebalance 누적으로 리밸런스 storm 조짐이 있는가?
+
+메트릭 출처는 Micrometer counter `mcp.toolcall.event`/`library.intent.bus.event`의 `result` 태그, Spring Kafka/Micrometer가 노출하는 `kafka_consumer_*` 계열, 그리고 kube-state-metrics의 HPA 메트릭이다.
+
+프로비저닝은 `deploy/charts/ssuai-backend/templates/grafana-dashboard-kafka.yaml` ConfigMap으로 처리한다. kube-prometheus-stack Grafana sidecar가 `monitoring` 네임스페이스에서 `grafana_dashboard=1` 라벨이 붙은 ConfigMap을 자동 로드한다.
