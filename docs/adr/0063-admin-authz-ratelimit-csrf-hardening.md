@@ -44,3 +44,15 @@
 1. **"allow-by-default 인가의 위험을 실제 사례로 설명해보라."** — Spring Security를 `permitAll`로 열고 컨트롤러별 `@AuthUser`로 게이팅하면(공개 도구 zero-auth를 위해) 새 컨트롤러에서 `@AuthUser`를 한 번 빠뜨리는 순간 조용히 열린다. AdminResilienceController가 그 사례였고, 전수대조로 발견했다. 근본 교정은 deny-by-default(빈 allowlist=전원거부)와 코드리뷰 체크리스트.
 2. **"왜 admin에 RBAC를 안 쓰고 allowlist로 했나?"** — 도메인에 admin 역할 개념이 없고(학생 세션만) 보호 대상이 운영 시그널 1개 엔드포인트라 RBAC는 과설계. 포트폴리오 관점에서도 "최소권한을 최소 변경으로"가 더 방어 가능한 결정.
 3. **"CSRF를 prefix가 아니라 exact-path로 면제한 이유는?"** — prefix 면제는 미래에 그 prefix 아래 추가되는 write endpoint를 자동으로 CSRF 우회 대상으로 만든다(시한폭탄). exact-path는 면제를 현재 실제 필요한 콜백으로 한정한다. defense-in-depth + 변경 안전성.
+
+## 후속 갱신 (2026-07-11) — ③ web-session 면제 해제 (기각했던 대안 채택)
+
+위에서 기각했던 **"CSRF: web-session도 면제 해제(가드 적용)"** 대안은 2026-07-11에 채택했다.
+
+이유는 면제의 전제였던 "Bearer 전용 인증이라 쿠키 CSRF N/A"가 `e32d2542`로 무효화되었기 때문이다. 해당 변경으로 `/api/mcp/auth/web-session`은 도서관 `JSESSIONID` 쿠키 신원을 수용하고 JWT는 선택값이 되었다. 운영 세션 쿠키는 Vercel 크로스사이트 아키텍처 때문에 `SameSite=None`이므로 cross-site POST에도 쿠키가 실린다.
+
+완화 요인은 있었다. CORS 때문에 공격자가 응답의 `mcpSessionId`를 읽을 수 없어 실효 피해는 낮았지만, 심층방어와 스테일 근거 정리를 위해 면제를 제거했다.
+
+제거 커밋은 `544cbe3`(PR #205)이다. 정상 트래픽 영향은 없다. 프론트의 same-origin POST는 허용 Origin을 지참하고, 비브라우저 요청은 Origin 부재로 rule 3을 통과한다. 상세는 ADR 0031의 "추가 보안 메모 (2026-07-11)"를 참조한다.
+
+교훈: CSRF 면제는 "왜 면제인지"의 전제와 함께 기록하고, 그 전제를 바꾸는 변경이 들어오면 반드시 재평가한다.
