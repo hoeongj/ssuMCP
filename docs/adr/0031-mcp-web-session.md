@@ -48,3 +48,8 @@
   - `create_withJwtAndLibrarySession_linksAllProviders`: HTTP 세션 및 도서관 세션 유효 시 LIBRARY 바인딩 검증
   - `create_withoutJwtAndWithLibrarySession_linksLibraryOnly`: JWT 없이 도서관 세션만 있을 때 LIBRARY 바인딩 및 201 응답 검증
   - `create_withoutJwtAndWithoutLibrarySession_returnsUnauthorized`: 모든 인증 정보 누락 시 401 Unauthorized 및 세션 미생성 검증
+
+## 추가 보안 메모 (2026-07-11)
+
+- `web-session`이 도서관 `JSESSIONID` 쿠키 신원을 받아 MCP 세션을 발급할 수 있게 되면서 `CsrfOriginGuardFilter` 예외에서 제거했다.
+- 예외 유지 대안은 기각했다. 운영 환경의 도서관 세션 쿠키는 `SameSite=None`이라 cross-site POST로 발급 시도를 만들 수 있고, 정상 브라우저 트래픽은 허용된 `Origin`을 싣거나 비브라우저 클라이언트처럼 `Origin`/`Referer`가 없어 영향이 없다.
