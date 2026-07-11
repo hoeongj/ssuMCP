@@ -2,7 +2,10 @@ package com.ssuai.domain.auth.mcp;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,11 +43,9 @@ class McpWebSessionControllerTests {
     }
 
     @Test
-    void create_withValidJwt_returnsCreatedAndSession() throws Exception {
-        McpAuthSessionId sessionId = new McpAuthSessionId("test-session-id");
-        Instant expiresAt = Instant.parse("2026-06-14T12:00:00Z");
-        McpAuthSession session = new McpAuthSession(sessionId, Instant.now(), expiresAt, Map.of());
-        
+    void create_withJwtAndNoLibrarySession_linksSaintAndLmsOnly() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
         when(mcpAuthService.createSession()).thenReturn(session);
 
         mockMvc.perform(post("/api/mcp/auth/web-session")
@@ -53,16 +54,17 @@ class McpWebSessionControllerTests {
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
                 .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
 
+        verify(mcpAuthService).createSession();
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.SAINT, "20241234");
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LMS, "20241234");
+        verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.LIBRARY), any());
+        verifyNoMoreInteractions(mcpAuthService);
     }
 
     @Test
-    void create_withLibrarySession_linksLibrary() throws Exception {
-        McpAuthSessionId sessionId = new McpAuthSessionId("test-session-id");
-        Instant expiresAt = Instant.parse("2026-06-14T12:00:00Z");
-        McpAuthSession session = new McpAuthSession(sessionId, Instant.now(), expiresAt, Map.of());
-        
+    void create_withJwtAndLibrarySession_linksAllProviders() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
         when(mcpAuthService.createSession()).thenReturn(session);
 
         MockHttpSession mockSession = new MockHttpSession();
@@ -76,15 +78,48 @@ class McpWebSessionControllerTests {
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
                 .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
 
+        verify(mcpAuthService).createSession();
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.SAINT, "20241234");
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LMS, "20241234");
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LIBRARY, sessionKey);
+        verifyNoMoreInteractions(mcpAuthService);
     }
 
     @Test
-    void create_withoutJwt_returnsUnauthorized() throws Exception {
+    void create_withoutJwtAndWithLibrarySession_linksLibraryOnly() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+
+        MockHttpSession mockSession = new MockHttpSession();
+        String sessionKey = mockSession.getId();
+        when(librarySessionStore.has(sessionKey)).thenReturn(true);
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .session(mockSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+
+        verify(mcpAuthService).createSession();
+        verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), any());
+        verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.LMS), any());
+        verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LIBRARY, sessionKey);
+        verifyNoMoreInteractions(mcpAuthService);
+    }
+
+    @Test
+    void create_withoutJwtAndWithoutLibrarySession_returnsUnauthorized() throws Exception {
         mockMvc.perform(post("/api/mcp/auth/web-session"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+
+        verifyNoInteractions(mcpAuthService);
+    }
+
+    private McpAuthSession session(String id) {
+        McpAuthSessionId sessionId = new McpAuthSessionId(id);
+        Instant expiresAt = Instant.parse("2026-06-14T12:00:00Z");
+        return new McpAuthSession(sessionId, Instant.now(), expiresAt, Map.of());
     }
 }

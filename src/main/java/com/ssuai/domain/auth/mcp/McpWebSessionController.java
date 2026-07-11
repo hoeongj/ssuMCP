@@ -1,6 +1,7 @@
 package com.ssuai.domain.auth.mcp;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -12,19 +13,26 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ssuai.domain.auth.mcp.dto.McpWebSessionResponse;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.global.auth.AuthUser;
+import com.ssuai.global.exception.UnauthorizedException;
 import com.ssuai.global.response.ApiResponse;
 
 /**
- * Issues an mcp_session_id for ssuAI web users already authenticated via JWT.
+ * Issues an mcp_session_id for ssuAI web users authenticated by either the
+ * SAINT JWT or an active library cookie session.
  *
- * <p>POST /api/mcp/auth/web-session (JWT Bearer required)
- *   - Links SAINT + LMS from JWT student ID.
+ * <p>POST /api/mcp/auth/web-session
+ *   - Links SAINT + LMS when a JWT student ID is present.
  *   - Links LIBRARY if an active library session exists in the HTTP session.
  *   - Returns {mcpSessionId, expiresAt}.
  *
- * <p>Rationale: External MCP clients (Claude Desktop) go through the full
- *   start_auth browser redirect flow. ssuAI web users are already authenticated
- *   and do not need a separate browser step.
+ * <p>The library is an independent auth provider backed by its own cookie
+ *   session. ssuAI chat must keep working for library-only users, including
+ *   when u-SAINT is unavailable for maintenance and no SAINT JWT can be issued.
+ *
+ * <p>Rationale: External MCP clients go through the full
+ *   start_auth browser redirect flow. ssuAI web users may already be
+ *   authenticated through one or more web providers and do not need a separate
+ *   browser step.
  */
 @RestController
 @RequestMapping("/api/mcp/auth/web-session")
@@ -45,27 +53,41 @@ public class McpWebSessionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<McpWebSessionResponse> create(
-            @AuthUser String studentId,
+            @AuthUser(required = false) String studentId,
             HttpServletRequest request) {
+
+        String librarySessionKey = activeLibrarySessionKey(request);
+        if (studentId == null && librarySessionKey == null) {
+            throw new UnauthorizedException();
+        }
 
         McpAuthSession session = mcpAuthService.createSession();
         McpAuthSessionId sessionId = session.id();
 
-        // SAINT + LMS: always linked from JWT identity
-        mcpAuthService.linkProvider(sessionId, McpProviderType.SAINT, studentId);
-        mcpAuthService.linkProvider(sessionId, McpProviderType.LMS, studentId);
+        // SAINT + LMS: link only when JWT identity is available.
+        if (studentId != null) {
+            mcpAuthService.linkProvider(sessionId, McpProviderType.SAINT, studentId);
+            mcpAuthService.linkProvider(sessionId, McpProviderType.LMS, studentId);
+        }
 
         // LIBRARY: link only if an active HTTP session with a stored library token exists
-        jakarta.servlet.http.HttpSession httpSession = request.getSession(false);
-        if (httpSession != null) {
-            String sessionKey = httpSession.getId();
-            if (librarySessionStore.has(sessionKey)) {
-                mcpAuthService.linkProvider(sessionId, McpProviderType.LIBRARY, sessionKey);
-                log.debug("web-session: library linked for student={}", studentId.substring(0, Math.min(4, studentId.length())));
-            }
+        if (librarySessionKey != null) {
+            mcpAuthService.linkProvider(sessionId, McpProviderType.LIBRARY, librarySessionKey);
+            log.debug("web-session: library linked");
         }
 
         log.debug("web-session: created session={}", sessionId.fingerprint());
         return ApiResponse.success(new McpWebSessionResponse(sessionId.value(), session.expiresAt()));
+    }
+
+    private String activeLibrarySessionKey(HttpServletRequest request) {
+        HttpSession httpSession = request.getSession(false);
+        if (httpSession != null) {
+            String sessionKey = httpSession.getId();
+            if (librarySessionStore.has(sessionKey)) {
+                return sessionKey;
+            }
+        }
+        return null;
     }
 }

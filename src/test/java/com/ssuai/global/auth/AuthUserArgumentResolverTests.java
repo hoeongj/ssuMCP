@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
@@ -93,5 +95,36 @@ class AuthUserArgumentResolverTests {
 
         assertThatThrownBy(() -> resolver.resolveArgument(null, null, webRequest, null))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void resolveArgumentReturnsNullWhenOptionalAttributeIsMissing() throws Exception {
+        MethodParameter parameter = methodParameter("optionalAuthUser");
+        when(webRequest.getAttribute(AuthAttributes.STUDENT_ID, RequestAttributes.SCOPE_REQUEST))
+                .thenReturn(null);
+
+        Object result = resolver.resolveArgument(parameter, null, webRequest, null);
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void resolveArgumentReturnsNullWhenOptionalAttributeIsBlank() throws Exception {
+        MethodParameter parameter = methodParameter("optionalAuthUser");
+        when(webRequest.getAttribute(AuthAttributes.STUDENT_ID, RequestAttributes.SCOPE_REQUEST))
+                .thenReturn("   ");
+
+        Object result = resolver.resolveArgument(parameter, null, webRequest, null);
+
+        assertThat(result).isNull();
+    }
+
+    private MethodParameter methodParameter(String methodName) throws NoSuchMethodException {
+        Method method = AuthUserArgumentResolverTests.class.getDeclaredMethod(methodName, String.class);
+        return new MethodParameter(method, 0);
+    }
+
+    @SuppressWarnings("unused")
+    private void optionalAuthUser(@AuthUser(required = false) String studentId) {
     }
 }
