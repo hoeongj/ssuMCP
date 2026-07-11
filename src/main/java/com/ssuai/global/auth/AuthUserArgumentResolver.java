@@ -32,9 +32,19 @@ public class AuthUserArgumentResolver implements HandlerMethodArgumentResolver {
         Object studentId = webRequest.getAttribute(
                 AuthAttributes.STUDENT_ID,
                 RequestAttributes.SCOPE_REQUEST);
-        if (!(studentId instanceof String id) || id.isBlank()) {
-            throw new UnauthorizedException();
+        if (studentId instanceof String id && !id.isBlank()) {
+            return id;
         }
-        return id;
+        if (studentId == null || studentId instanceof String) {
+            if (!isRequired(parameter)) {
+                return null;
+            }
+        }
+        throw new UnauthorizedException();
+    }
+
+    private boolean isRequired(MethodParameter parameter) {
+        AuthUser authUser = parameter == null ? null : parameter.getParameterAnnotation(AuthUser.class);
+        return authUser == null || authUser.required();
     }
 }
