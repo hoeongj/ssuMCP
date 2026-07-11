@@ -128,12 +128,6 @@ class CsrfOriginGuardFilterTests {
     }
 
     @Test
-    void mcpAuthWebSessionIsExcluded() {
-        MockHttpServletRequest request = request("POST", "/api/mcp/auth/web-session");
-        assertThat(filter.shouldNotFilter(request)).isTrue();
-    }
-
-    @Test
     void coveredApiPathIsNotExcluded() {
         MockHttpServletRequest request = request("POST", "/api/library/reservations/confirm");
         assertThat(filter.shouldNotFilter(request)).isFalse();
@@ -145,6 +139,47 @@ class CsrfOriginGuardFilterTests {
         // /api/mcp/auth/ must NOT be silently CSRF-exempt.
         MockHttpServletRequest request = request("POST", "/api/mcp/auth/some-future-write");
         assertThat(filter.shouldNotFilter(request)).isFalse();
+    }
+
+    // --- path coverage: cookie-capable web-session endpoint -----------------
+
+    @Test
+    void mcpAuthWebSessionWithForeignOriginIsForbidden() throws Exception {
+        MockHttpServletRequest request = request("POST", "/api/mcp/auth/web-session");
+        request.addHeader(HttpHeaders.ORIGIN, "https://evil.example");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNull();
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        assertThat(response.getContentAsString()).contains("CSRF_ORIGIN_NOT_ALLOWED");
+    }
+
+    @Test
+    void mcpAuthWebSessionWithAllowedOriginPasses() throws Exception {
+        MockHttpServletRequest request = request("POST", "/api/mcp/auth/web-session");
+        request.addHeader(HttpHeaders.ORIGIN, ALLOWED);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isSameAs(request);
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
+    }
+
+    @Test
+    void mcpAuthWebSessionWithoutOriginOrRefererPasses() throws Exception {
+        MockHttpServletRequest request = request("POST", "/api/mcp/auth/web-session");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isSameAs(request);
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
     }
 
     // --- origin normalization ----------------------------------------------

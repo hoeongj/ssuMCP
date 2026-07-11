@@ -53,12 +53,13 @@ import com.ssuai.global.response.ErrorResponse;
  * <h2>Scope</h2>
  * <p>Registered for {@code /api/*} only (so {@code /mcp/**} Bearer endpoints and
  * {@code /actuator/**} probes — which are not under {@code /api/}) never reach
- * this filter). The identity-provider login callbacks under
- * {@code /api/mcp/auth/**} are explicitly excluded: they receive provider
- * redirects / top-level navigations and form posts during SSO login, not
- * same-site frontend fetches, so an Origin check would break login. The u-SAINT
- * and LMS {@code sso-callback} endpoints under {@code /api/auth/saint/} and
- * {@code /api/auth/lms/} are {@code GET} and therefore method-excluded.</p>
+ * this filter). The identity-provider login callback
+ * {@code /api/mcp/auth/library/callback} is explicitly excluded: it receives
+ * provider redirects / top-level navigations and form posts during SSO login,
+ * not same-site frontend fetches, so an Origin check would break login. The
+ * u-SAINT and LMS {@code sso-callback} endpoints under
+ * {@code /api/auth/saint/} and {@code /api/auth/lms/} are {@code GET} and
+ * therefore method-excluded.</p>
  */
 public class CsrfOriginGuardFilter extends OncePerRequestFilter {
 
@@ -74,15 +75,21 @@ public class CsrfOriginGuardFilter extends OncePerRequestFilter {
      *   <li>{@code POST /api/mcp/auth/library/callback} — genuine provider SSO
      *       form-post; its {@code Origin} is the identity provider, not the
      *       frontend, so an Origin check would break login.</li>
-     *   <li>{@code POST /api/mcp/auth/web-session} — Bearer-authenticated (not
-     *       cookie), so CSRF does not apply; kept exempt to preserve behavior.</li>
      * </ul>
+     *
+     * <p>{@code POST /api/mcp/auth/web-session} is deliberately not exempt:
+     * since the library-only issuance change it accepts a cookie identity, so
+     * it is guarded like every other cookie-authenticated write endpoint.
+     * Legitimate browser frontend calls arrive as same-origin POSTs through the
+     * Next.js rewrite proxy and carry an allowlisted {@code Origin}; non-browser
+     * clients that omit {@code Origin}/{@code Referer} pass decision rule 3.
+     * External MCP clients use the {@code start_auth} flow, not this endpoint.</p>
      *
      * <p>The SAINT/LMS {@code start}/{@code callback} endpoints are {@code GET}
      * and therefore already method-excluded.</p>
      */
     private static final Set<String> CSRF_EXEMPT_PATHS =
-            Set.of("/api/mcp/auth/library/callback", "/api/mcp/auth/web-session");
+            Set.of("/api/mcp/auth/library/callback");
 
     private static final Set<String> STATE_CHANGING_METHODS =
             Set.of("POST", "PUT", "PATCH", "DELETE");
