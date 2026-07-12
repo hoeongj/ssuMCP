@@ -34,7 +34,7 @@
   3. **App Router intercept 순서**: route handler에서 쿠키를 재발급하려 했지만, `afterFiles` rewrite가 App Router route보다 먼저 실행돼 handler가 개입할 수 없었음.
   4. **Next.js silent Set-Cookie strip**: 미들웨어에서 `response.headers.set('Set-Cookie', …)`로 직접 지정한 헤더를 Next.js가 조용히 제거함.
 - **해결**: 레이어별로 커밋을 격리해 추적했다 — (1) `next.config.ts`에 `/api/*` rewrite로 모든 호출을 same-origin proxy로 통일, (2) 백엔드 콜백을 302 대신 200 + HTML로 변경, (3) route handler를 `proxy.ts` 미들웨어로 옮겨 서버 사이드에서 쿠키 추출·재발급, (4) `response.headers.set` 대신 `response.cookies.set()` API 사용.
-- **포인트**: "쿠키가 안 붙는다"는 단일 증상이 cross-origin / redirect / route intercept order / framework cookie API 네 개의 서로 다른 레이어에 분산돼 있었다. Vercel + Next.js에서 SSO 콜백 쿠키를 안정적으로 내리는 유일한 패턴은 미들웨어에서 `response.cookies.set()`을 쓰는 것이고, 다른 방법은 전부 어느 레이어에선가 조용히 제거된다.
+- **포인트**: "쿠키가 안 붙는다"는 단일 증상이 cross-origin / redirect / route intercept order / framework cookie API 네 개의 서로 다른 레이어에 분산돼 있었다. 당시의 1차 패턴은 미들웨어에서 `response.cookies.set()`을 쓰는 것이었지만, 이후 Traefik sticky 쿠키가 섞인 다중 `Set-Cookie` 조건에서 #13의 authorization-code 교환으로 폐기했다.
 - **예상 면접 질문**:
   - Next.js App Router에서 Set-Cookie가 조용히 제거되는 상황과 올바른 API는?
   - 같은 증상이 네 개 레이어에 분산됐을 때 어떻게 레이어를 격리해 디버깅하나?
@@ -206,3 +206,50 @@
   - `@Primary`와 `@Qualifier` 중 왜 Primary인가? (소비자가 여럿이고 모두 정식 빈을 원함 — Primary 하나로 전부 해소, Qualifier는 소비자마다 수정)
   - 회귀 테스트가 진짜 그 버그를 잡는지 어떻게 보장했나? (`@Primary`를 뺐을 때 동일 예외로 FAIL함을 실증한 뒤 되돌림 — "항상 통과하는 테스트" 배제)
   - crash-loop인데 어떻게 무중단이었나? (`maxUnavailable:0` — 새 파드가 Ready 전엔 구 파드 유지, 트래픽은 계속 구 파드가 서빙)
+
+---
+
+## 13. SSO 콜백 쿠키가 브라우저에 안 심긴다
+
+- **증상 / 배경**: SmartID SSO 콜백은 성공하고 서버도 refresh 세션을 만들었는데, 브라우저에는 refresh 쿠키가 계속 남지 않았다. 앞선 Fix A(콜백 200+JS + 쿠키 재발급)로도 필드 실패가 반복됐다.
+- **틀린 가설 (2개)**:
+  1. CDN rewrite 프록시가 redirect/캐시 응답에서 `Set-Cookie`를 strip한다 → 모든 콜백을 200+JS로 통일해도 실패해 소거.
+  2. 브라우저 3rd-party 쿠키 차단이다 → same-origin `/api/*` POST 쿠키는 정상 저장되고, 실패 응답에 Traefik affinity 쿠키가 중복 생성되는 지문이 보여 소거.
+- **실제 원인**: 프론트의 콜백 가로채기 미들웨어가 진범이었다. `Headers.get("set-cookie")`는 다중 `Set-Cookie`를 `", "`로 join하는데, 인그레스(Traefik)가 sticky 쿠키를 항상 덧붙였다. 미들웨어의 naive `parts[0]` 파싱이 refresh가 아니라 엉뚱한 쿠키를 재발급했고, 브라우저에 affinity 쿠키가 2개 생기는 현상으로 확정했다.
+- **해결**: 쿠키 릴레이 자체를 설계에서 제거했다. 콜백은 Redis 1회용 code만 URL로 넘긴다(TTL 120s, 단일 사용, fail-closed, 모든 콜백 응답 200+JS 통일). 실제 쿠키 전달은 same-origin `POST /api/auth/exchange`의 비리다이렉트 200 응답에서만 한다(ADR 0095).
+- **포인트**: 다중 `Set-Cookie`는 comma split 대상이 아니다(`getSetCookie()`가 필요한 이유). "프록시가 범인"까지 맞아도 **어느 프록시인지** 실측해야 한다. authorization-code 교환은 콜백과 쿠키 전달을 분리해, 중간자 rewrite/redirect/cache/header 변환에 로그인 성공 여부를 걸지 않는다.
+- **예상 면접 질문**:
+  - `Headers.get("set-cookie")`로 다중 쿠키를 읽으면 왜 깨지고, `getSetCookie()`가 필요한 이유는?
+  - 프록시/CDN 쿠키 문제에서 "어느 프록시인지"를 어떻게 실측으로 가르나?
+  - SSO 콜백 직접 쿠키 발급보다 authorization-code 교환이 프록시 뒤에서 더 안정적인 이유는?
+
+---
+
+## 14. 승인 버튼을 눌러도 아무 일도 안 일어난다
+
+- **증상 / 배경**: HITL 예약 카드에서 승인 버튼을 눌러도 로그·DB·화면이 모두 무음이었다. 카드 표시까지는 정상이라 처음엔 승인 API나 예약 worker만 의심하기 쉬운 형태였다.
+- **틀린 가설**: "승인 버튼 이후 한 곳만 막혔다." 실제로는 interrupt 생성, resume, SSE 표시가 각각 다른 이유로 끊긴 3중 잠복 버그였다.
+- **실제 원인 (3겹)**:
+  1. MCP 어댑터가 툴 결과를 content-block 리스트로 반환했는데, interrupt 조건은 dict shape만 검사했다. 조건이 영원히 False라 interrupt가 발화하지 않았다.
+  2. resume 직전 `update_state`가 체크포인트를 포크해 pending interrupt를 무효화했다. `Command(resume=..., update=...)` 원자 재개로 바꿔 LangGraph 내부의 fork write와 `NULL_TASK_ID` write 차이를 제거했다.
+  3. 승인 노드의 응답을 SSE로 흘리지 않는 스트림 필터가 마지막 화면 갱신을 막고 있었다.
+- **해결**: 픽스처를 실제 wire shape(content-block 리스트)으로 바꾸고, interrupt 스레드에서는 `update_state`를 금지했다. 승인에 필요한 상태는 `Command(resume=..., update=...)` 또는 resume payload로 원자 전달하고, 승인 노드 출력도 SSE 이벤트로 내보냈다(ssuAgent ADR 0016/0017).
+- **포인트**: 셋 다 "저비용 모델은 그 경로에 도달 못 함"이라는 같은 이유로 숨어 있다가, 더 강한 추론 경로가 들어오자 층층이 노출됐다. HITL E2E는 카드 표시가 아니라 **승인 이후 실제 실행과 스트림 표시까지** 검증해야 한다.
+- **예상 면접 질문**:
+  - LangGraph interrupt 테스트에서 왜 실제 MCP wire shape fixture가 중요한가?
+  - resume 직전 `update_state`가 pending interrupt를 무효화하는 이유는?
+  - HITL E2E의 완료 기준을 "카드 표시"가 아니라 "승인 이후"로 잡아야 하는 이유는?
+
+---
+
+## 15. 재배포할 때마다 도서관 로그인이 풀린다
+
+- **증상 / 배경**: 도서관 로그인 직후에는 대출·예약 기능이 정상인데, 롤링 재배포나 파드 전환 뒤에는 다시 401이 났다. Pyxis 토큰 자체는 Postgres에 7일 TTL로 남아 있었다.
+- **틀린 가설**: ① Pyxis 토큰이 짧게 만료된다 ② Traefik sticky만 있으면 충분하다. 토큰 row가 살아 있고, sticky는 파드가 재시작되면 지킬 대상이 사라지므로 둘 다 원인이 아니었다.
+- **실제 원인**: 저장소 값은 영속이었지만 **키**가 Tomcat 인메모리 서블릿 세션 id였다. 새 파드에는 예전 `JSESSIONID`에 해당하는 세션 객체가 없고, `getSession()`은 조용히 새 id를 만들었다. 결과적으로 DB row는 살아 있는데 조회 키만 증발해 401이 났다.
+- **해결**: 로그인 시 서버가 생성한 UUID를 `LibrarySessionStore` 키로 쓰고, 그 값을 `ssuai_library_session` 영속 쿠키로 내려준다(`HttpOnly`, prod `Secure`·`SameSite=None`, maxAge=저장소 TTL). 모든 소비 경로는 `LibrarySessionKeyResolver`로 통일했다. 세션고정 방어는 `changeSessionId()` rotate가 아니라 "키가 클라이언트 입력이 아님"으로 대체했다(ADR 0096).
+- **포인트**: 영속화해야 하는 것은 값뿐 아니라 **그 값을 찾는 키**다. Spring Session Redis는 전 서블릿 세션 외부화라 과하고, sticky-only는 재배포에 무력하다. 이 문제는 같은 테이블과 같은 문자열 PK를 유지하면서 키 발급 위치만 바꿔 해결했다.
+- **예상 면접 질문**:
+  - 토큰은 DB에 남아 있는데 재배포 후 401이 나는 원인을 어떻게 좁히나?
+  - 서버 생성 UUID 쿠키가 왜 세션고정 방어에서 `changeSessionId()`를 대체할 수 있나?
+  - Spring Session Redis와 sticky-only를 왜 기각했나?
