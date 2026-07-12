@@ -6,6 +6,7 @@
 | 상태 | Accepted — 구현 |
 | 범위 | `domain.library.reservation.intent`(`LibraryReservationWorker`·`LibraryReservationSeatSelector`), `domain.library.recommendation.LibrarySeatCatalogService` |
 | 연관 ADR | [0022](0022-library-reservation-intent-queue.md)(intent queue), [0059](0059-reservation-audit-single-source-of-truth.md)(worker가 예약 감사의 단일 진실원천), [0080](0080-multipod-shared-ratelimit-dualcap.md)(Pyxis read/write dual cap) |
+| 후속 결정 | [0097](0097-pyxis-read-cap-fanout-sizing.md)에서 read cap을 cluster 20/s, per-user 8/s로 조정했다. |
 
 ---
 
@@ -21,7 +22,7 @@
 
 ### 캐시 TTL 단축
 
-캐시 TTL을 줄이면 stale 창은 작아진다. 하지만 웹 좌석 조회, 추천, sampler까지 같은 read budget을 공유하므로 cold miss가 늘고 Pyxis read cap(기본 5/s)을 더 자주 친다. TTL을 0에 가깝게 줄여도 "조회 직후 타인이 예약"하는 race는 남는다. 쓰기 직전의 최종 판단 문제를 캐시 정책으로 해결할 수 없다.
+캐시 TTL을 줄이면 stale 창은 작아진다. 하지만 웹 좌석 조회, 추천, sampler까지 같은 read budget을 공유하므로 cold miss가 늘고 Pyxis read cap(ADR 0097 기준 cluster 20/s, per-user 8/s)을 더 자주 친다. TTL을 0에 가깝게 줄여도 "조회 직후 타인이 예약"하는 race는 남는다. 쓰기 직전의 최종 판단 문제를 캐시 정책으로 해결할 수 없다.
 
 ### 예약 실패 시 전체 캐시 무효화
 
@@ -47,7 +48,7 @@
 
 fresh 조회 단위는 "전체 좌석 snapshot"이 아니라 "후보가 속한 room"이다. 현재 Pyxis에는 seat 하나만 읽는 connector seam이 없고, 이미 검증된 가장 좁은 API가 `rooms/{roomId}/seats`다. 따라서 후보 room read가 최소 실용 단위다.
 
-read budget 영향은 intent 하나당 최악 초기 후보 1회 + 재선택 2회 = 3 room reads다. ADR 0080의 read cluster cap 5/s 기준으로, 포화 상태에서 intent 하나가 최대로 점유하는 read 슬롯은 3개다. 대신 fresh read가 "이미 사라진 좌석"을 감지하면 write는 0회다. 기존 구조에서 같은 상황은 write cap 2/s를 실패 write로 태웠으므로, 병목 자원을 더 비싼 write budget에서 더 싼 read budget으로 옮기는 선택이다.
+read budget 영향은 intent 하나당 최악 초기 후보 1회 + 재선택 2회 = 3 room reads다. ADR 0097의 현재 read cluster cap 20/s 기준으로, 포화 상태에서 intent 하나가 최대로 점유하는 read 슬롯은 3개다. 대신 fresh read가 "이미 사라진 좌석"을 감지하면 write는 0회다. 기존 구조에서 같은 상황은 write cap 2/s를 실패 write로 태웠으므로, 병목 자원을 더 비싼 write budget에서 더 싼 read budget으로 옮기는 선택이다.
 
 같은 worker tick에서 stale 후보가 같은 intent들은 기존 same-seat grouping이 먼저 하나의 winner만 실행하고 나머지는 local `FAILED_RACE`로 접는다. 따라서 동일 tick 중복은 여전히 write/read를 증폭하지 않는다. tick을 넘어 stale 후보가 반복되는 경우에도 각 winner는 fresh room read 후 taken이면 write를 호출하지 않는다.
 

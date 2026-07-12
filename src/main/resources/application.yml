@@ -193,16 +193,19 @@ ssuai:
   resilience:
     pyxis:
       # Dual rate cap on oasis.ssu.ac.kr calls (ADR 0029 legacy single per-pod cap
-      # -> ADR next Redis-shared cluster cap + per-user fairness cap). Defaults
-      # preserve ADR 0029's exact numbers (read 5/s, write 2/s) as the cluster
-      # budget; per-user fairness is a tighter sub-budget so no single caller can
-      # consume it alone.
+      # -> Redis-shared cluster cap + per-user fairness cap; ADR 0097 read sizing).
+      # Read caps are sized to the seat-scan fan-out: one operation can perform up to
+      # 6 room reads. 20/s cluster is the politeness ceiling, within the 15-25 req/s
+      # range and still gated by Retry-After/429 backoff (ADR 0093). 8/s per-user
+      # gives one user's full fan-out headroom without letting that user monopolize
+      # the cluster budget. Prod does not override these envs today, so these defaults
+      # are the prod values.
       redis-enabled: ${SSUAI_PYXIS_RATELIMIT_REDIS_ENABLED:true}
-      read-cluster-limit-per-second: ${SSUAI_PYXIS_READ_CLUSTER_LIMIT_PER_SECOND:5}
+      read-cluster-limit-per-second: ${SSUAI_PYXIS_READ_CLUSTER_LIMIT_PER_SECOND:20}
       read-timeout: ${SSUAI_PYXIS_READ_TIMEOUT:500ms}
       write-cluster-limit-per-second: ${SSUAI_PYXIS_WRITE_CLUSTER_LIMIT_PER_SECOND:2}
       write-timeout: ${SSUAI_PYXIS_WRITE_TIMEOUT:200ms}
-      per-user-read-limit-per-second: ${SSUAI_PYXIS_PER_USER_READ_LIMIT_PER_SECOND:2}
+      per-user-read-limit-per-second: ${SSUAI_PYXIS_PER_USER_READ_LIMIT_PER_SECOND:8}
       per-user-write-limit-per-second: ${SSUAI_PYXIS_PER_USER_WRITE_LIMIT_PER_SECOND:1}
       retry-after-cap-ms: ${SSUAI_PYXIS_RETRY_AFTER_CAP_MS:2000}
     llm-spend:

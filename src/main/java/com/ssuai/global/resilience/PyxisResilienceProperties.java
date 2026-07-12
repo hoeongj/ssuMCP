@@ -14,12 +14,15 @@ import org.springframework.stereotype.Component;
  *   <li><b>Cluster cap</b> — the real "don't get our egress IP blocked by
  *       oasis.ssu.ac.kr" budget. Redis-shared (via Redisson {@code
  *       RRateLimiter}) so N replicas still total this many requests/second,
- *       not {@code limit × N}. Defaults preserve the exact numbers ADR 0029
- *       picked for the single pod that existed at the time: read 5/s, write
+ *       not {@code limit × N}. Defaults keep ADR 0029's school-protection
+ *       stance while sizing reads to the seat-scan fan-out: read 20/s, write
  *       2/s.</li>
  *   <li><b>Per-user fairness cap</b> — a tighter, per-principal budget so one
  *       heavy user cannot alone consume the entire cluster cap and starve
- *       everyone else. Defaults read 2/s, write 1/s — write's cluster budget
+ *       everyone else. Defaults read 8/s, write 1/s. A seat "find any seat"
+ *       request fans out to up to 6 room reads under one principal, so the
+ *       per-user read budget must exceed the fan-out or a single legitimate
+ *       request throttles itself (ADR 0097). Write's cluster budget
  *       is only 2/s total, so a per-user cap equal to it would let one user
  *       monopolize it; 1/s guarantees at least two users can get a write
  *       slot concurrently.</li>
@@ -30,11 +33,11 @@ import org.springframework.stereotype.Component;
 public class PyxisResilienceProperties {
 
     private boolean redisEnabled = true;
-    private int readClusterLimitPerSecond = 5;
+    private int readClusterLimitPerSecond = 20;
     private Duration readTimeout = Duration.ofMillis(500);
     private int writeClusterLimitPerSecond = 2;
     private Duration writeTimeout = Duration.ofMillis(200);
-    private int perUserReadLimitPerSecond = 2;
+    private int perUserReadLimitPerSecond = 8;
     private int perUserWriteLimitPerSecond = 1;
     private long retryAfterCapMs = 2_000;
 

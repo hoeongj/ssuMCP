@@ -66,6 +66,35 @@ class PyxisResilienceRedisIT {
         return properties;
     }
 
+    /**
+     * ADR 0097: a single "find any seat" operation can fan out to 6 room reads,
+     * so the tuned per-user read cap must let that legitimate scan pass.
+     */
+    @Test
+    void singleUserSeatScanFanOutFitsWithinPerUserReadCap() {
+        PyxisResilienceProperties properties = propertiesWithClusterLimit(20, 8);
+        PyxisResilience pod = PyxisResilience.forTestingWithRedis(new SimpleMeterRegistry(), redisson, properties);
+
+        for (int i = 0; i < 6; i++) {
+            assertThat(pod.read("scanning-user", () -> "ok")).isEqualTo("ok");
+        }
+    }
+
+    /**
+     * ADR 0097: documents the old 2/s per-user read cap self-throttling the
+     * same 6-room fan-out before a legitimate scan can finish.
+     */
+    @Test
+    void perUserReadCapAtOldValueWouldThrottleTheSameFanOut() {
+        PyxisResilienceProperties properties = propertiesWithClusterLimit(20, 2);
+        PyxisResilience pod = PyxisResilience.forTestingWithRedis(new SimpleMeterRegistry(), redisson, properties);
+
+        assertThat(pod.read("scanning-user", () -> "ok")).isEqualTo("ok");
+        assertThat(pod.read("scanning-user", () -> "ok")).isEqualTo("ok");
+        assertThatThrownBy(() -> pod.read("scanning-user", () -> "should-not-run"))
+                .isInstanceOf(RequestNotPermitted.class);
+    }
+
     @Test
     void clusterCapIsSharedAcrossTwoSimulatedPods() {
         // cluster budget = 2/s, per-user budget generous (10/s) so only the cluster cap binds.

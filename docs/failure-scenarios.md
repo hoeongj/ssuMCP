@@ -1,6 +1,6 @@
 # 장애 시나리오 — 설계와 처리 방식
 
-> 작성일: 2026-06-19 · 갱신: 2026-06-22(보안 remediation Wave 2~5 반영) · 범위: ssuMCP 구현된 resilience 패턴 기준 · 관련 ADR: 0021, 0022, 0015, 0047, 0059
+> 작성일: 2026-06-19 · 갱신: 2026-07-12(Pyxis read cap fan-out sizing 반영) · 범위: ssuMCP 구현된 resilience 패턴 기준 · 관련 ADR: 0021, 0022, 0015, 0047, 0059, 0097
 
 이 문서는 실제로 발생하거나 발생 가능한 장애 시나리오와 각각을 어떻게 처리하는지 설명한다. 단순한 "에러 있으면 500 반환" 수준을 넘어, 각 시나리오에 설계 결정과 트레이드오프가 있다.
 
@@ -22,8 +22,8 @@ PyxisResilience.read() / write()
      │
      ├── Bulkhead: maxConcurrentCalls=10, maxWaitDuration=500ms
      │   → 과도한 스레드 점유 방지
-     ├── RateLimiter: read 5/s · write 2/s
-     │   → 학교 시스템 트래픽 상한 준수
+     ├── RateLimiter: read 20/s cluster · 8/s per-user, write 2/s cluster · 1/s per-user
+     │   → 학교 시스템 트래픽 상한 준수 + seat-scan fan-out headroom (ADR 0097)
      ├── CircuitBreaker "pyxis":
      │     slidingWindow=20, failureThreshold=50%, minCalls=10
      │     waitDuration=30s, halfOpenProbes=3

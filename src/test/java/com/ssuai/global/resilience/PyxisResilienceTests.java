@@ -44,6 +44,17 @@ class PyxisResilienceTests {
     }
 
     @Test
+    void defaultPyxisRateCapsMatchSeatScanFanOutSizing() {
+        PyxisResilienceProperties properties = new PyxisResilienceProperties();
+
+        // ADR 0097: read caps are sized to the 6-room seat-scan fan-out; writes stay unchanged.
+        assertThat(properties.getReadClusterLimitPerSecond()).isEqualTo(20);
+        assertThat(properties.getPerUserReadLimitPerSecond()).isEqualTo(8);
+        assertThat(properties.getWriteClusterLimitPerSecond()).isEqualTo(2);
+        assertThat(properties.getPerUserWriteLimitPerSecond()).isEqualTo(1);
+    }
+
+    @Test
     void readRetriesTransientFailuresThenSucceeds() {
         PyxisResilience resilience = newResilience();
         AtomicInteger calls = new AtomicInteger();

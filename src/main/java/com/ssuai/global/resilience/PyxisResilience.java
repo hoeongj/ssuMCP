@@ -107,11 +107,11 @@ import io.micrometer.core.instrument.MeterRegistry;
  * is caught in {@link #acquireDistributed}: we log a WARN, record
  * {@code pyxis.ratelimit.redis.fallback}, and simply skip the distributed checks for
  * that call. Execution falls straight through to the unchanged local resilience4j
- * {@link RateLimiter} below — which is already configured at the same real limit (5/s
- * read, 2/s write) — so a Redis blip degrades this feature back to today's per-pod
- * behavior instead of blocking all Pyxis traffic. The same happens by construction when
- * Redis is disabled ({@link PyxisResilienceProperties#isRedisEnabled()} false) or no
- * Redisson bean is available.
+ * {@link RateLimiter} below — which is already configured at the same real limit (20/s
+ * read, 2/s write — ADR 0097) — so a Redis blip degrades this feature back to
+ * today's per-pod behavior instead of blocking all Pyxis traffic. The same happens by
+ * construction when Redis is disabled ({@link PyxisResilienceProperties#isRedisEnabled()}
+ * false) or no Redisson bean is available.
  */
 @Component
 public class PyxisResilience {
