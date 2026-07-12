@@ -1,7 +1,6 @@
 package com.ssuai.domain.auth.mcp;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -11,6 +10,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ssuai.domain.auth.mcp.dto.McpWebSessionResponse;
+import com.ssuai.domain.library.auth.LibrarySessionKeyResolver;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.global.auth.AuthUser;
 import com.ssuai.global.exception.UnauthorizedException;
@@ -42,12 +42,15 @@ public class McpWebSessionController {
 
     private final McpAuthService mcpAuthService;
     private final LibrarySessionStore librarySessionStore;
+    private final LibrarySessionKeyResolver librarySessionKeyResolver;
 
     public McpWebSessionController(
             McpAuthService mcpAuthService,
-            LibrarySessionStore librarySessionStore) {
+            LibrarySessionStore librarySessionStore,
+            LibrarySessionKeyResolver librarySessionKeyResolver) {
         this.mcpAuthService = mcpAuthService;
         this.librarySessionStore = librarySessionStore;
+        this.librarySessionKeyResolver = librarySessionKeyResolver;
     }
 
     @PostMapping
@@ -81,13 +84,10 @@ public class McpWebSessionController {
     }
 
     private String activeLibrarySessionKey(HttpServletRequest request) {
-        HttpSession httpSession = request.getSession(false);
-        if (httpSession != null) {
-            String sessionKey = httpSession.getId();
-            if (librarySessionStore.has(sessionKey)) {
-                return sessionKey;
-            }
-        }
-        return null;
+        // Prefers the persistent library-session cookie (survives redeploys/pod switches),
+        // falling back to a legacy servlet session id (ADR 0096).
+        return librarySessionKeyResolver.resolve(request)
+                .filter(librarySessionStore::has)
+                .orElse(null);
     }
 }

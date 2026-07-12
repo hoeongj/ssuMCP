@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -17,10 +18,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,6 +32,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.ssuai.domain.action.ActionAudit;
 import com.ssuai.domain.action.ActionService;
+import com.ssuai.domain.library.auth.LibrarySessionKeyResolver;
+import com.ssuai.domain.library.auth.LibrarySessionProperties;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.recommendation.LibrarySeatRecommendationResponse;
@@ -45,11 +51,13 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @ActiveProfiles("test")
 @WebMvcTest(LibraryReservationWebController.class)
+@Import({LibrarySessionProperties.class, LibrarySessionKeyResolver.class})
 class LibraryReservationWebControllerTests {
 
     private static final String SESSION_KEY = "session-key";
     private static final String TOKEN = "pyxis-token";
     private static final long ACTION_ID = 77L;
+    private static final Cookie LIBRARY_COOKIE = new Cookie("ssuai_library_session", SESSION_KEY);
 
     private final MockMvc mockMvc;
 
@@ -93,6 +101,7 @@ class LibraryReservationWebControllerTests {
         when(librarySessionStore.has(anyString())).thenReturn(false);
 
         mockMvc.perform(post("/api/library/reservations/prepare")
+                        .cookie(LIBRARY_COOKIE)
                         .contentType("application/json")
                         .content("""
                                 {"type":"RESERVE","seatId":3179}
@@ -102,12 +111,28 @@ class LibraryReservationWebControllerTests {
     }
 
     @Test
+    void prepare_withNoCookieAndNoSession_returnsLibraryAuthRequired() throws Exception {
+        // No cookie, no servlet session at all — the resolver must reject before the store is
+        // even consulted (ADR 0096).
+        mockMvc.perform(post("/api/library/reservations/prepare")
+                        .contentType("application/json")
+                        .content("""
+                                {"type":"RESERVE","seatId":3179}
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("LIBRARY_SESSION_REQUIRED"));
+
+        verifyNoInteractions(actionService);
+    }
+
+    @Test
     void prepare_withValidSession_returnsPendingAction() throws Exception {
         ActionAudit saved = pendingAction("LIBRARY_SEAT_RESERVATION");
-        when(actionService.createPendingAction(anyString(), eq("LIBRARY_SEAT_RESERVATION"), any()))
+        when(actionService.createPendingAction(eq(SESSION_KEY), eq("LIBRARY_SEAT_RESERVATION"), any()))
                 .thenReturn(saved);
 
         mockMvc.perform(post("/api/library/reservations/prepare")
+                        .cookie(LIBRARY_COOKIE)
                         .contentType("application/json")
                         .content("""
                                 {"type":"RESERVE","seatId":3179}
@@ -116,6 +141,24 @@ class LibraryReservationWebControllerTests {
                 .andExpect(jsonPath("$.data.actionId").value(ACTION_ID))
                 .andExpect(jsonPath("$.data.actionType").value("LIBRARY_SEAT_RESERVATION"))
                 .andExpect(jsonPath("$.data.summary").value("Reserve seat 3179 prepared."));
+    }
+
+    @Test
+    void prepare_withLegacyServletSessionOnly_returnsPendingAction() throws Exception {
+        // Legacy fallback: no cookie, only a pre-existing servlet session (ADR 0096).
+        MockHttpSession session = new MockHttpSession();
+        ActionAudit saved = pendingAction("LIBRARY_SEAT_RESERVATION");
+        when(actionService.createPendingAction(eq(session.getId()), eq("LIBRARY_SEAT_RESERVATION"), any()))
+                .thenReturn(saved);
+
+        mockMvc.perform(post("/api/library/reservations/prepare")
+                        .session(session)
+                        .contentType("application/json")
+                        .content("""
+                                {"type":"RESERVE","seatId":3179}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.actionId").value(ACTION_ID));
     }
 
     @Test
@@ -140,7 +183,7 @@ class LibraryReservationWebControllerTests {
                 .thenReturn(requested);
         when(intentTransactions.findById(11L)).thenReturn(Optional.of(succeeded));
 
-        mockMvc.perform(post("/api/library/reservations/confirm"))
+        mockMvc.perform(post("/api/library/reservations/confirm").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.intentId").value(11L))
@@ -169,7 +212,7 @@ class LibraryReservationWebControllerTests {
                 .thenReturn(intentView(11L, LibraryReservationIntentStatus.REQUESTED, null));
         when(intentTransactions.findById(11L)).thenReturn(Optional.of(reserving));
 
-        mockMvc.perform(post("/api/library/reservations/confirm"))
+        mockMvc.perform(post("/api/library/reservations/confirm").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"))
                 .andExpect(jsonPath("$.data.intentId").value(11L));
@@ -196,7 +239,7 @@ class LibraryReservationWebControllerTests {
         when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3000L))))
                 .thenReturn(new LibraryReservationResult(111L, "6F", "A1", "10:00", "18:00", 57, 3000L));
 
-        mockMvc.perform(post("/api/library/reservations/confirm"))
+        mockMvc.perform(post("/api/library/reservations/confirm").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("FAILED_RACE"));
 
@@ -222,7 +265,7 @@ class LibraryReservationWebControllerTests {
         when(reservationConnector.reserve(eq(TOKEN), eq(new LibraryReservationRequest(3000L))))
                 .thenThrow(new RuntimeException("original seat restore failed"));
 
-        mockMvc.perform(post("/api/library/reservations/confirm"))
+        mockMvc.perform(post("/api/library/reservations/confirm").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("FAILED_UPSTREAM"));
 
@@ -239,6 +282,7 @@ class LibraryReservationWebControllerTests {
                 .thenReturn(new LibraryReservationRegistrationResult(created, true));
 
         mockMvc.perform(post("/api/library/reservations/wait")
+                        .cookie(LIBRARY_COOKIE)
                         .contentType("application/json")
                         .content("""
                                 {"preferredFloor":"6F","preferredRoomIds":"57,58","seatAttributes":"window","targetSeatId":3179}
@@ -258,6 +302,7 @@ class LibraryReservationWebControllerTests {
                 .thenReturn(new LibraryReservationRegistrationResult(existing, false));
 
         mockMvc.perform(post("/api/library/reservations/wait")
+                        .cookie(LIBRARY_COOKIE)
                         .contentType("application/json")
                         .content("""
                                 {"preferredFloor":"6F","preferredRoomIds":"57,58","seatAttributes":"window","targetSeatId":3179}
@@ -271,7 +316,7 @@ class LibraryReservationWebControllerTests {
         when(intentTransactions.isOwnedBySession(eq(11L), anyString())).thenReturn(true);
         when(intentSseRegistry.createEmitter(11L)).thenReturn(new SseEmitter());
 
-        mockMvc.perform(get("/api/library/reservations/wait/events/11"))
+        mockMvc.perform(get("/api/library/reservations/wait/events/11").cookie(LIBRARY_COOKIE))
                 .andExpect(request().asyncStarted());
 
         verify(intentSseRegistry).createEmitter(11L);
@@ -283,7 +328,7 @@ class LibraryReservationWebControllerTests {
         // (or unknown) must be rejected as 404 and MUST NOT open the stream.
         when(intentTransactions.isOwnedBySession(eq(11L), anyString())).thenReturn(false);
 
-        mockMvc.perform(get("/api/library/reservations/wait/events/11"))
+        mockMvc.perform(get("/api/library/reservations/wait/events/11").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 
@@ -294,7 +339,7 @@ class LibraryReservationWebControllerTests {
     void cancelWait_withNoActiveIntent_returns404() throws Exception {
         when(intentTransactions.cancelActive(anyString())).thenReturn(Optional.empty());
 
-        mockMvc.perform(delete("/api/library/reservations/wait"))
+        mockMvc.perform(delete("/api/library/reservations/wait").cookie(LIBRARY_COOKIE))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
     }

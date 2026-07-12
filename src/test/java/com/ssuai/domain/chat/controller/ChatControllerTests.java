@@ -1,5 +1,6 @@
 package com.ssuai.domain.chat.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
@@ -11,9 +12,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.concurrent.atomic.AtomicReference;
+
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -21,10 +26,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.ssuai.domain.chat.dto.ChatResponse;
 import com.ssuai.domain.chat.service.ChatService;
+import com.ssuai.domain.library.auth.LibrarySessionKeyResolver;
+import com.ssuai.domain.library.auth.LibrarySessionProperties;
+import com.ssuai.domain.library.mcp.LibraryToolContext;
 import com.ssuai.global.exception.ChatUnavailableException;
 
 @ActiveProfiles("test")
 @WebMvcTest(ChatController.class)
+@Import({LibrarySessionProperties.class, LibrarySessionKeyResolver.class})
 class ChatControllerTests {
 
     private final MockMvc mockMvc;
@@ -124,6 +133,52 @@ class ChatControllerTests {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void replyMakesTheResolvedLibraryCookieKeyAvailableInLibraryToolContext() throws Exception {
+        // The chat library tools (get_my_library_loans, get_library_seat_status) look up
+        // LibrarySessionStore by this thread-local key. It must be the persistent library-
+        // session cookie value, not the servlet session id (ADR 0096).
+        AtomicReference<String> capturedLibraryKey = new AtomicReference<>();
+        when(chatService.reply(anyString(), anyString(), eq("내 대출현황 알려줘"), org.mockito.ArgumentMatchers.isNull()))
+                .thenAnswer(invocation -> {
+                    capturedLibraryKey.set(LibraryToolContext.currentSessionKey());
+                    return new ChatResponse(invocation.getArgument(1), "대출 내역이 없어요.");
+                });
+
+        mockMvc.perform(post("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .cookie(new Cookie("ssuai_library_session", "cookie-session-key"))
+                        .content("""
+                                {
+                                  "message": "내 대출현황 알려줘"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(capturedLibraryKey.get()).isEqualTo("cookie-session-key");
+    }
+
+    @Test
+    void replyLeavesLibraryToolContextEmptyWhenNoCookieOrSessionIsPresent() throws Exception {
+        AtomicReference<String> capturedLibraryKey = new AtomicReference<>("not-yet-set");
+        when(chatService.reply(anyString(), anyString(), eq("내 대출현황 알려줘"), org.mockito.ArgumentMatchers.isNull()))
+                .thenAnswer(invocation -> {
+                    capturedLibraryKey.set(LibraryToolContext.currentSessionKey());
+                    return new ChatResponse(invocation.getArgument(1), "도서관 연동이 필요해요.");
+                });
+
+        mockMvc.perform(post("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "message": "내 대출현황 알려줘"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(capturedLibraryKey.get()).isNull();
     }
 
     @Test

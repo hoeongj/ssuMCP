@@ -62,6 +62,16 @@ ssuai:
       # path. Direct-origin public CORS does not allow credentials.
       same-site: None
   library:
+    session:
+      cookie:
+        # Prod is HTTPS-only — the library session cookie must be marked Secure, same as
+        # refresh-cookie above.
+        secure: true
+        # Prod frontend (Vercel) and backend (duckdns) are on different sites (same cross-site
+        # topology as refresh-cookie above), so the cookie must travel on same-origin-proxied
+        # fetch() calls with credentials:include. SameSite=None; the cookie is already
+        # HttpOnly + Secure.
+        same-site: None
     reservation:
       base-url: ${SSUAI_LIBRARY_RESERVATION_BASE_URL:https://oasis.ssu.ac.kr}
       referer: https://oasis.ssu.ac.kr/library-services/smuf/reading-rooms
