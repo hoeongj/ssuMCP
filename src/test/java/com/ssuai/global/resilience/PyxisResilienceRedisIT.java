@@ -95,6 +95,28 @@ class PyxisResilienceRedisIT {
                 .isInstanceOf(RequestNotPermitted.class);
     }
 
+    /**
+     * ADR 0097 trySetRate trap: Redisson only applies limiter config when a key
+     * is absent, so a rate change must work without a manual Redis reset.
+     */
+    @Test
+    void rateConfigChangeAppliesBecauseKeyEncodesTheRate() {
+        PyxisResilience old = PyxisResilience.forTestingWithRedis(
+                new SimpleMeterRegistry(), redisson, propertiesWithClusterLimit(10, 2));
+
+        assertThat(old.read("scanner", () -> "ok")).isEqualTo("ok");
+        assertThat(old.read("scanner", () -> "ok")).isEqualTo("ok");
+        assertThatThrownBy(() -> old.read("scanner", () -> "should-not-run"))
+                .isInstanceOf(RequestNotPermitted.class);
+
+        PyxisResilience tuned = PyxisResilience.forTestingWithRedis(
+                new SimpleMeterRegistry(), redisson, propertiesWithClusterLimit(20, 8));
+
+        for (int i = 0; i < 6; i++) {
+            assertThat(tuned.read("scanner", () -> "ok")).isEqualTo("ok");
+        }
+    }
+
     @Test
     void clusterCapIsSharedAcrossTwoSimulatedPods() {
         // cluster budget = 2/s, per-user budget generous (10/s) so only the cluster cap binds.

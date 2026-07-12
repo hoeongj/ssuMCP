@@ -93,6 +93,13 @@ import io.micrometer.core.instrument.MeterRegistry;
  *       budget instead of multiplying it.</li>
  * </ol>
  *
+ * <p>Redisson {@code RRateLimiter.trySetRate} is set-if-absent: once a limiter
+ * key exists, a redeploy with a different configured rate would otherwise be
+ * silently ignored. Distributed limiter keys therefore encode the configured
+ * rate as {@code :r<n>} so deploy-time config changes use fresh keys immediately;
+ * both per-user and cluster keys also carry TTLs to reclaim idle or superseded
+ * rate keys.
+ *
  * <p>Both use {@code RRateLimiter.tryAcquire(1, timeout)} — a bounded
  * <em>wait</em> for a free slot, not an instant reject — with the exact same
  * {@code timeoutDuration} the local resilience4j {@link RateLimiter} already used
@@ -121,6 +128,8 @@ public class PyxisResilience {
     private static final String KEY_PREFIX = "ssuai:resilience:pyxis:v1";
     /** Per-user Redis keys self-expire after this much inactivity (bounds Redis memory). */
     private static final Duration PER_USER_KEY_TTL = Duration.ofMinutes(5);
+    /** Cluster limiter keys self-expire after inactivity so rate changes and superseded-rate keys reclaim; rate is encoded in the key for immediate deploy-time config changes. */
+    private static final Duration CLUSTER_KEY_TTL = Duration.ofMinutes(10);
     private static final long READ_RETRY_BASE_MS = 200L;
     private static final double READ_RETRY_MULTIPLIER = 2.0;
 
@@ -352,6 +361,12 @@ public class PyxisResilience {
      * Redis-side {@code RuntimeException} is treated as an outage and falls through
      * silently (WARN + metric), letting the unchanged local per-pod chain below act
      * as the safety net.
+     *
+     * <p>Redisson {@code trySetRate} never overwrites an already-configured key, so
+     * rate config changes to existing limiter keys are silently ignored. The configured
+     * rate is encoded in each limiter key ({@code :r<n>}) so a deploy-time change
+     * applies immediately, and both keys have TTLs to reclaim idle or superseded-rate
+     * limiter state.
      */
     private void acquireDistributed(
             String operation,
@@ -370,7 +385,8 @@ public class PyxisResilience {
             // school-protection budget — draining it for everyone and defeating the
             // fairness cap's purpose. The reverse waste (user permit consumed, then the
             // cluster cap denies) only harms that same caller, which is acceptable.
-            String principalKey = KEY_PREFIX + ":" + operation + ":user:" + safePrincipal(principal);
+            String principalKey = KEY_PREFIX + ":" + operation + ":user:" + safePrincipal(principal)
+                    + ":r" + perUserLimit;
             RRateLimiter perUser = redissonClient.getRateLimiter(principalKey);
             perUser.trySetRate(RateType.OVERALL, perUserLimit, Duration.ofSeconds(1));
             perUser.expire(PER_USER_KEY_TTL);
@@ -378,8 +394,10 @@ public class PyxisResilience {
                 throw RequestNotPermitted.createRequestNotPermitted(localLimiterForExceptionIdentity);
             }
 
-            RRateLimiter cluster = redissonClient.getRateLimiter(KEY_PREFIX + ":" + operation + ":cluster");
+            RRateLimiter cluster = redissonClient.getRateLimiter(KEY_PREFIX + ":" + operation
+                    + ":cluster:r" + clusterLimit);
             cluster.trySetRate(RateType.OVERALL, clusterLimit, Duration.ofSeconds(1));
+            cluster.expire(CLUSTER_KEY_TTL);
             if (!cluster.tryAcquire(1, timeout)) {
                 throw RequestNotPermitted.createRequestNotPermitted(localLimiterForExceptionIdentity);
             }
