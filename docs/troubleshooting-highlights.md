@@ -253,3 +253,47 @@
   - 토큰은 DB에 남아 있는데 재배포 후 401이 나는 원인을 어떻게 좁히나?
   - 서버 생성 UUID 쿠키가 왜 세션고정 방어에서 `changeSessionId()`를 대체할 수 있나?
   - Spring Session Redis와 sticky-only를 왜 기각했나?
+
+---
+
+## 16. 정상적인 "아무자리나" 좌석 요청이 자기 자신을 rate-limit했다 — 레이트 리밋의 "단위 작업"을 잘못 잡은 문제 (ADR 0097)
+
+- **증상 / 배경**: 사용자가 "도서관 아무자리나 예약해줘"라고 한 번 요청했는데, 첫 턴에서 간헐적으로 `RequestNotPermitted`가 났다. 사용자는 요청 1건만 보냈지만 내부적으로는 `LibrarySeatRecommendationService`가 최대 6개 열람실을 순차 조회했다.
+- **틀린 가설**: "sampler가 cluster read budget을 먹었다." sampler는 5분마다 6개 room을 읽는 정도라 20/s 기준에서는 미미하고, 사용자 token과 다른 principal이라 per-user self-throttle의 직접 원인이 아니었다.
+- **실제 원인 (2겹)**:
+  1. rate cap을 "HTTP 호출 수"에 물렸는데 실제 사용자 의도 1건은 최대 6-room fan-out이었다. 기존 per-user read 2/s에서는 같은 principal 아래 정상 스캔의 세 번째 read부터 막힐 수 있었다.
+  2. 코드 재감사(self-review)에서 Redisson `RRateLimiter.trySetRate` 함정도 같이 잡았다. 이 메서드는 set-if-absent라 이미 만들어진 cluster key가 있으면 5/s → 20/s 상향이 운영 Redis에서 no-op이 될 수 있었다. 특히 기존 cluster key는 TTL도 없어서 수동 reset 전까지 오래된 rate가 붙어 있을 수 있었다.
+- **해결**: read cap을 fan-out에 맞춰 per-user 2/s → 8/s, cluster 5/s → 20/s로 올렸다(write는 cluster 2/s, per-user 1/s 유지). 20/s는 인증 사용자 주도 통합의 15~25 req/s politeness ceiling 안에 있고, 상류 429는 ADR 0093의 `Retry-After` 게이트가 계속 우선한다. Redis limiter key에는 `:r<n>`을 인코딩하고(`...:user:{principal}:r8`, `...:cluster:r20`) TTL을 붙여 rate config 변경이 배포만으로 새 key에 적용되게 했다.
+- **포인트**: 레이트 리밋 예산은 "요청 수"가 아니라 **사용자 의도 1건이 실제로 소비하는 작업량**을 기준으로 잡아야 한다. 분산 리미터는 `trySetRate` 같은 set-if-absent API 때문에 설정값이 key에 실려야 안전하다 — config-carries-in-key 패턴이다.
+- **예상 면접 질문**:
+  - 6-room fan-out 요청에서 per-user 2/s가 왜 정상 사용자를 막나?
+  - cluster cap을 20/s로 올려도 학교 시스템 보호 원칙이 유지되는 근거는?
+  - Redisson `trySetRate`가 운영 설정 반영을 막는 이유와 `:r<n>` key가 해결하는 방식은?
+
+---
+
+## 17. tempo가 메모리를 올려도 계속 OOMKill — Go GOMEMLIMIT + non-Ready StatefulSet 함정
+
+- **증상 / 배경**: Tempo가 384Mi에서 시작 직후 block-flush 중 OOM으로 죽었고, 재시작이 741회까지 쌓였다. 메모리를 768Mi로 올리고 `GOMEMLIMIT`도 넣었는데도 같은 OOMKill이 계속 보였다.
+- **틀린 가설**: "768Mi도 부족하다." 실제로는 새 리소스 템플릿이 실행 중인 pod에 아직 적용되지 않았다.
+- **실제 원인**: Tempo는 Go 프로세스라 cgroup memory limit을 고려한 GC 상한이 없으면 limit 근처에서 늦게 수거하다 OOM을 밟기 쉽다. 그래서 `GOMEMLIMIT=690MiB`(768Mi의 약 90%)가 맞는 1차 처방이었다. 그런데 pod가 CrashLoopBackOff로 non-Ready 상태였기 때문에 StatefulSet 컨트롤러가 새 템플릿으로 정상 교체하지 않았고, 기존 pod가 계속 구 384Mi limit으로 재시작 중이었다.
+- **해결**: Tempo memory를 768Mi로 올리고 `GOMEMLIMIT=690MiB`를 지정한 뒤, non-Ready pod를 `kubectl delete pod`로 강제 재생성했다. 새 pod가 실제 768Mi limit과 Go GC 상한을 들고 뜨면서 startup block-flush 구간을 넘겼다.
+- **포인트**: Go 컨테이너 OOM은 단순 memory 증설만 보지 말고 `GOMEMLIMIT`으로 GC가 cgroup 예산을 알게 해야 한다. 그리고 StatefulSet에서 non-Ready pod는 template 변경을 자동으로 반영하지 않을 수 있으므로, 리소스가 실제 pod spec에 적용됐는지 `kubectl describe pod`로 확인해야 한다.
+- **예상 면접 질문**:
+  - Go 컨테이너에서 `GOMEMLIMIT`을 memory limit의 약 90%로 잡는 이유는?
+  - StatefulSet template을 바꿨는데 CrashLoopBackOff pod가 계속 예전 limit으로 뜨는 이유는?
+  - "메모리를 올렸는데도 OOM"을 pod spec 실측으로 어떻게 확인하나?
+
+---
+
+## 18. 대시보드는 고쳤는데 알림 룰은 놓쳤다 — 존재하지 않는 라벨로 잠들어 있던 Prometheus 알림
+
+- **증상 / 배경**: HighErrorRate/HighLatency 알림이 배포 이후 한 번도 발화할 수 없는 상태였다. 백엔드 메트릭은 정상 수집 중이었고, 대시보드 PromQL은 이미 한 차례 같은 라벨 문제를 고친 뒤였다.
+- **틀린 가설**: "알림은 정의되어 있으니 Prometheus가 보고 있다." 실제로는 expr selector가 prod series를 0개 반환하면 알림은 정의만 된 채 영원히 잠든다.
+- **실제 원인**: 알림 expr이 백엔드가 방출하지 않는 `application="ssuai"` 라벨을 selector로 쓰고 있었다. 같은 메트릭을 쓰는 대시보드 파일에서는 앞선 수정으로 `job="ssuai-backend"`를 쓰게 됐지만, 별도 PrometheusRule 파일의 알림 룰은 남아 있었다.
+- **해결**: prod Prometheus API에서 `count()`로 `application="ssuai"` series 0개와 `job="ssuai-backend"` series 69개를 실측한 뒤 selector를 `job="ssuai-backend"`로 고쳤다. 동시에 예약/EDA 파이프라인 알림 4종(`IntentBusPublishFailures`, `McpToolCallEventDrops`, `IntentSseConsumerLag`, `PyxisReadBudgetSaturated`)을 추가했다.
+- **포인트**: 알림 검증의 완료 기준은 "YAML이 있다"가 아니라 **selector가 prod에서 series를 반환한다**다. 대시보드와 알림 룰은 파일이 다르므로, 같은 메트릭 버그를 한쪽만 고쳐도 운영 감시는 여전히 비어 있을 수 있다.
+- **예상 면접 질문**:
+  - Prometheus 알림이 정의되어 있는데도 절대 발화하지 않는 상태를 어떻게 찾나?
+  - 대시보드 PromQL 수정과 PrometheusRule 수정이 별도로 필요한 이유는?
+  - alert selector에서 `application`이 아니라 `job="ssuai-backend"`를 기준으로 삼은 근거는?
