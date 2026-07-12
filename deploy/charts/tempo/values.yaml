@@ -30,13 +30,19 @@ tempo:
           endpoint: "0.0.0.0:4317"
         http:
           endpoint: "0.0.0.0:4318"
+  # Tempo was OOMKilled 741 times at 384Mi during startup block-flush. The bump
+  # stays within the single-node budget (ADR 0078), and GOMEMLIMIT makes the Go
+  # runtime GC against the container limit instead of OOMing.
+  extraEnv:
+    - name: GOMEMLIMIT
+      value: "690MiB"
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: 500m
-      memory: 384Mi
+      memory: 768Mi
 
 # Persist trace blocks across pod restarts on the node-local provisioner.
 persistence:
