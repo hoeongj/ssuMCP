@@ -14,19 +14,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.Map;
 
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.ssuai.domain.library.auth.LibrarySessionKeyResolver;
+import com.ssuai.domain.library.auth.LibrarySessionProperties;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.global.auth.AuthAttributes;
 
 @ActiveProfiles("test")
 @WebMvcTest(McpWebSessionController.class)
+@Import({LibrarySessionProperties.class, LibrarySessionKeyResolver.class})
 class McpWebSessionControllerTests {
 
     private final MockMvc mockMvc;
@@ -105,6 +110,28 @@ class McpWebSessionControllerTests {
         verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), any());
         verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.LMS), any());
         verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LIBRARY, sessionKey);
+        verifyNoMoreInteractions(mcpAuthService);
+    }
+
+    @Test
+    void create_withLibraryCookieOnlyAndNoServletSession_linksLibraryOnly() throws Exception {
+        // Simulates a redeploy/pod-switch: only the persistent library-session cookie is
+        // present, no servlet session (ADR 0096).
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(librarySessionStore.has("cookie-session-key")).thenReturn(true);
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .cookie(new Cookie("ssuai_library_session", "cookie-session-key")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+
+        verify(mcpAuthService).createSession();
+        verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), any());
+        verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.LMS), any());
+        verify(mcpAuthService).linkProvider(sessionId, McpProviderType.LIBRARY, "cookie-session-key");
         verifyNoMoreInteractions(mcpAuthService);
     }
 

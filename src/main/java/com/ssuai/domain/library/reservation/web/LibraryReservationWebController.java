@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ssuai.domain.action.ActionAudit;
 import com.ssuai.domain.action.ActionService;
+import com.ssuai.domain.library.auth.LibrarySessionKeyResolver;
 import com.ssuai.domain.library.auth.LibrarySessionStore;
 import com.ssuai.domain.library.events.LibrarySeatEventPublisher;
 import com.ssuai.domain.library.recommendation.LibrarySeatPreference;
@@ -62,6 +63,7 @@ public class LibraryReservationWebController {
 
     private final ActionService actionService;
     private final LibrarySessionStore librarySessionStore;
+    private final LibrarySessionKeyResolver librarySessionKeyResolver;
     private final LibraryReservationConnector reservationConnector;
     private final LibraryReservationIntentTransactions intentTransactions;
     private final LibrarySeatEventPublisher seatEventPublisher;
@@ -71,6 +73,7 @@ public class LibraryReservationWebController {
     public LibraryReservationWebController(
             ActionService actionService,
             LibrarySessionStore librarySessionStore,
+            LibrarySessionKeyResolver librarySessionKeyResolver,
             LibraryReservationConnector reservationConnector,
             LibraryReservationIntentTransactions intentTransactions,
             LibrarySeatEventPublisher seatEventPublisher,
@@ -78,6 +81,7 @@ public class LibraryReservationWebController {
             LibraryIntentSseRegistry intentSseRegistry) {
         this.actionService = actionService;
         this.librarySessionStore = librarySessionStore;
+        this.librarySessionKeyResolver = librarySessionKeyResolver;
         this.reservationConnector = reservationConnector;
         this.intentTransactions = intentTransactions;
         this.seatEventPublisher = seatEventPublisher;
@@ -479,7 +483,11 @@ public class LibraryReservationWebController {
     }
 
     private String requireLibrarySession(HttpServletRequest httpRequest) {
-        String sessionKey = httpRequest.getSession().getId();
+        // Prefers the persistent library-session cookie (survives redeploys/pod switches),
+        // falling back to a legacy servlet session id (ADR 0096). Never mints a servlet session
+        // as a side effect of an unauthenticated request the way the old getSession() call did.
+        String sessionKey = librarySessionKeyResolver.resolve(httpRequest)
+                .orElseThrow(LibraryAuthRequiredException::new);
         if (!librarySessionStore.has(sessionKey)) {
             throw new LibraryAuthRequiredException();
         }

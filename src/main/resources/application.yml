@@ -275,6 +275,17 @@ ssuai:
       # unlimited. 7d covers the common JVM-restart-between-sessions case.
       ttl: 7d
       encryption-key: ${SSUAI_CREDENTIAL_ENCRYPTION_KEY:}
+      # Persistent library-session cookie (ADR 0096) — the LibrarySessionStore key. Unlike the
+      # old servlet-session-keyed binding, this cookie value is server-generated and independent
+      # of any in-memory Tomcat session, so it survives a backend redeploy or a pod switch across
+      # replicas. maxAge mirrors the ttl above so the cookie and its store row expire together.
+      cookie:
+        name: ssuai_library_session
+        path: /
+        same-site: Lax
+        # dev/test default = false (localhost is plain HTTP). Prod overrides
+        # to true in application-prod.yml so the cookie is HTTPS-only.
+        secure: ${SSUAI_LIBRARY_SESSION_COOKIE_SECURE:false}
     login:
       # Pyxis credential login origin. Production uses real oasis; the
       # load-test stack overrides this to point logins at WireMock.
