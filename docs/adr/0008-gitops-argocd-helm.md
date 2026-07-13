@@ -44,7 +44,7 @@ Production rollout uses:
 - A **single ArgoCD `Application`** named `ssuai-backend`, source =
   this repo's `deploy/charts/ssuai-backend/` path on `main`. Sync policy
   = `automated: { prune: true, selfHeal: true }`.
-- **ArgoCD Image Updater** watches `ghcr.io/hoeongj/ssuai-backend` for
+- **ArgoCD Image Updater** watches `ghcr.io/ghdtjdwn/ssuai-backend` for
   new `sha-<full>` tags pushed by CI. On a new tag, Image Updater writes
   the tag back to `deploy/charts/ssuai-backend/values.yaml` via a git
   commit authored by `argocd-image-updater[bot]`, using a fine-grained

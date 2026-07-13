@@ -4,7 +4,7 @@
 
 Claude Desktop, Cursor 및 그 외 MCP 클라이언트에서 사용할 수 있습니다.
 
-[![CI](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml)
+[![CI](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml)
 
 ---
 
@@ -105,8 +105,8 @@ npx ssumcp
 
 ## 관련 링크
 
-- [GitHub 저장소](https://github.com/hoeongj/ssuMCP)
-- [ssuAI 웹 클라이언트](https://github.com/hoeongj/ssuAI)
+- [GitHub 저장소](https://github.com/ghdtjdwn/ssuMCP)
+- [ssuAI 웹 클라이언트](https://github.com/ghdtjdwn/ssuAI)
 
 ---
 

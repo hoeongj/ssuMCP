@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/hoeongj/ssuMCP.git
+    repoURL: https://github.com/ghdtjdwn/ssuMCP.git
     targetRevision: main
     path: deploy/charts/postgres
     helm:

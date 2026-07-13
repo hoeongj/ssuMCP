@@ -132,7 +132,7 @@ PR 13c picks one; this ADR remains valid regardless of which.
 - TTL: defaults to 2 hours, configurable via
   `ssuai.library.session.ttl`. **Final TTL choice pending the
   spike documented in `scripts/spike-ssotoken-ttl.{sh,ps1}`** (see PR
-  [#81](https://github.com/hoeongj/ssuAI/pull/81)). The decision tree:
+  [#81](https://github.com/ghdtjdwn/ssuAI/pull/81)). The decision tree:
 
   | Measured Pyxis TTL | Storage policy |
   |---|---|
@@ -203,14 +203,14 @@ so the frontend can branch precisely.
 
 ## Implementation status
 
-- **PR 13a** ([#80](https://github.com/hoeongj/ssuAI/pull/80)) —
+- **PR 13a** ([#80](https://github.com/ghdtjdwn/ssuAI/pull/80)) —
   shipped: `LibrarySessionStore`, `LibrarySessionProperties`,
   `LibraryAuthRequiredException`, `LIBRARY_SESSION_REQUIRED` error
   code, `POST /api/library/session`, auth-aware
   `LibrarySeatService.getSeatStatusForSession()`. Backend
   mechanism-ready, gated behind `ssuai.connector.library-seat=mock`
   default.
-- **TTL measurement** ([#81](https://github.com/hoeongj/ssuAI/pull/81)) —
+- **TTL measurement** ([#81](https://github.com/ghdtjdwn/ssuAI/pull/81)) —
   spike script. Final storage policy depends on this number.
 - **PR 13b** — `RealLibrarySeatConnector`. Pending PR 13a merge +
   having a captured token to pin parse fixtures.

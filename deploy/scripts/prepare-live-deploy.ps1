@@ -8,7 +8,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OperatorEmail,
 
-    [string]$Image = "ghcr.io/hoeongj/ssumcp:latest",
+    [string]$Image = "ghcr.io/ghdtjdwn/ssumcp:latest",
 
     [string]$ChartDir = "deploy/charts/ssuai-backend",
 
@@ -47,7 +47,7 @@ function Split-TaggedImage {
     $lastColon = $TaggedImage.LastIndexOf(":")
 
     if ($lastColon -le $lastSlash -or $lastColon -eq ($TaggedImage.Length - 1)) {
-        throw "Image must include a tag, for example ghcr.io/hoeongj/ssumcp:sha-<full-sha>. Received: $TaggedImage"
+        throw "Image must include a tag, for example ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>. Received: $TaggedImage"
     }
 
     return @{

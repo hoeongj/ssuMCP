@@ -1,13 +1,13 @@
 # ssuMCP — 숭실대학교 MCP 서버
 
-[![CI](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml)
+[![CI](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml)
 
 > 🇺🇸 English version: [README.en.md](README.en.md)
 
-> 🧩 **숭실대 캠퍼스 AI 플랫폼** (4-서비스 중 하나) · **ssuMCP** · [ssuAI](https://github.com/hoeongj/ssuAI) · [ssuAgent](https://github.com/hoeongj/ssuAgent) · [ssu-ai-service](https://github.com/hoeongj/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
+> 🧩 **숭실대 캠퍼스 AI 플랫폼** (4-서비스 중 하나) · **ssuMCP** · [ssuAI](https://github.com/ghdtjdwn/ssuAI) · [ssuAgent](https://github.com/ghdtjdwn/ssuAgent) · [ssu-ai-service](https://github.com/ghdtjdwn/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
 
 숭실대학교 캠퍼스 정보를 **MCP(Model Context Protocol) 표준 도구**로 제공하는 공개 서버.  
-동시에 [ssuAI](https://github.com/hoeongj/ssuAI) 웹 클라이언트를 위한 REST API 서버다.
+동시에 [ssuAI](https://github.com/ghdtjdwn/ssuAI) 웹 클라이언트를 위한 REST API 서버다.
 
 > **MCP 엔드포인트**: `https://ssumcp.duckdns.org/mcp`  
 > **Grafana**: `https://ssumcp.duckdns.org/grafana`
@@ -450,8 +450,8 @@ sToken·LMS 쿠키·Pyxis-Auth-Token은 AES-256-GCM으로 암호화 저장.
 
 ## 관련 프로젝트
 
-**[ssuAI](https://github.com/hoeongj/ssuAI)** — Next.js 웹 클라이언트 (챗봇 UI + 대시보드)  
-**[ssuAgent](https://github.com/hoeongj/ssuAgent)** — Python LangGraph 멀티에이전트 오케스트레이터
+**[ssuAI](https://github.com/ghdtjdwn/ssuAI)** — Next.js 웹 클라이언트 (챗봇 UI + 대시보드)  
+**[ssuAgent](https://github.com/ghdtjdwn/ssuAgent)** — Python LangGraph 멀티에이전트 오케스트레이터
 
 ---
 

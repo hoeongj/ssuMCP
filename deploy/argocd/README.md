@@ -55,7 +55,7 @@ Both should normally be `Synced` and `Healthy`.
 
 5. Create the Image Updater Git write-back Secret outside the repo using
    `deploy/argocd/image-updater/secret.example.yaml` as the shape. Use a
-   fine-grained GitHub PAT scoped to `contents:write` on `hoeongj/ssuMCP` only.
+   fine-grained GitHub PAT scoped to `contents:write` on `ghdtjdwn/ssuMCP` only.
    `application-ssuai-backend.yaml` references it through:
 
    ```yaml

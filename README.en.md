@@ -2,12 +2,12 @@
 
 **한국어** [README.md](README.md) · **English** (this document)
 
-> 🧩 **Soongsil Campus AI Platform** (1 of 4 services) · **ssuMCP** · [ssuAI](https://github.com/hoeongj/ssuAI) · [ssuAgent](https://github.com/hoeongj/ssuAgent) · [ssu-ai-service](https://github.com/hoeongj/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
+> 🧩 **Soongsil Campus AI Platform** (1 of 4 services) · **ssuMCP** · [ssuAI](https://github.com/ghdtjdwn/ssuAI) · [ssuAgent](https://github.com/ghdtjdwn/ssuAgent) · [ssu-ai-service](https://github.com/ghdtjdwn/ssu-ai-service) · 🟢 [Live](https://ssuai.vercel.app)
 
-[![CI](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/hoeongj/ssuMCP/actions/workflows/ci.yml)
+[![CI](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/ghdtjdwn/ssuMCP/actions/workflows/ci.yml)
 
 A public server that exposes Soongsil University campus information as **MCP (Model Context Protocol) standard tools**.  
-It also serves as the REST API backend for the [ssuAI](https://github.com/hoeongj/ssuAI) web client.
+It also serves as the REST API backend for the [ssuAI](https://github.com/ghdtjdwn/ssuAI) web client.
 
 > **MCP endpoint**: `https://ssumcp.duckdns.org/mcp`  
 > **Grafana**: `https://ssumcp.duckdns.org/grafana`
@@ -438,8 +438,8 @@ The sToken, LMS cookies, and Pyxis-Auth-Token are stored encrypted with AES-256-
 
 ## Related Projects
 
-**[ssuAI](https://github.com/hoeongj/ssuAI)** — Next.js web client (chatbot UI + dashboard)  
-**[ssuAgent](https://github.com/hoeongj/ssuAgent)** — Python LangGraph multi-agent orchestrator
+**[ssuAI](https://github.com/ghdtjdwn/ssuAI)** — Next.js web client (chatbot UI + dashboard)  
+**[ssuAgent](https://github.com/ghdtjdwn/ssuAgent)** — Python LangGraph multi-agent orchestrator
 
 ---
 

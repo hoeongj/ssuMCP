@@ -12,7 +12,7 @@ set -euo pipefail
 NAMESPACE="ssuai-prod"
 DEPLOYMENT="ssuai-backend"
 CONTAINER="backend"
-IMAGE_REPO="ghcr.io/hoeongj/ssumcp"
+IMAGE_REPO="ghcr.io/ghdtjdwn/ssumcp"
 
 if ! command -v kubectl &>/dev/null; then
   echo "ERROR: kubectl not found in PATH." >&2

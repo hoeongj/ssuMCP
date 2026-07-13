@@ -4,7 +4,7 @@ metadata:
   name: ssuai-backend
   namespace: argocd
   annotations:
-    argocd-image-updater.argoproj.io/image-list: "backend=ghcr.io/hoeongj/ssumcp"
+    argocd-image-updater.argoproj.io/image-list: "backend=ghcr.io/ghdtjdwn/ssumcp"
     argocd-image-updater.argoproj.io/backend.update-strategy: "newest-build"
     argocd-image-updater.argoproj.io/backend.allow-tags: "regexp:^sha-[0-9a-f]{40}$"
     argocd-image-updater.argoproj.io/backend.helm.image-name: "image.repository"
@@ -15,7 +15,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/hoeongj/ssuMCP.git
+    repoURL: https://github.com/ghdtjdwn/ssuMCP.git
     targetRevision: main
     path: deploy/charts/ssuai-backend
     helm:

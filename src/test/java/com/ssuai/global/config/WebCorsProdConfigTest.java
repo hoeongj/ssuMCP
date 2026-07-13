@@ -54,8 +54,8 @@ class WebCorsProdConfigTest {
         CorsConfiguration config = registry.corsConfiguration("/api/library/seats");
         assertThat(config).isNotNull();
         assertThat(config.checkOrigin("https://ssuai.vercel.app")).isEqualTo("https://ssuai.vercel.app");
-        assertThat(config.checkOrigin("https://ssuai-git-main-hoeongj.vercel.app"))
-                .isEqualTo("https://ssuai-git-main-hoeongj.vercel.app");
+        assertThat(config.checkOrigin("https://ssuai-git-main-ghdtjdwn.vercel.app"))
+                .isEqualTo("https://ssuai-git-main-ghdtjdwn.vercel.app");
         assertThat(config.checkHttpMethod(HttpMethod.GET)).contains(HttpMethod.GET);
         assertThat(config.checkHeaders(List.of("accept"))).contains("accept");
         assertThat(config.getAllowCredentials()).isFalse();

@@ -9,7 +9,7 @@ const os = require('os');
 const https = require('https');
 
 const { version } = require('../package.json');
-const REPO = 'hoeongj/ssuMCP';
+const REPO = 'ghdtjdwn/ssuMCP';
 const JAR_NAME = `ssuMCP-${version}.jar`;
 const JAR_URL = `https://github.com/${REPO}/releases/download/v${version}/${JAR_NAME}`;
 const CACHE_DIR = path.join(os.homedir(), '.ssumcp');

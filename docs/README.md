@@ -22,4 +22,4 @@ transport. Current commands use the `ssuMCP` repository root and current MCP
 transport is Streamable HTTP `/mcp`.
 
 Product vision, frontend decisions, and completed task specs are maintained in
-the separate [ssuAI documentation](https://github.com/hoeongj/ssuAI/tree/main/docs).
+the separate [ssuAI documentation](https://github.com/ghdtjdwn/ssuAI/tree/main/docs).

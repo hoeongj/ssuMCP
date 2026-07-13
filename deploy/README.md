@@ -5,7 +5,7 @@ This is the operator guide for ssuMCP's production environment:
 - Spring Boot backend on a single-node k3s cluster on Oracle Cloud Free Tier ARM Ampere A1.
 - Next.js frontend on Vercel.
 - TLS via cert-manager + Let's Encrypt.
-- MCP server image registry at `ghcr.io/hoeongj/ssumcp`.
+- MCP server image registry at `ghcr.io/ghdtjdwn/ssumcp`.
 - GitOps rollout via ArgoCD + Helm.
 - Observability via kube-prometheus-stack, Prometheus, Alertmanager, and Grafana.
 
@@ -58,7 +58,7 @@ The container image is built from the repository-root `Dockerfile` used by CI.
 | DuckDNS subdomains + token | <https://duckdns.org> | Point `ssumcp` and `argo-ssuai` at the VM public IP. |
 | Vercel account | <https://vercel.com> | Frontend deploys from the `ssuAI` repository root. |
 | Local tools | your laptop | `kubectl`, `helm`, `ssh`, optional `argocd` CLI. |
-| GitHub PAT | GitHub UI | Fine-grained PAT scoped to `contents:write` on `hoeongj/ssuMCP` only, used by Image Updater. |
+| GitHub PAT | GitHub UI | Fine-grained PAT scoped to `contents:write` on `ghdtjdwn/ssuMCP` only, used by Image Updater. |
 
 You also need a real email address for Let's Encrypt expiration notices.
 
@@ -149,7 +149,7 @@ copy or render it with `deploy/scripts/prepare-live-deploy.ps1`.
 ## 4. Make the ghcr.io image pullable
 
 The CI image-build job pushes
-`ghcr.io/hoeongj/ssumcp:sha-<full-sha>` for normal pushes to `main` and for
+`ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>` for normal pushes to `main` and for
 manual `workflow_dispatch` runs. The workflow ignores pushes that only update
 `deploy/charts/ssuai-backend/values.yaml`, because those are ArgoCD Image
 Updater write-back commits. Otherwise the auto-generated image pin commit
@@ -258,7 +258,7 @@ kubectl -n monitoring get secret grafana-admin -o jsonpath="{.data.admin-passwor
 Normal deploy path:
 
 1. Push to `main`.
-2. CI builds and pushes `ghcr.io/hoeongj/ssumcp:sha-<full-sha>`.
+2. CI builds and pushes `ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>`.
 3. ArgoCD Image Updater detects the newest SHA tag.
 4. Image Updater writes the tag back to `deploy/charts/ssuai-backend/values.yaml`.
 5. ArgoCD reconciles the chart and rolls the backend Deployment.
@@ -284,12 +284,12 @@ the previous chart value.
 
 ### 7.1 Manual deploy (break-glass fallback)
 
-After CI's `image-build` job publishes `ghcr.io/hoeongj/ssumcp:sha-<full-sha>`:
+After CI's `image-build` job publishes `ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>`:
 
 ```bash
 SHA=$(git rev-parse origin/main)
 sudo kubectl set image deployment/ssuai-backend \
-  backend=ghcr.io/hoeongj/ssumcp:sha-${SHA} \
+  backend=ghcr.io/ghdtjdwn/ssumcp:sha-${SHA} \
   -n ssuai-prod
 
 sudo kubectl rollout status deployment ssuai-backend -n ssuai-prod --timeout=360s
@@ -380,7 +380,7 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/prepare-live-deploy.ps1 
   -BackendHost ssumcp.duckdns.org `
   -FrontendOrigin https://ssuai.vercel.app `
   -OperatorEmail <YOUR_EMAIL> `
-  -Image ghcr.io/hoeongj/ssumcp:sha-<full-sha>
+  -Image ghcr.io/ghdtjdwn/ssumcp:sha-<full-sha>
 ```
 
 Manual apply helper:

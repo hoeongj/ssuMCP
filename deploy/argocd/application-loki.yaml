@@ -14,7 +14,7 @@ spec:
         valueFiles:
           - $values/deploy/charts/loki/values.yaml
     # Values file from this repo
-    - repoURL: https://github.com/hoeongj/ssuMCP.git
+    - repoURL: https://github.com/ghdtjdwn/ssuMCP.git
       targetRevision: main
       ref: values
   destination:
