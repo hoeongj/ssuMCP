@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
+import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,7 +107,7 @@ public class LibraryReservationWebController {
 
     @PostMapping("/prepare")
     public ApiResponse<LibraryReservationPrepareResponse> prepare(
-            @RequestBody LibraryReservationPrepareRequest request,
+            @Valid @RequestBody LibraryReservationPrepareRequest request,
             HttpServletRequest httpRequest) {
         String sessionKey = requireLibrarySession(httpRequest);
         String token = librarySessionStore.token(sessionKey)
@@ -179,7 +180,7 @@ public class LibraryReservationWebController {
 
     @PostMapping("/wait")
     public ApiResponse<LibraryReservationIntentView> registerWait(
-            @RequestBody LibraryReservationWaitWebRequest request,
+            @Valid @RequestBody LibraryReservationWaitWebRequest request,
             HttpServletRequest httpRequest) {
         String sessionKey = requireLibrarySession(httpRequest);
         LibraryReservationRegistrationResult result = intentTransactions.registerWait(sessionKey,

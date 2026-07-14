@@ -6,18 +6,12 @@
 
 ## 열려 있는 항목
 
-### 1. 멀티포드 claim/lease (#14) — 조건부 (멀티 레플리카 전환 시)
-
-- **무엇**: 예약 outbox relay·LMS export worker를 멀티 레플리카에서 안전하게(중복 실행 없이) 돌리기 위한 `FOR UPDATE SKIP LOCKED` claim / lease. **참고: `RateLimitFilter` 카운터도 per-pod**라 멀티포드 전환 시 shared store(Redis)가 함께 필요하다.
-- **왜 대기**: 현재 `replica=1`이라 live-impact 없음 + 워커 동시성 변경은 회귀 위험.
-- **트리거**: 멀티 레플리카 전환 결정(트래픽 근거). 그때 outbox/export claim(SKIP LOCKED + lease 타임아웃)·rate-limit 분산 카운터(Redis)·세션 스토어 내구성/취소 재검토를 한 묶음으로 진행.
-
-### 2. Mistral 학습 opt-out attestation (P2-Z) — 사용자 액션 대기
+### 1. Mistral 학습 opt-out attestation (P2-Z) — 사용자 액션 대기
 
 - **무엇**: `SSUAI_MISTRAL_TRAINING_OPT_OUT_CONFIRMED=true` 설정.
 - **왜 대기**: 사용자가 Mistral 계정에서 실제로 학습 opt-out을 확인해야 하는 attestation이라 임의로 플립할 수 없다. prod env-var 변경은 사용자 확인 필요.
 
-### 3. Spring Boot 4.1.x 서버 의존성 bump (#110) — 재시도 게이트 있음
+### 2. Spring Boot 4.1.x 서버 의존성 bump (#110) — 재시도 게이트 있음
 
 - **경과**: 2026-06-30 Boot 4.0.6→4.1.0 bump가 prod 로그인 장애로 롤백됨. Boot 4.1.0이 관리 Jackson을 2→3(`tools.jackson`)으로 이동시키는데 `jjwt-jackson`이 Jackson 2 기반이라 `parseSignedClaims()` claim 역직렬화가 실패 → refresh 401. (함께 묶였던 GitHub Actions pin #132–135는 2026-07-02 별도 커밋으로 재적용 완료.)
 - **재시도 게이트**: ① `jjwt`를 Jackson 3 호환 구성으로 마이그레이션(또는 claim 경로에 Jackson 2 명시 pin) ② 로그인 refresh E2E + 토큰 수동 HMAC 검증을 회귀 테스트로 묶은 뒤 진행.
@@ -42,3 +36,4 @@
 | R12 | `get_notice_detail` SSRF allowlist (M1) | ✅ **완료** — host allowlist + 수동 hop 루프 리다이렉트 재검증(fetch 전 검증, ≤5 hop) | 2026-06-30 · 2026-07-02 |
 | R13 | 도서관 debug/내부 카운터 노출 (M2) | ✅ **완료** — public tool에서 `debug` 파라미터 제거 + 내부 카운터 4종 응답 제거 | 2026-06-30 |
 | R14 | 명시 MCP 세션이 transport로 fallback하는 P0 | ✅ **완료** — authoritative resolver가 explicit ID를 정확히 검증하고, invalid/invalidated는 `INVALID_SESSION`, transport 불일치는 `SESSION_MISMATCH`로 fail-closed. LMS export/action/wait/capability owner도 exact MCP session으로 제한. 28개 private MCP HTTP 회귀 + 52-tool inventory가 release gate | [ADR 0098](adr/0098-authoritative-mcp-session-resolution.md) · 2026-07-14 |
+| R15 | 멀티포드 claim/lease와 shared rate-limit | ✅ **완료·운영 중** — backend replicas=2/HPA 2~3에 맞춰 outbox·LMS export worker는 `FOR UPDATE SKIP LOCKED` claim/lease, inbound/Pyxis 한도는 Redis shared limiter를 사용한다. | [ADR 0079](adr/0079-multipod-background-row-claim-lease.md), [ADR 0080](adr/0080-multipod-shared-ratelimit-dualcap.md), [ADR 0088](adr/0088-ha-replicas-hpa-pdb.md) |

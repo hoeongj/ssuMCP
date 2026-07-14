@@ -130,6 +130,12 @@ public final class SingleFlightCache<K, V> {
             } catch (RuntimeException exception) {
                 mine.completeExceptionally(exception);
                 throw exception;
+            } catch (Error error) {
+                // Waiters must never remain blocked when a fatal loader error
+                // escapes. The value is still not cached, so a later request
+                // can retry after the process recovers.
+                mine.completeExceptionally(error);
+                throw error;
             } finally {
                 inflight.remove(key, mine);
             }

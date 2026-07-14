@@ -843,13 +843,13 @@ lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
 | MCP 브라우저 인증 세션 | 출시 | `domain.auth.mcp`; 시크릿 `mcp_session_id` 핸들 |
 | 웹 SSO code exchange | 출시 | `domain.auth.saint` + `domain.auth.controller`; 콜백은 1회용 code만 전달, `POST /api/auth/exchange`가 refresh 쿠키 발급. [ADR 0095](adr/0095-sso-authorization-code-exchange.md) |
 | 도서관 웹 세션 키 | 출시 | `domain.library.auth`; `ssuai_library_session` HttpOnly 쿠키 + `LibrarySessionKeyResolver`. [ADR 0096](adr/0096-library-session-persistent-cookie.md) |
-| **도서관 좌석 예약 에이전트(백엔드)** | 출시 (실계정 E2E 검증) | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 + same-seat k6 100→1 검증; PR40: PostgreSQL LISTEN/NOTIFY wake 보조. 웹 버튼 UX는 ssuAI 측 후속 |
+| **도서관 좌석 예약 에이전트(백엔드)** | 출시 (실계정 E2E 검증) | PR1: intent queue + wait 도구 + polling outbox; PR2: confirm_action reserve 통합 + same-seat k6 100→1 검증; PR40: PostgreSQL LISTEN/NOTIFY wake 보조. ssuAI의 추천→확정 모달→대기 상태 웹 UX도 출시됨. |
 | Action MCP 인프라 | 출시 | `prepare_X` + `confirm_action` 2단계 + `action_audit` 감사; [ADR 0015](adr/0015-action-tool-infrastructure.md), [ADR 0022](adr/0022-library-reservation-intent-queue.md) |
 | 알림 / 모바일 앱 | 미정 | 현재 API와 보안 계약 재사용 필요 |
 
 <!-- markdownlint-enable MD013 MD060 -->
 
-**도서관 좌석 에이전트가 플래그십 산출물**이다(백엔드 출시·실계정 E2E 검증 완료, 웹 UX는 후속). PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. PR2부터 즉시 예약 confirm도 같은 큐를 통과한다: `action_audit`는 사용자 동의 증적, `library_reservation_intents`는 실행 단위다. PR40부터 새 intent commit 직후 PostgreSQL `LISTEN/NOTIFY`가 worker를 즉시 깨운다. 단, 알림은 지연 감소용 보조 신호일 뿐이고 1초 polling이 durable primary 경로다. 반납/이석 confirm은 아직 직접 실행 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/ghdtjdwn/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
+**도서관 좌석 에이전트가 플래그십 산출물**이다. 백엔드와 ssuAI 웹 UX(추천→확정 모달→대기 상태)가 출시됐고 실계정 E2E도 검증했다. PR1은 장기 대기 intent queue와 outbox를 구현했다. 사용자가 `wait_for_library_seat`를 호출하면 등록 자체가 동의이며, 이후 worker가 조건에 맞는 좌석을 발견하면 자율 예약할 수 있다. PR2부터 즉시 예약 confirm도 같은 큐를 통과한다: `action_audit`는 사용자 동의 증적, `library_reservation_intents`는 실행 단위다. PR40부터 새 intent commit 직후 PostgreSQL `LISTEN/NOTIFY`가 worker를 즉시 깨운다. 단, 알림은 지연 감소용 보조 신호일 뿐이고 1초 polling이 durable primary 경로다. 반납/이석 confirm은 아직 직접 실행 경로를 유지한다. 사용자 대상 흐름은 [ssuAI vision](https://github.com/ghdtjdwn/ssuAI/blob/main/docs/vision.md)을, 정책은 [`docs/security.md`](security.md) §6을 참조한다.
 
 ---
 

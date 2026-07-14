@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 날짜 | 2026-07-09 |
-| 상태 | Draft |
+| 상태 | Accepted — 구현·멀티 레플리카 운영 |
 | 범위 | `LibraryReservationEventRelay`, `LmsExportBuildWorker`, `library_reservation_outbox`, `lms_export_jobs` |
 | 연관 문서 | ADR 0022(예약 intent/outbox), ADR 0033·0035(LMS ZIP export), ADR 0048(intent SSE), ADR 0071(event pipeline), ADR 0072(DB retention), ADR 0078(용량 계획) |
 

@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.Test;
@@ -128,6 +129,50 @@ class SingleFlightCacheTests {
     }
 
     @Test
+    void loaderErrorCompletesWaitersAndDoesNotPoisonCache() throws Exception {
+        var cache = SingleFlightCache.<String, String>unbounded(
+                "test cache", Duration.ofSeconds(30), Clock.fixed(T0, ZoneOffset.UTC));
+        CountDownLatch loaderEntered = new CountDownLatch(1);
+        CountDownLatch releaseLoader = new CountDownLatch(1);
+        AtomicReference<Thread> waiterThread = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+
+        try {
+            CompletableFuture<String> winner = CompletableFuture.supplyAsync(() -> cache.get("k", key -> {
+                loaderEntered.countDown();
+                try {
+                    assertThat(releaseLoader.await(5, TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("test loader interrupted", exception);
+                }
+                throw new AssertionError("fatal loader failure");
+            }), pool);
+            assertThat(loaderEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CompletableFuture<String> waiter = CompletableFuture.supplyAsync(() -> {
+                waiterThread.set(Thread.currentThread());
+                return cache.get("k", ignored -> "must not run");
+            }, pool);
+            awaitWaiting(waiterThread);
+            releaseLoader.countDown();
+
+            assertThatThrownBy(() -> winner.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .hasCauseInstanceOf(AssertionError.class);
+            assertThatThrownBy(() -> waiter.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .cause()
+                    .hasCauseInstanceOf(AssertionError.class);
+            assertThat(cache.get("k", ignored -> "recovered")).isEqualTo("recovered");
+        } finally {
+            releaseLoader.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void getWithEntryHonoursCustomExpiry() {
         MutableClock clock = new MutableClock(T0);
         var cache = SingleFlightCache.<String, String>unbounded("test cache", Duration.ofSeconds(30), clock);
@@ -174,6 +219,18 @@ class SingleFlightCacheTests {
             counter.incrementAndGet();
             return value;
         };
+    }
+
+    private static void awaitWaiting(AtomicReference<Thread> threadReference) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Thread thread = threadReference.get();
+            if (thread != null && thread.getState() == Thread.State.WAITING) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("waiter did not block on the in-flight load");
     }
 
     private static final class MutableClock extends Clock {

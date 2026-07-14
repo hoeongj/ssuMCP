@@ -126,6 +126,28 @@ class LibraryReservationWebControllerTests {
     }
 
     @Test
+    void prepare_rejectsBlankActionTypeBeforeTouchingTheLibrarySession() throws Exception {
+        mockMvc.perform(post("/api/library/reservations/prepare")
+                        .cookie(LIBRARY_COOKIE)
+                        .contentType("application/json")
+                        .content("{\"type\":\"   \",\"seatId\":3179}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(actionService);
+    }
+
+    @Test
+    void prepare_rejectsNonPositiveSeatIdBeforeTouchingTheLibrarySession() throws Exception {
+        mockMvc.perform(post("/api/library/reservations/prepare")
+                        .cookie(LIBRARY_COOKIE)
+                        .contentType("application/json")
+                        .content("{\"type\":\"RESERVE\",\"seatId\":0}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(actionService);
+    }
+
+    @Test
     void prepare_withValidSession_returnsPendingAction() throws Exception {
         ActionAudit saved = pendingAction("LIBRARY_SEAT_RESERVATION");
         when(actionService.createPendingAction(eq(SESSION_KEY), eq("LIBRARY_SEAT_RESERVATION"), any()))
