@@ -28,7 +28,7 @@ dependencyManagement {
     imports {
         mavenBom 'org.springframework.ai:spring-ai-bom:1.1.7'
         // Pin the Testcontainers module versions (junit-jupiter, postgresql). The Spring Boot
-        // 4.0.6 platform does not manage the standalone testcontainers artifacts, so without
+        // platform does not manage these standalone Testcontainers artifacts, so without
         // this BOM they resolve to an empty version. Kept in the 1.20.x line that
         // com.redis:testcontainers-redis:2.2.2 is built against.
         mavenBom 'org.testcontainers:testcontainers-bom:1.20.6'
@@ -68,7 +68,7 @@ dependencies {
     // above; OTLP metric export is disabled in application.yml so there is no metric duplication.
     implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
     // Structured JSON logs to stdout (Promtail/Alloy -> Loki); traceId/spanId pulled from MDC.
-    implementation 'net.logstash.logback:logstash-logback-encoder:8.1'
+    implementation 'net.logstash.logback:logstash-logback-encoder:9.0'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.jsoup:jsoup:1.22.2'
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'

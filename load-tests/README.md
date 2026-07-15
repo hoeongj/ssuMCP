@@ -18,7 +18,9 @@ Prometheus ◀──── Grafana(:3001, admin/admin)
 | 서비스 | 포트 | 용도 |
 |---|---|---|
 | postgres | 55432 | Flyway 마이그레이션 + action_audit 검증 |
+| redis | 6379 | 분산 락·rate limit·좌석 이벤트용 로컬 Redis |
 | wiremock | 8089 | Pyxis 스텁 (지연 lognormal 주입, 경합 좌석 시나리오) |
+| kafka (`--profile kafka`) | 9092 (compose 내부) | tool-call event pipeline healthy/down 지연 비교 |
 | prometheus | 9090 | 백엔드 메트릭 스크레이프 + k6 remote write 수신 |
 | grafana | 3001 | 대시보드 (k6 공식 대시보드 ID `19665` import) |
 
@@ -174,3 +176,33 @@ kubectl -n ssuai-prod scale deployment/ssuai-backend --replicas=2
 - `RAMP_DURATION`(기본 20s), `STEADY_DURATION`(기본 90s)로 프로파일 조정 가능.
 - threshold(`p(95)<800ms`, `error rate<5%`)는 `abortOnFail: false`라 실패해도 런이 끝까지 돈다 —
   1-replica 런이 이 threshold를 못 넘기는 것 자체가 "2-replica가 왜 필요한가"의 증거 데이터다.
+## 8. Tool-call Kafka 지연 비교
+
+세 조건에서 동일한 공개 MCP 호출을 실행하고 k6 summary JSON의
+`http_req_duration{mcp:get_today_meal}` `med`/`p(95)`/`p(99)`를 비교한다.
+전체 `http_req_duration`에는 VU별 MCP initialize handshake가 섞이므로 비교에 쓰지 않는다.
+
+```bash
+# 1. pipeline disabled
+SSUAI_KAFKA_ENABLED=false docker compose --profile full up -d --build backend
+until curl -fsS http://localhost:8080/actuator/health >/dev/null; do sleep 2; done
+k6 run --summary-export=/tmp/toolcall-disabled.json k6/toolcall-kafka-latency.js
+
+# 2. broker healthy
+docker compose --profile kafka up -d --wait kafka
+SSUAI_KAFKA_ENABLED=true docker compose --profile full up -d --force-recreate backend
+until curl -fsS http://localhost:8080/actuator/health >/dev/null; do sleep 2; done
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:9092 --describe --topic mcp.toolcall.events.v1
+k6 run --summary-export=/tmp/toolcall-healthy.json k6/toolcall-kafka-latency.js
+curl -fsS http://localhost:8080/actuator/prometheus | \
+  grep 'mcp_toolcall_event_total{.*result="sent"'
+
+# 3. pipeline enabled, broker down
+docker compose stop kafka
+sleep 6
+k6 run --summary-export=/tmp/toolcall-down.json k6/toolcall-kafka-latency.js
+```
+
+`TOOLCALL_RPS`와 `TOOLCALL_DURATION`으로 동일한 부하 강도와 측정 시간을 조절한다.
+합성 부하이므로 production endpoint에는 실행하지 않는다.

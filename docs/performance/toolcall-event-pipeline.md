@@ -1,6 +1,7 @@
 # Tool-call event pipeline measurement plan
 
-> Date: 2026-07-10. Scope: Phase 2 Unit 1 Kafka tool-call event pipeline.
+> Date: 2026-07-10. Measurement completed: 2026-07-15.
+> Scope: Phase 2 Unit 1 Kafka tool-call event pipeline.
 
 ## Goal
 
@@ -51,4 +52,28 @@ The unit tests exercise the failure-mode mechanics directly:
 - Bounded executor saturation: with capacity `1` and two blocked producer workers, the next event is rejected and increments `dropped_queue_full`.
 - Embedded Kafka round-trip: the real producer publishes a whitelisted JSON event and the consumer logs the structured fields to `mcp.toolcall.audit`.
 
-No k6 latency run was taken in this unit. The follow-up load run should reuse the existing MCP k6 harness and compare p95/p99 with Kafka disabled, healthy, and down.
+## k6 three-condition result
+
+The follow-up measurement used the reproducible stack and script in
+[`load-tests/README.md`](../../load-tests/README.md). The host was an Apple Silicon
+development machine running Colima. Each condition used the public
+`get_today_meal` tool at 10 iterations/s for 20 seconds (201 completed iterations,
+100% checks passed). The table reports only the tagged tool request; MCP initialize
+and initialized requests are excluded.
+
+| Condition | avg | median | p95 | p99 | max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Pipeline disabled | 6.24 ms | 5.06 ms | 9.22 ms | 23.82 ms | 84.08 ms |
+| Broker healthy | 6.84 ms | 5.67 ms | 10.84 ms | 35.66 ms | 72.12 ms |
+| Broker stopped | 5.85 ms | 5.14 ms | 9.90 ms | 15.77 ms | 27.33 ms |
+
+With the healthy broker, the topic had six in-sync partitions and
+`mcp_toolcall_event_total{result="sent"}` reached 201. After the broker was stopped
+and a six-second detection window elapsed, all 201 tool calls still succeeded and
+`dropped_error` began increasing (40 observed when the run ended). The request p95
+remained below both the healthy-broker result and the 1,000 ms safety threshold,
+which supports the non-blocking request-path claim.
+
+This is a short local regression measurement, not a production capacity result.
+Absolute latency and the p99 ordering should not be generalized; repeat the same
+script for longer at the expected traffic profile when capacity evidence is needed.

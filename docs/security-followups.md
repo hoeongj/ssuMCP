@@ -11,11 +11,6 @@
 - **무엇**: `SSUAI_MISTRAL_TRAINING_OPT_OUT_CONFIRMED=true` 설정.
 - **왜 대기**: 사용자가 Mistral 계정에서 실제로 학습 opt-out을 확인해야 하는 attestation이라 임의로 플립할 수 없다. prod env-var 변경은 사용자 확인 필요.
 
-### 2. Spring Boot 4.1.x 서버 의존성 bump (#110) — 재시도 게이트 있음
-
-- **경과**: 2026-06-30 Boot 4.0.6→4.1.0 bump가 prod 로그인 장애로 롤백됨. Boot 4.1.0이 관리 Jackson을 2→3(`tools.jackson`)으로 이동시키는데 `jjwt-jackson`이 Jackson 2 기반이라 `parseSignedClaims()` claim 역직렬화가 실패 → refresh 401. (함께 묶였던 GitHub Actions pin #132–135는 2026-07-02 별도 커밋으로 재적용 완료.)
-- **재시도 게이트**: ① `jjwt`를 Jackson 3 호환 구성으로 마이그레이션(또는 claim 경로에 Jackson 2 명시 pin) ② 로그인 refresh E2E + 토큰 수동 HMAC 검증을 회귀 테스트로 묶은 뒤 진행.
-
 ---
 
 ## 종결·기각 결정 기록 (요약 + 근거 링크)
@@ -37,3 +32,4 @@
 | R13 | 도서관 debug/내부 카운터 노출 (M2) | ✅ **완료** — public tool에서 `debug` 파라미터 제거 + 내부 카운터 4종 응답 제거 | 2026-06-30 |
 | R14 | 명시 MCP 세션이 transport로 fallback하는 P0 | ✅ **완료** — authoritative resolver가 explicit ID를 정확히 검증하고, invalid/invalidated는 `INVALID_SESSION`, transport 불일치는 `SESSION_MISMATCH`로 fail-closed. LMS export/action/wait/capability owner도 exact MCP session으로 제한. 28개 private MCP HTTP 회귀 + 52-tool inventory가 release gate | [ADR 0098](adr/0098-authoritative-mcp-session-resolution.md) · 2026-07-14 |
 | R15 | 멀티포드 claim/lease와 shared rate-limit | ✅ **완료·운영 중** — backend replicas=2/HPA 2~3에 맞춰 outbox·LMS export worker는 `FOR UPDATE SKIP LOCKED` claim/lease, inbound/Pyxis 한도는 Redis shared limiter를 사용한다. | [ADR 0079](adr/0079-multipod-background-row-claim-lease.md), [ADR 0080](adr/0080-multipod-shared-ratelimit-dualcap.md), [ADR 0088](adr/0088-ha-replicas-hpa-pdb.md) |
+| R16 | Spring Boot 4.1.x 재시도 (#110) | ✅ **완료** — JWT serializer를 `jjwt-gson`으로 분리하고 Boot 4.1.0으로 전환했다. Jackson 3 전환이 JWT claim 역직렬화를 깨뜨리지 않도록 런타임 의존성과 인증 회귀 테스트를 유지한다. | `build.gradle`, 인증 테스트 |

@@ -7,6 +7,17 @@
   - `com.ssuai.domain.library.redis.LibraryRedisProperties`
   - `com.ssuai.domain.library.redis.LibraryRedisMetrics`
 
+## 2026-06-22 Amendment — 좌석 write 락 실패는 fail-closed
+
+초기 결정의 lock-less fallback은 ADR 0059와 commit `9a0930c`에서 폐기했다. Postgres가 intent와 audit의 내구성 있는 상태를 소유하더라도, Redis 락 없이 Pyxis write를 실행하면 여러 pod가 같은 좌석을 동시에 변경할 수 있다. 따라서 현재 계약은 다음과 같다.
+
+- 락 획득 성공 시에만 `reservationConnector.reserve(...)`를 호출한다.
+- contention, Redis 예외, interrupt는 모두 upstream write를 호출하지 않고 intent를 기존 backoff 경로로 되돌린다.
+- 일시적인 락 장애는 terminal failure가 아니며 다음 worker poll에서 재시도한다.
+- lock release 실패는 이미 시작된 upstream 결과를 되돌릴 수 없으므로 metric과 로그를 남기고 audit 단일 진실원천 상태머신으로 수렴한다.
+
+이 amendment가 아래 D1의 lock-less degradation, D2의 `failRace`/fallback 흐름, D4의 failing fake 기대값, D5의 `fallback` outcome, 결과 절의 availability 설명을 대체한다. 현재 구현과 보안 계약은 [ADR 0059](0059-reservation-audit-single-source-of-truth.md)와 `LibraryReservationWorker.executeWithSeatLock()`이 기준이다.
+
 ## 배경
 
 ADR 0024(Redis/Redisson 도입)는 Redis를 세 가지 목적으로만 쓰기로 결정했다: 좌석 L2 캐시, 좌석 이벤트 pub/sub, 스케줄러 리더십 락. 당시 예약 write path에 Redis 락을 쓰는 것은 "efficiency 도구가 아니라 correctness 도구로 쓰는 것"이므로 명시적으로 기각했다.
