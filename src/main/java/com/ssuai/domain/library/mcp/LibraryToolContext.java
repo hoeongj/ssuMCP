@@ -2,8 +2,8 @@ package com.ssuai.domain.library.mcp;
 
 /**
  * Thread-local carrier for the {@code LibrarySessionStore} key used by the private library
- * chat tool dispatches ({@code get_library_seat_status} and
- * {@code get_my_library_loans}).
+ * chat tool dispatch ({@code get_my_library_loans}). Public aggregate seat status uses the
+ * self-MCP path and the internal sampler session instead.
  *
  * <p>The key is used to look up the user's Pyxis-Auth-Token in
  * {@code LibrarySessionStore}. Set by {@code ChatController} — via

@@ -658,18 +658,26 @@ class LlmChatServiceTests {
     }
 
     @Test
-    void privateLibraryToolReturnsCredentialLoginGuidanceWhenLibrarySessionMissing() {
+    void publicLibrarySeatToolWorksWithoutLibrarySession() {
         FakeProvider provider = new FakeProvider("gemini")
                 .toolCall("gemini-model", new OpenAiToolCall(
                         "call-1",
                         "function",
                         new OpenAiToolCall.FunctionCall("get_library_seat_status", "{\"floor\":2}")))
-                .reply("gemini-model", "도서관 세션 연동이 필요해요.");
+                .reply("gemini-model", "도서관 2층에 빈자리가 230석 있어요.");
+        when(mcpClient.callTool(argThat(named("get_library_seat_status"))))
+                .thenReturn(toolTextResult("""
+                        {"floor":2,"totalSeats":344,"availableSeats":230,
+                         "zones":[{"label":"열람실","total":344,"available":230}]}
+                        """));
         LlmChatService chatService = chatService(List.of(provider), List.of("gemini"), List.of(), 0);
 
         ChatResponse response = chatService.reply("c-test", "도서관 자리 있어?", null);
 
-        assertThat(response.reply()).contains("도서관 세션");
+        assertThat(response.reply()).contains("230석");
+        verify(mcpClient).callTool(argThat(request ->
+                named("get_library_seat_status").matches(request)
+                        && Integer.valueOf(2).equals(request.arguments().get("floor"))));
         verify(librarySeatService, never()).getSeatStatusForSession(any(), any());
         String toolContent = provider.request(1).messages().stream()
                 .filter(message -> "tool".equals(message.role()))
@@ -677,10 +685,10 @@ class LlmChatServiceTests {
                 .orElseThrow()
                 .content();
         assertThat(toolContent)
-                .contains("학번과 비밀번호")
-                .contains("도서관 연동")
-                .doesNotContain("Pyxis-Auth-Token")
-                .doesNotContain("붙여넣");
+                .contains("\"availableSeats\":230")
+                .doesNotContain("로그인", "세션", "seatIds");
+        assertThat(provider.request(0).privacyMode()).isEqualTo(LlmPrivacyMode.PUBLIC);
+        assertThat(provider.request(1).privacyMode()).isEqualTo(LlmPrivacyMode.PUBLIC);
     }
 
     @Test
@@ -1225,7 +1233,6 @@ class LlmChatServiceTests {
                 scholarshipService,
                 new SaintGpaSimulationService(gradesService),
                 lmsAssignmentsService,
-                librarySeatService,
                 libraryLoansService
         );
     }
@@ -1251,7 +1258,7 @@ class LlmChatServiceTests {
                                 "숭실대학교 캠퍼스 시설을 검색합니다.",
                                 requiredStringSchema("query", "검색어. 비워두지 마세요.")),
                         canonicalTool("get_library_seat_status",
-                                "숭실대학교 중앙도서관의 좌석 현황을 층별로 조회합니다. LIBRARY 연동이 필요합니다.",
+                                "숭실대학교 중앙도서관의 공개 좌석 현황을 층별로 조회합니다.",
                                 requiredIntegerSchema("floor", "도서관 층 코드 (2, 5, 6)")),
                         canonicalTool("search_library_book",
                                 "숭실대학교 중앙도서관 소장 도서를 키워드로 검색합니다.",

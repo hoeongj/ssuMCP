@@ -108,7 +108,7 @@ public class McpAuthMcpTools {
                     + "mcp_session_id가 전달되지 않으면 새 MCP 세션을 생성합니다."
     )
     public McpAuthStartResponse startAuth(
-            @ToolParam(description = "인증할 provider. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 도서관 좌석·대출 현황.")
+            @ToolParam(description = "인증할 provider. SAINT: 시간표·성적·채플·졸업·장학금. LMS: 과제·퀴즈. LIBRARY: 좌석 추천·예약·내 좌석·대출.")
             String provider,
             @ToolParam(description = "재사용할 기존 MCP session ID. 없으면 새 세션이 생성됨.", required = false)
             String mcp_session_id) {

@@ -312,7 +312,7 @@ class McpToolContractInventoryTests {
                     "atomically invalidates the session, deletes all provider credentials, and unbinds transport",
                     "revocation is effect-idempotent", "single response", true,
                     "com.ssuai.domain.mcp.tool.McpAuthMcpToolsTests"),
-            privateRead(
+            publicRead(
                     "get_library_seat_status", Provider.LIBRARY, inputs("floor"), inputs("compact"),
                     "LibrarySeatStatusResponse", "unsupported floor -> VALIDATION_ERROR",
                     "OK with zero reconciled counts", "compact or bounded zones",

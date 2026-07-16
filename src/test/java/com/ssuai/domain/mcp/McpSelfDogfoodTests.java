@@ -123,7 +123,7 @@ class McpSelfDogfoodTests {
     }
 
     @Test
-    void librarySeatStatusWithoutSessionReturnsNoSessionOverMcp() {
+    void librarySeatStatusWithoutSessionReturnsPublicAggregateOverMcp() {
         try (McpSyncClient client = openClient()) {
             client.initialize();
 
@@ -135,31 +135,30 @@ class McpSelfDogfoodTests {
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
             String text = extractText(result);
             assertThat(text)
-                    .contains("\"NO_SESSION\"")
-                    .contains("\"loginUrl\":null")
-                    .contains("\"mcpSessionId\":null");
+                    .contains("\"floor\"")
+                    .contains("\"availableSeats\"")
+                    .doesNotContain("NO_SESSION")
+                    .doesNotContain("loginUrl")
+                    .doesNotContain("mcpSessionId");
         }
     }
 
     @Test
-    void linkedLibraryClientCanCallSeatStatusOverMcp() {
-        McpAuthSession session = mcpAuthService.createSession();
-        mcpAuthService.linkProvider(session.id(), McpProviderType.LIBRARY, "opaque-library-key");
-
+    void librarySeatStatusSupportsCompactPublicResponseOverMcp() {
         try (McpSyncClient client = openClient()) {
             client.initialize();
 
             McpSchema.CallToolResult result = client.callTool(
                     new McpSchema.CallToolRequest(
                             "get_library_seat_status",
-                            Map.of("floor", 2, "mcp_session_id", session.id().value())));
+                            Map.of("floor", 2, "compact", true)));
 
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
             String text = extractText(result);
             assertThat(text)
-                    .contains("\"OK\"")
                     .contains("\"floor\"")
-                    .contains("\"availableSeats\"");
+                    .contains("\"availableSeats\"")
+                    .doesNotContain("zones");
         }
     }
 
@@ -377,7 +376,6 @@ class McpSelfDogfoodTests {
     }
 
     private static final Map<String, Map<String, Object>> PRIVATE_TOOL_ARGUMENTS = Map.ofEntries(
-            Map.entry("get_library_seat_status", Map.of("floor", 2)),
             Map.entry("recommend_library_seats", Map.of("floor", 2)),
             Map.entry("get_library_available_seats", Map.of()),
             Map.entry("get_room_available_seats", Map.of("roomId", 57)),

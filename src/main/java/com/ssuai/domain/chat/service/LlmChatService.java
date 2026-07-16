@@ -48,12 +48,12 @@ public class LlmChatService implements ChatService {
     private static final Logger log = LoggerFactory.getLogger(LlmChatService.class);
 
     private static final String SCOPE_GUIDANCE =
-            "아직은 그 정보는 지원하지 않아요. 지금은 학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색, 공지사항, 그리고 (로그인된 경우) 도서관 좌석·대출 현황과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
+            "아직은 그 정보는 지원하지 않아요. 지금은 학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색·좌석 현황, 공지사항, 그리고 (로그인된 경우) 도서관 대출과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
 
     private static final String SECRET_GUIDANCE =
             "비밀번호, 쿠키, 세션, API key 같은 비밀 정보는 입력하지 말아주세요. "
-                    + "학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색, 공지사항, 그리고 "
-                    + "(로그인된 경우) 도서관 좌석·대출 현황과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
+                    + "학식, 기숙사 식단, 캠퍼스 시설, 도서관 도서 검색·좌석 현황, 공지사항, 그리고 "
+                    + "(로그인된 경우) 도서관 대출과 본인 시간표·성적·채플·졸업요건·장학금·LMS 과제를 도와줄 수 있어요.";
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -91,7 +91,6 @@ public class LlmChatService implements ChatService {
             "get_my_scholarships",
             "simulate_gpa",
             "get_my_assignments",
-            "get_library_seat_status",
             "get_my_library_loans");
 
     private final LlmChatProperties properties;
@@ -457,8 +456,9 @@ public class LlmChatService implements ChatService {
                 }
                 case "get_library_seat_status" -> {
                     int floor = requiredIntArgument(toolCall, "floor");
-                    yield privateToolDispatcher.dispatchLibrarySeatStatus(
-                            toolName, floor, objectMapper, toolResultCompactor, this::toolError);
+                    Map<String, Object> arguments = new LinkedHashMap<>(rawArguments(toolCall));
+                    arguments.put("floor", floor);
+                    yield callMcp(toolName, arguments);
                 }
                 case "search_library_book" -> {
                     String query = optionalArgument(toolCall, "query").trim();

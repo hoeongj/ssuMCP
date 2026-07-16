@@ -10,10 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import com.ssuai.domain.library.dto.LibraryFloor;
 import com.ssuai.domain.library.mcp.LibraryToolContext;
 import com.ssuai.domain.library.service.LibraryLoansService;
-import com.ssuai.domain.library.service.LibrarySeatService;
 import com.ssuai.domain.lms.service.LmsAssignmentsService;
 import com.ssuai.domain.saint.service.SaintChapelService;
 import com.ssuai.domain.saint.service.SaintGpaSimulationService;
@@ -54,7 +52,6 @@ public class ChatPrivateToolDispatcher {
     private final SaintScholarshipService scholarshipService;
     private final SaintGpaSimulationService gpaSimulationService;
     private final LmsAssignmentsService lmsAssignmentsService;
-    private final LibrarySeatService librarySeatService;
     private final LibraryLoansService libraryLoansService;
 
     public ChatPrivateToolDispatcher(
@@ -65,7 +62,6 @@ public class ChatPrivateToolDispatcher {
             SaintScholarshipService scholarshipService,
             SaintGpaSimulationService gpaSimulationService,
             LmsAssignmentsService lmsAssignmentsService,
-            LibrarySeatService librarySeatService,
             LibraryLoansService libraryLoansService
     ) {
         this.scheduleService = scheduleService;
@@ -75,21 +71,7 @@ public class ChatPrivateToolDispatcher {
         this.scholarshipService = scholarshipService;
         this.gpaSimulationService = gpaSimulationService;
         this.lmsAssignmentsService = lmsAssignmentsService;
-        this.librarySeatService = librarySeatService;
         this.libraryLoansService = libraryLoansService;
-    }
-
-    String dispatchLibrarySeatStatus(
-            String toolName,
-            int floor,
-            ObjectMapper objectMapper,
-            ToolResultCompactor toolResultCompactor,
-            Function<String, String> toolError
-    ) {
-        return dispatchPrivateLibraryTool(
-                toolName, () -> librarySeatService.getSeatStatusForSession(
-                        LibraryFloor.fromCode(floor), LibraryToolContext.currentSessionKey()),
-                objectMapper, toolResultCompactor, toolError);
     }
 
     String dispatchSchedule(

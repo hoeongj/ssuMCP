@@ -392,7 +392,7 @@ class MockMealConnector implements MealConnector { ... }
 |--------|-----|-----|------|
 | 오늘 학식 | 날짜 및 식당 | 주간 선적재/갱신 | `WeeklyMealCache`; 채팅 턴 중 대량 스크래핑 방지. |
 | 도서관 도서 검색 | 정규화된 검색어 + 페이지네이션 | 60초 | 공개 카탈로그 검색 결과 캐시. |
-| 도서관 좌석 현황 | 층 + 인증 경계 | 30초 | room-level 집계. 인증된 데이터는 익명 접근을 워밍하지 않음. |
+| 도서관 좌석 현황 | 층 + upstream 인증 여부 | 30초 | 전역 aggregate. token 원문은 key에 없고 production 공개 read는 내부 sampler token으로 authenticated category 사용 |
 | 도서관 열람실별 live 좌석 | roomId + 인증 경계 | 5초 | per-seat 상태. `get_room_available_seats`, `get_library_available_seats`, 추천/worker가 공유. |
 | SAINT 시간표 | 학생/세션 범위 | 1시간 | 연결된 개인 데이터만. |
 
@@ -408,7 +408,7 @@ class MockMealConnector implements MealConnector { ... }
 - `@Scheduled(cron = "0 0 6 ? * MON", zone = "Asia/Seoul")`이 매주 월요일 06:00 KST에 캐시를 갱신한다.
 - `MealService.getMealForRestaurant(date, restaurant)`가 캐시 미스 시 Connector 폴백을 포함한 캐시-어사이드 조회를 수행한다.
 
-도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 특히 도서관 좌석 캐시는 요청이 인증되어 있는지 여부를 키에 포함시켜, MCP나 REST 익명 호출자가 인증된 호출자의 캐시 결과를 받지 못하도록 한다.
+도서관 좌석/도서와 SAINT 캐싱도 동일한 서비스 소유 경계 패턴을 따른다. 도서관 층별 좌석 캐시 키는 `floor + upstream token 존재 여부`이며 token 원문이나 사용자 식별자는 포함하지 않는다. 좌석 수는 전역 aggregate라 token-authenticated 호출끼리 공유하고, production 공개 REST/MCP도 내부 sampler token을 사용해 이 category를 사용한다. token 없이 upstream을 호출할 수 있는 mock/anonymous category만 별도다.
 좌석·도서·시간표·공지 read 캐시는 모두 single-flight(request coalescing)를 포함한다. 캐시 만료 직후 같은 키를 동시에 요청해도 첫 요청만 상류로 나가고 나머지는 같은 `CompletableFuture` 결과를 기다린다. 이 미스 경로(신선도 검사 → in-flight 등록 → double-check → 로더 1회 → 실패 시 미오염 재던짐 → 대기자 언랩)는 5개 캐시가 각자 복붙하던 것을 `global/cache/SingleFlightCache<K,V>`로 한 번만 구현하고, 각 캐시는 키·TTL·백킹 맵 정책(무한 vs LRU)·로더만 공급한다(ADR 0077). 열람실 live 좌석 캐시는 그 위에 Redis L2 read-through를 얹되, L2 히트를 half-TTL로 L1에 저장해 staleness 이중화를 막는다.
 
 ### 결정 기록 — 도서관 live room read single-flight (2026-06-12)
@@ -750,7 +750,7 @@ Claude Desktop / IDE
 | `prepare_lms_material_export` | LMS | `LmsMaterialExportService` | |
 | `confirm_lms_material_export` | LMS | `LmsMaterialExportService` | |
 | `export_all_lms_materials` | LMS | `LmsMaterialExportService` | |
-| `get_library_seat_status` | LIBRARY | `LibrarySeatService` | room-level 집계 |
+| `get_library_seat_status` | 공개 | `LibrarySeatService` | 내부 sampler token 기반 room-level 집계 |
 | `get_library_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 7개 열람실 순회 |
 | `get_room_available_seats` | LIBRARY | `LibraryAvailableSeatsService` | per-seat, 특정 열람실 |
 | `recommend_library_seats` | LIBRARY | `LibrarySeatRecommendationService` | 선호도 점수 + live availability |
@@ -833,7 +833,7 @@ lexical 전용으로 강등한다 (ADR 0020 + 2026-06-18 개정).
 
 | 기능 | 상태 | 위치 / 계약 |
 | --- | --- | --- |
-| 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 좌석과 대출은 `LIBRARY` 연동 필요 |
+| 도서관 도서·좌석·대출 읽기 | 출시 | `domain.library`; 도서 검색·층별 좌석 aggregate는 공개, per-seat 추천·내 좌석·대출은 `LIBRARY` 연동 필요 |
 | 도서관 Redis/Redisson 보조 계층 | 출시 | L2 좌석 cache, `ssuai.library.seat-events.v1`, scheduler lock. [ADR 0024](adr/0024-redis-redisson-adoption.md) |
 | 도서관 좌석 시계열 적재 | 출시 | `domain.library.timeseries`; 5분 raw sample, 월 partition, 시간별 room rollup. [ADR 0023](adr/0023-library-seat-timeseries.md) |
 | 실시간 SSE 좌석 업데이트 | 출시 | `LibrarySeatSseRegistry`, `/api/library/seats/events` (produces `text/event-stream`). [ADR 0026](adr/0026-sse-seat-updates.md) |
@@ -906,7 +906,7 @@ domain.mcp.tool
 ├── SaintScheduleMcpTool   // get_my_schedule(mcp_session_id) → McpPrivateToolResponse<ScheduleResponse>
 ├── SaintGradesMcpTool     // get_my_grades(mcp_session_id)
 ├── LmsAssignmentsMcpTool  // get_my_assignments(mcp_session_id)
-├── LibrarySeatMcpTool     // get_library_seat_status(floor, mcp_session_id)
+├── LibrarySeatMcpTool     // get_library_seat_status(floor, compact), public aggregate
 ├── LibraryLoansMcpTool    // get_my_library_loans(mcp_session_id)
 └── LibraryWaitMcpTool     // wait_for_library_seat, get_library_wait_status, cancel_library_wait
 ```
@@ -921,7 +921,7 @@ domain.mcp.tool
 
 ### 웹 챗봇과의 관계
 
-웹 챗봇 (`LlmChatService`)은 private 도구를 MCP 경로로 호출하지 않는다. SAINT/LMS/도서관 좌석·대출은 웹 요청에 이미 연결된 세션 컨텍스트를 사용해 해당 서비스를 직접 호출한다(이 직접 호출 분기는 `ChatPrivateToolDispatcher`가 담당 — ADR 0051에서 god-class 축소를 위해 `LlmChatService`에서 분리). 외부 MCP 클라이언트만 `mcp_session_id`를 도구 인자로 전달한다.
+웹 챗봇 (`LlmChatService`)은 SAINT/LMS/도서관 대출 private 도구를 MCP 경로로 호출하지 않는다. 웹 요청에 이미 연결된 세션 컨텍스트로 해당 서비스를 직접 호출하며 이 분기는 `ChatPrivateToolDispatcher`가 담당한다(ADR 0051). 공개 `get_library_seat_status`는 웹 챗봇도 self-MCP 경로로 호출하고 PUBLIC privacy mode를 유지한다. 외부 MCP 클라이언트는 private 도구에만 `mcp_session_id`를 전달한다.
 
 ThreadLocal (`SaintToolContext`, `LmsToolContext`, `LibraryToolContext`)은 웹 챗봇 경로에만 남아 있다. MCP private 도구는 ThreadLocal을 사용하지 않는다 (Task 18 Slice C 이후).
 

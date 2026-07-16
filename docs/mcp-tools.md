@@ -3,7 +3,7 @@
 ## 1. 개요
 ssuMCP server 는 숭실대학교 학생을 위한 캠퍼스 정보 조회 기능을 MCP(Model Context Protocol) tool 로 노출한다. Claude Desktop, Cursor, MCP inspector 같은 MCP client 는 이 서버에 붙어서 학식, 기숙사 식단, 캠퍼스 시설 정보를 대화 중에 조회할 수 있다.
 
-외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `simulate_gpa`, `get_my_assignments`, `get_library_seat_status`, `recommend_library_seats`, `prepare_reserve_library_seat`, `wait_for_library_seat`, `get_library_wait_status`, `cancel_library_wait`, `get_my_library_seat`, `prepare_swap_library_seat`, `prepare_cancel_library_seat`, `get_my_library_loans`, `get_lms_dashboard` 를 직접 호출할 수 있다. 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다.
+외부 MCP client (Claude Desktop, Cursor 등) 도 `mcp_session_id` 기반 인증 세션을 통해 `get_my_schedule`, `get_my_grades`, `simulate_gpa`, `get_my_assignments`, `recommend_library_seats`, `prepare_reserve_library_seat`, `wait_for_library_seat`, `get_library_wait_status`, `cancel_library_wait`, `get_my_library_seat`, `prepare_swap_library_seat`, `prepare_cancel_library_seat`, `get_my_library_loans`, `get_lms_dashboard` 를 직접 호출할 수 있다. 이 private 도구들은 인증이 없으면 `AUTH_REQUIRED` 응답과 로그인 URL 을 반환한다. `get_library_seat_status`의 층별 집계는 공개 도구다.
 
 MCP server 는 REST API 와 같은 Spring Boot 프로세스 안에서 실행된다. endpoint: `http://localhost:8080/mcp` (Streamable HTTP).
 
@@ -239,7 +239,7 @@ fallback하지 않는다. 값이 없을 때만 현재 MCP transport에 안전하
 | `get_my_lms_materials` | 특정 과목들의 비영상 주차학습 자료 목록 조회 (course_ids 지정). `get_my_lms_courses`가 전 과목을 이미 반환하므로 보통 불필요, 특정 과목 재조회용. 비신뢰 크기는 HEAD로 보정 | LMS | `mcp_session_id`, `course_ids`, `term_id` (선택) |
 | `prepare_lms_material_export` | 선택 자료 내보내기 준비 (용량/개수 제한 검증 및 ActionAudit 생성). content_id는 `get_my_lms_courses` 응답에 포함됨 | LMS | `mcp_session_id`, `content_ids`, `term_id` (선택) |
 | `confirm_lms_material_export` | 내보내기 최종 승인 및 다운로드 링크 발급 (기본 20분, `SSUAI_LMS_EXPORT_DOWNLOAD_TTL` 설정 가능) | LMS | `mcp_session_id` |
-| `get_library_seat_status` | 도서관 층별 좌석 현황 (room-level) | LIBRARY | `floor` (2/5/6), `mcp_session_id`, `compact` (선택) |
+| `get_library_seat_status` | 도서관 층별 공개 좌석 현황 (room-level) | 불필요 | `floor` (2/5/6), `compact` (선택) |
 | `get_library_available_seats` | 전체 7개 열람실 live per-seat 가용 좌석 요약. externalSeatId 목록 포함 | LIBRARY | `mcp_session_id` |
 | `get_room_available_seats` | 특정 열람실 per-seat 상태 목록 (available/occupied/away/inactive, remainingTime) | LIBRARY | `room_id`, `mcp_session_id` |
 | `recommend_library_seats` | 선호도 기반 좌석 추천. live availability와 정적 좌석 카탈로그를 결합. 대학원 전용 열람실은 기본 제외(`excludedRooms`로 보고), `include_graduate_only=true`로 포함 가능(경고 동반) | LIBRARY | `floor`, `window`, `outlet`, `standing`, `edge`, `quiet`, `near_entrance`, `include_graduate_only`, `limit`, `mcp_session_id` |
@@ -280,9 +280,11 @@ SAINT 로그인 성공 시 LMS 도 best-effort 로 자동 연결된다.
    → mcpSessionId 발급 + loginUrl 반환 (프론트 도서관 로그인 페이지)
 2. 브라우저에서 loginUrl 열기 → 학번/비밀번호 입력
 3. "로그인이 완료되었습니다." 확인
-4. get_library_seat_status(floor=2, mcpSessionId), recommend_library_seats(...), 또는
-   get_my_library_loans(mcpSessionId) 재호출 → status: "OK", data: {...}
+4. recommend_library_seats(...) 또는 get_my_library_loans(mcpSessionId) 재호출
+   → status: "OK", data: {...}
 ```
+
+`get_library_seat_status(floor=2)`의 층별 집계는 공개 정보라 위 로그인 흐름 없이 호출한다.
 
 ## 3. 서버 띄우기
 Windows:
@@ -361,6 +363,9 @@ npx @modelcontextprotocol/inspector
   get_recent_notices, search_notices, list_notice_categories,
   get_notice_detail, get_active_notices, get_department_notices
 
+공개(도서관 좌석 집계):
+  get_library_seat_status
+
 인증 관리:
   get_auth_status, start_auth, logout_provider, logout_all
 
@@ -376,7 +381,7 @@ npx @modelcontextprotocol/inspector
   prepare_lms_material_export, confirm_lms_material_export,
   export_all_lms_materials
 개인(LIBRARY):
-  get_library_seat_status, get_library_available_seats, get_room_available_seats,
+  get_library_available_seats, get_room_available_seats,
   recommend_library_seats, get_my_library_loans,
   prepare_reserve_library_seat, prepare_cancel_library_seat,
   get_my_library_seat, prepare_swap_library_seat,

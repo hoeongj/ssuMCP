@@ -63,15 +63,20 @@
     },
     {
       "name": "get_library_seat_status",
-      "description": "숭실대학교 중앙도서관 층별 좌석 현황을 조회합니다 (읽기 전용).",
+      "description": "숭실대학교 중앙도서관 층별 공개 좌석 현황을 조회합니다 (읽기 전용, 인증 불필요).",
       "inputSchema": {
         "type": "object",
         "properties": {
           "floor": {
             "type": "integer",
-            "description": "층 번호. -1(지하1층), 1~6(1~6층). 비워두면 전체 층"
+            "description": "층 번호. 가능한 값: 2, 5, 6"
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "true이면 전체/가용/예약 수치만 반환"
           }
-        }
+        },
+        "required": ["floor"]
       }
     },
     {

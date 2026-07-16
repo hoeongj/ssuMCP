@@ -297,7 +297,7 @@ If seat reservation stays a synchronous call, concurrent requests for the same s
 ## Security Principles
 
 - **No secrets in logs**: passwords, session cookies, JWTs, and API keys are never written to logs.
-- **Authentication boundary in caches**: even aggregate data such as seat status includes the authentication state in the cache key, so an anonymous caller can never receive an authenticated result.
+- **Seat aggregate cache boundary**: per-floor global counts are cached by `floor + upstream-token presence`; raw tokens, user identifiers, and personal seat data are absent from both key and value. Production public reads use the internal sampler token.
 - **Read-only MCP**: most tools are marked `readOnlyHint=true`; `logout_*` tools are marked `destructiveHint=true`.
 - **Write tool design principle**: state-changing tools such as reserve/cancel are implemented only through the `prepare_*` + `confirm_action` two-step confirmation pattern. (ADR 0015)
 

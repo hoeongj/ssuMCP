@@ -137,7 +137,7 @@ class ChatControllerTests {
 
     @Test
     void replyMakesTheResolvedLibraryCookieKeyAvailableInLibraryToolContext() throws Exception {
-        // The chat library tools (get_my_library_loans, get_library_seat_status) look up
+        // The private chat library loan tool looks up
         // LibrarySessionStore by this thread-local key. It must be the persistent library-
         // session cookie value, not the servlet session id (ADR 0096).
         AtomicReference<String> capturedLibraryKey = new AtomicReference<>();

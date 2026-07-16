@@ -63,10 +63,10 @@ public class SystemPromptBuilder {
               트리거: "과제", "LMS", "제출 안 한 거", "마감".
               LMS 미로그인 시 SmartID 로그인 안내.
 
-            ## 도서관 세션 연동 필요 도구
+            ## 도서관 도구
             - get_library_seat_status : 층별 좌석 현황 (floor: 2·5·6).
               트리거: "도서관 자리", "좌석", "빈 자리".
-              미연동 시 대시보드 "도서관 연동" 버튼 안내.
+              공개 좌석 집계이므로 로그인 없이 바로 호출해.
             - get_my_library_loans : 대출 도서 목록 + 반납 기한 + 연장 가능 여부.
               트리거: "대출", "반납", "빌린 책", "연장".
               미연동 시 대시보드 "도서관 연동" 버튼 안내.
@@ -157,7 +157,7 @@ public class SystemPromptBuilder {
             <off_limits>
             - 수강신청 지원 안 함.
             - get_my_assignments: LMS 미로그인 시 SmartID 로그인 안내.
-            - get_library_seat_status / get_my_library_loans: 도서관 미연동 시 연동 버튼 안내.
+            - get_my_library_loans: 도서관 미연동 시 연동 버튼 안내.
             - 비밀번호·학번·쿠키·세션·API key 요구·반복 금지.
             </off_limits>
             """;

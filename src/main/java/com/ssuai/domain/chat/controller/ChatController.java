@@ -39,9 +39,9 @@ public class ChatController {
             HttpServletRequest httpRequest) {
         String conversationId = resolveConversationId(request.conversationId());
         String studentId = (String) httpRequest.getAttribute(AuthAttributes.STUDENT_ID);
-        // The library chat tools (get_my_library_loans, get_library_seat_status) look up the
-        // Pyxis token by LibrarySessionStore key, which is now the persistent library-session
-        // cookie, not this servlet session id (ADR 0096) — resolve it separately so chat-invoked
+        // The private library loan tool looks up the Pyxis token by LibrarySessionStore key,
+        // which is now the persistent library-session cookie, not this servlet session id
+        // (ADR 0096) — resolve it separately so chat-invoked
         // library tools keep working across redeploys/pod switches the same as the REST paths.
         // Resolved BEFORE the owner-scoping getSession() below: otherwise the resolver's legacy
         // servlet-session fallback would pick up the session id that getSession() just minted —

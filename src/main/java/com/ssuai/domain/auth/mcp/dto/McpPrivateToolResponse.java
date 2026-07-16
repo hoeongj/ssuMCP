@@ -6,7 +6,7 @@ import org.slf4j.MDC;
 
 /**
  * Wrapper returned by all private MCP tools (get_my_schedule, get_my_grades,
- * get_my_assignments, get_library_seat_status, get_my_library_loans, ...).
+ * get_my_assignments, get_my_library_loans, recommend_library_seats, ...).
  *
  * <p>Two-audience messages (ADR 0045):
  * <ul>
