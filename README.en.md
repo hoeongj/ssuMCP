@@ -22,6 +22,22 @@ Connect it to Claude Desktop and requests like *"What's on the cafeteria menu to
 
 ---
 
+## ChatGPT + ssuMCP in Action
+
+In a real ChatGPT session connected to ssuMCP, the client retrieved personal academic data and completed a library-seat reservation that required confirmation. These screenshots document successful integration cases without repeating personal values or session details in the surrounding prose.
+
+**u-SAINT graduation evaluation — summarizing the remaining requirements**
+
+![ChatGPT uses ssuMCP to retrieve u-SAINT graduation-evaluation data and explain the remaining requirements in Korean](docs/assets/chatgpt-graduation-guidance.png)
+
+**Library seat reservation — checking availability and returning the result after client confirmation**
+
+![ChatGPT uses ssuMCP tools to find an available corner seat and return the completed library reservation in Korean](docs/assets/chatgpt-library-seat-reservation.png)
+
+The OAuth session boundary and ChatGPT MCP connection are recorded in [ADR 0038](docs/adr/0038-chatgpt-mcp-oauth-auth0-dcr.md); the two-step confirmation contract for write tools is recorded in [ADR 0086](docs/adr/0086-confirm-action-async-and-scoped-supersede.md).
+
+---
+
 ## Getting Connected
 
 ### Claude Desktop

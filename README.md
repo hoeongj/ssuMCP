@@ -22,6 +22,22 @@ Claude Desktop에 연결하면 *"오늘 학식 뭐야"*, *"이번 학기 성적 
 
 ---
 
+## ChatGPT + ssuMCP 실제 연동
+
+ChatGPT에 ssuMCP를 연결한 실제 세션에서 개인 학사 데이터를 조회하고, 확인이 필요한 도서관 좌석 예약까지 실행했다. 아래 화면은 성공한 연동 사례이며, 개인 수치나 세션 정보는 문서 본문에 재기재하지 않는다.
+
+**u-SAINT 졸업사정 조회 — 남은 이수 조건을 자연어로 정리**
+
+![ChatGPT가 ssuMCP의 u-SAINT 졸업사정 데이터를 조회해 남은 졸업요건을 설명하는 화면](docs/assets/chatgpt-graduation-guidance.png)
+
+**도서관 좌석 예약 — 빈 좌석 확인과 클라이언트 확인 후 예약 결과 반환**
+
+![ChatGPT가 ssuMCP 도구로 도서관 빈 좌석을 확인하고 모서리 좌석 예약 결과를 반환하는 화면](docs/assets/chatgpt-library-seat-reservation.png)
+
+이 흐름의 OAuth 세션 경계와 ChatGPT MCP 연결 결정은 [ADR 0038](docs/adr/0038-chatgpt-mcp-oauth-auth0-dcr.md), write 도구의 2단계 확인 계약은 [ADR 0086](docs/adr/0086-confirm-action-async-and-scoped-supersede.md)에 기록했다.
+
+---
+
 ## 연결하기
 
 ### Claude Desktop
