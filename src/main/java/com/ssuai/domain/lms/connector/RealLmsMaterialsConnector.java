@@ -1,6 +1,7 @@
 package com.ssuai.domain.lms.connector;
 
 import java.io.OutputStream;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import com.ssuai.domain.lms.dto.LmsCourse;
 import com.ssuai.domain.lms.dto.LmsMaterial;
 import com.ssuai.domain.lms.util.CommonsXmlParser;
 import com.ssuai.global.exception.ConnectorException;
+import com.ssuai.global.exception.ConnectorParseException;
 import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
@@ -157,8 +159,44 @@ public class RealLmsMaterialsConnector implements LmsMaterialsConnector {
         if (parsed.downloadUri() == null || parsed.downloadUri().isBlank()) {
             return Optional.empty();
         }
-        String absoluteUrl = properties.getCommonsBaseUrl() + parsed.downloadUri();
+        String absoluteUrl = absoluteDownloadUrl(parsed.downloadUri());
         return Optional.of(new ContentDownloadInfo(contentId, parsed.title(), absoluteUrl));
+    }
+
+    private String absoluteDownloadUrl(String downloadUri) {
+        try {
+            URI candidate = URI.create(downloadUri);
+            URI base = URI.create(properties.getCommonsBaseUrl() + "/");
+            URI resolved = candidate.isAbsolute() ? candidate : base.resolve(candidate);
+            String scheme = resolved.getScheme();
+            if (resolved.getHost() == null
+                    || resolved.getUserInfo() != null
+                    || !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))
+                    || !isConfiguredDownloadOrigin(resolved)) {
+                throw new IllegalArgumentException("absolute HTTP(S) download URI is required");
+            }
+            return resolved.toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ConnectorParseException(exception);
+        }
+    }
+
+    private boolean isConfiguredDownloadOrigin(URI candidate) {
+        return sameOrigin(candidate, URI.create(properties.getCommonsBaseUrl()))
+                || sameOrigin(candidate, URI.create(properties.getCanvasBaseUrl()));
+    }
+
+    private static boolean sameOrigin(URI left, URI right) {
+        return left.getScheme().equalsIgnoreCase(right.getScheme())
+                && left.getHost().equalsIgnoreCase(right.getHost())
+                && effectivePort(left) == effectivePort(right);
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() >= 0) {
+            return uri.getPort();
+        }
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     private List<LmsMaterial> correctUnreliableSizes(

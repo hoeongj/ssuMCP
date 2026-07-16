@@ -78,3 +78,11 @@ sequenceDiagram
 
 - AGENTS.md Rule 2: 포트폴리오의 실용성과 직무 완성도 최우선 고려.
 - u-SAINT 및 Canvas 연동 기능의 프로덕션 운영 중 확인된 실제 에지 케이스(현재 학기 판별 버그)를 바탕으로 개선.
+
+## 후속 결정 (2026-07-16) - 일반 첨부 URL과 부분 성공 경계
+
+실계정 비교에서 PDF 70개는 성공하고 `contentType=file` 일반 ZIP 첨부 4개만 실패했으며, 두 집합을 합친 전체 작업도 실패했다. 총용량·파일 수·압축기는 배제되고 일반 첨부의 URL 해석/다운로드와 항목 하나가 전체 작업을 중단하는 worker 경계가 드러났다.
+
+Commons `content_download_uri`는 상대 URI만 base에 resolve하고 절대 HTTP(S) URI는 구성된 Canvas/Commons exact origin일 때만 보존한다. 선택적 크기 `HEAD`와 실제 `GET` 전 검증하고 cookie jar도 요청마다 같은 origin 경계를 적용한다. metadata 파싱 실패, capability 부재, 명시적인 404/410만 누락 보고서에 기록하며 하나 이상 성공하면 부분 ZIP을 `READY`로 제공한다. 인증 만료, owner revocation, 429, 소진된 외부 장애·5xx, 설정 한도와 내부 저장 오류는 전체 실패로 유지한다. 모든 항목이 실패하면 빈 ZIP을 성공 처리하지 않고, current-owner DB 저장이 성공한 최종 결과만 낮은 카디널리티 metric으로 기록한다.
+
+상세 증거, 실패 분류, 검증과 남은 운영 위험은 [LMS 일반 첨부파일이 전체 ZIP 내보내기를 실패시킨 문제](../troubleshooting/lms-general-attachment-export.md)에 기록한다.

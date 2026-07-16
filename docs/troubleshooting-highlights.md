@@ -307,3 +307,7 @@
   - 목록은 fail-soft인데 실제 다운로드는 fail-closed여야 하는 이유는?
   - `RuntimeException` 전체가 아니라 외부 connector 예외 계층만 잡은 이유는?
   - 기능 복구를 위해 쿠키 scope를 약화시키지 않은 이유는?
+
+### 2026-07-16 종단 비교 후속
+
+목록/준비 수정 배포 뒤 PDF 70개는 성공했지만 `contentType=file` 일반 ZIP 4개만 실패했고, 이를 포함한 74개 전체 작업도 함께 실패했다. 이에 따라 총용량·파일 수·압축기 가설을 배제했다. 절대 `content_download_uri`에도 Commons base를 무조건 접두하던 resolver를 URI 표준 해석으로 고치고, typed 개별 항목 오류는 나머지 자료와 안전한 누락 보고서를 담은 부분 ZIP으로 격리했다. 인증 만료·429·한도·내부 오류와 전 항목 실패는 계속 fail-closed한다. 상세 기록은 [LMS 일반 첨부파일이 전체 ZIP 내보내기를 실패시킨 문제](troubleshooting/lms-general-attachment-export.md)에 남겼다.

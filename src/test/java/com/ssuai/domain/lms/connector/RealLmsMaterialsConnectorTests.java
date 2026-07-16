@@ -367,6 +367,52 @@ class RealLmsMaterialsConnectorTests {
     }
 
     @Test
+    void resolveDownloadPreservesAbsoluteAttachmentUrl() {
+        String absoluteAttachmentUrl = properties.getCanvasBaseUrl()
+                + "/files/42/download?download_frd=1";
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""
+                        <content version="1.0">
+                          <content_playing_info version="1.0">
+                            <content_id>archive-1</content_id>
+                            <content_type>file</content_type>
+                            <content_download_uri>%s</content_download_uri>
+                          </content_playing_info>
+                          <content_metadata version="1.0"><title>Lab archive</title></content_metadata>
+                        </content>
+                        """.formatted(absoluteAttachmentUrl.replace("&", "&amp;"))));
+
+        Optional<ContentDownloadInfo> download = connector.resolveDownload(
+                new LmsCookies("xn_api_token=tok;"), "archive-1");
+
+        assertThat(download).isPresent();
+        assertThat(download.orElseThrow().absoluteDownloadUrl())
+                .isEqualTo(absoluteAttachmentUrl);
+    }
+
+    @Test
+    void resolveDownloadRejectsAbsoluteUrlOutsideConfiguredOrigins() {
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""
+                        <content version="1.0">
+                          <content_playing_info version="1.0">
+                            <content_id>archive-1</content_id>
+                            <content_type>file</content_type>
+                            <content_download_uri>http://127.0.0.1:8080/internal</content_download_uri>
+                          </content_playing_info>
+                        </content>
+                        """));
+
+        assertThatThrownBy(() -> connector.resolveDownload(
+                new LmsCookies("xn_api_token=tok;"), "archive-1"))
+                .isInstanceOf(ConnectorParseException.class);
+    }
+
+    @Test
     void resolveDownloadStillRejectsHtmlForActualDownloadFlow() {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)

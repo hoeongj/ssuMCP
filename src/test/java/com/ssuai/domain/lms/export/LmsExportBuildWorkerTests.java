@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,11 +16,14 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -36,6 +40,13 @@ import com.ssuai.domain.lms.connector.LmsMaterialsConnector;
 import com.ssuai.domain.lms.dto.ContentDownloadInfo;
 import com.ssuai.domain.lms.dto.LmsExportSelectionItem;
 import com.ssuai.domain.lms.dto.SelectionPayload;
+import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
+import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.LmsApiException;
+import com.ssuai.global.exception.LmsSessionExpiredException;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class LmsExportBuildWorkerTests {
 
@@ -45,6 +56,7 @@ class LmsExportBuildWorkerTests {
     private LmsExportProperties properties;
     private ObjectMapper objectMapper;
     private LmsExportJobClaimer claimer;
+    private SimpleMeterRegistry meterRegistry;
     private LmsExportBuildWorker worker;
 
     private static final String STUDENT_ID = "20221528";
@@ -64,14 +76,23 @@ class LmsExportBuildWorkerTests {
         properties.setMaxBytesPerExport(1000L);
         objectMapper = new ObjectMapper();
         claimer = mock(LmsExportJobClaimer.class);
+        meterRegistry = new SimpleMeterRegistry();
 
         worker = new LmsExportBuildWorker(
-                repository, connector, sessionStore, properties, objectMapper, claimer
+                repository,
+                connector,
+                sessionStore,
+                properties,
+                objectMapper,
+                claimer,
+                null,
+                new LmsExportMetrics(meterRegistry)
         );
 
         when(sessionStore.cookies(STUDENT_ID)).thenReturn(Optional.of(COOKIES));
         when(repository.findAllByExpiresAtBefore(any())).thenReturn(List.of());
         when(repository.findAllById(any())).thenReturn(List.of());
+        when(claimer.saveJob(any())).thenReturn(true);
     }
 
     @Test
@@ -120,7 +141,8 @@ class LmsExportBuildWorkerTests {
 
         assertThat(entryNames).containsExactlyInAnyOrder(
                 "Math Course/a.pdf",
-                "Math Course/a(2).pdf"
+                "Math Course/a(2).pdf",
+                "_ssuAI_export_report.txt"
         );
     }
 
@@ -244,6 +266,297 @@ class LmsExportBuildWorkerTests {
     }
 
     @Test
+    void oneProtocolFailureProducesPartialZipWithSafeReport() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("good", 1L, "Network", "week-1.pdf"),
+                new LmsExportSelectionItem("bad", 1L, "Network", "lab.zip")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "good")).thenReturn(Optional.of(
+                new ContentDownloadInfo("good", "Week 1", "https://url/good")));
+        when(connector.resolveDownload(COOKIES, "bad"))
+                .thenThrow(new ConnectorParseException(new IllegalArgumentException("secret-url")));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            OutputStream output = invocation.getArgument(2);
+            output.write("pdf-data".getBytes(StandardCharsets.UTF_8));
+            return null;
+        }).when(connector).download(eq(COOKIES), eq("https://url/good"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.READY);
+        assertThat(job.getFileCount()).isEqualTo(1);
+        Map<String, String> entries = readTextEntries(Path.of(job.getFilePath()));
+        assertThat(entries.keySet()).containsExactlyInAnyOrder(
+                "Network/week-1.pdf", "_ssuAI_export_report.txt");
+        assertThat(entries.get("_ssuAI_export_report.txt"))
+                .contains("Network", "lab.zip", "다운로드 정보 응답 오류")
+                .doesNotContain("secret-url", "contentId", "https://");
+        assertThat(meterRegistry.get("lms.export.jobs")
+                .tags("outcome", "partial", "reason", "items_skipped")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("lms.export.files")
+                .tags("outcome", "included", "reason", "none")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("lms.export.files")
+                .tags("outcome", "skipped", "reason", "metadata_unavailable")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void downloadParseFailureProducesPartialZipWithSafeReport() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("good", 1L, "Network", "week-1.pdf"),
+                new LmsExportSelectionItem("bad", 1L, "Network", "lab.zip")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "good")).thenReturn(Optional.of(
+                new ContentDownloadInfo("good", "Week 1", "https://url/good")));
+        when(connector.resolveDownload(COOKIES, "bad")).thenReturn(Optional.of(
+                new ContentDownloadInfo("bad", "Lab", "https://url/bad")));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            OutputStream output = invocation.getArgument(2);
+            output.write("pdf-data".getBytes(StandardCharsets.UTF_8));
+            return null;
+        }).when(connector).download(eq(COOKIES), eq("https://url/good"), any(OutputStream.class));
+        org.mockito.Mockito.doThrow(
+                        new ConnectorParseException(new IllegalArgumentException("secret-url")))
+                .when(connector)
+                .download(eq(COOKIES), eq("https://url/bad"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.READY);
+        assertThat(job.getFileCount()).isEqualTo(1);
+        Map<String, String> entries = readTextEntries(Path.of(job.getFilePath()));
+        assertThat(entries.keySet()).containsExactlyInAnyOrder(
+                "Network/week-1.pdf", "_ssuAI_export_report.txt");
+        assertThat(entries.get("_ssuAI_export_report.txt"))
+                .contains("Network", "lab.zip", "파일 다운로드 응답 오류")
+                .doesNotContain("secret-url", "contentId", "https://");
+    }
+
+    @Test
+    void missingMetadataAndDownloadItemsProducePartialZip() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("missing-metadata", 1L, "Network", "old.zip"),
+                new LmsExportSelectionItem("missing-download", 1L, "Network", "gone.zip"),
+                new LmsExportSelectionItem("good", 1L, "Network", "week-1.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "missing-metadata"))
+                .thenThrow(new LmsApiException("not found", 404));
+        when(connector.resolveDownload(COOKIES, "missing-download")).thenReturn(Optional.of(
+                new ContentDownloadInfo("missing-download", "Gone", "https://url/gone")));
+        when(connector.resolveDownload(COOKIES, "good")).thenReturn(Optional.of(
+                new ContentDownloadInfo("good", "Week 1", "https://url/good")));
+        org.mockito.Mockito.doThrow(new LmsApiException("gone", 410))
+                .when(connector)
+                .download(eq(COOKIES), eq("https://url/gone"), any(OutputStream.class));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            OutputStream output = invocation.getArgument(2);
+            output.write("pdf-data".getBytes(StandardCharsets.UTF_8));
+            return null;
+        }).when(connector).download(eq(COOKIES), eq("https://url/good"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.READY);
+        assertThat(job.getFileCount()).isEqualTo(1);
+        String report = readTextEntries(Path.of(job.getFilePath()))
+                .get("_ssuAI_export_report.txt");
+        assertThat(report)
+                .contains("old.zip", "다운로드 정보 응답 오류")
+                .contains("gone.zip", "파일 다운로드 응답 오류")
+                .doesNotContain("not found", "contentId", "https://");
+    }
+
+    @Test
+    void nonMissingClientErrorFailsWholeJobAndStopsFollowingItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("bad-request", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "bad-request"))
+                .thenThrow(new LmsApiException("bad request", 400));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("LMS 자료 응답을 처리하지 못했습니다");
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void exhaustedServerErrorAtDownloadFailsWholeJobAndStopsFollowingItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("unavailable", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "unavailable")).thenReturn(Optional.of(
+                new ContentDownloadInfo("unavailable", "Lab", "https://url/unavailable")));
+        org.mockito.Mockito.doThrow(new LmsApiException("service unavailable", 503))
+                .when(connector)
+                .download(eq(COOKIES), eq("https://url/unavailable"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("LMS 자료 응답을 처리하지 못했습니다");
+        verify(connector, times(2)).download(
+                eq(COOKIES), eq("https://url/unavailable"), any(OutputStream.class));
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void allProtocolFailuresFailInsteadOfPublishingEmptyArchive() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("bad", 1L, "Network", "lab.zip")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "bad"))
+                .thenThrow(new ConnectorParseException());
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).isEqualTo(
+                "선택한 자료를 LMS에서 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        assertThat(new File(tempDir, job.getId() + ".zip")).doesNotExist();
+    }
+
+    @Test
+    void transientDownloadFailureRetriesIntoFreshTempFile() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("retry", 1L, "Network", "lab.zip")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "retry")).thenReturn(Optional.of(
+                new ContentDownloadInfo("retry", "Lab", "https://url/retry")));
+        AtomicInteger attempts = new AtomicInteger();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            OutputStream output = invocation.getArgument(2);
+            if (attempts.getAndIncrement() == 0) {
+                output.write("partial".getBytes(StandardCharsets.UTF_8));
+                throw new ConnectorUnavailableException();
+            }
+            output.write("complete".getBytes(StandardCharsets.UTF_8));
+            return null;
+        }).when(connector).download(eq(COOKIES), eq("https://url/retry"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.READY);
+        assertThat(readTextEntries(Path.of(job.getFilePath())).get("Network/lab.zip"))
+                .isEqualTo("complete");
+        verify(connector, times(2)).download(
+                eq(COOKIES), eq("https://url/retry"), any(OutputStream.class));
+    }
+
+    @Test
+    void authenticationLossFailsWholeJobAndStopsFollowingItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("expired", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "expired"))
+                .thenThrow(new LmsSessionExpiredException());
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("LMS 세션이 만료");
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void exhaustedUpstreamFailureStopsJobWithoutFanningOutAcrossItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("unavailable", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "unavailable"))
+                .thenThrow(new ConnectorUnavailableException());
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("LMS 자료 서버 연결이 불안정");
+        verify(connector, times(1)).resolveDownload(COOKIES, "unavailable");
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void rateLimitAtMetadataStopsFollowingItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("limited", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "limited"))
+                .thenThrow(new ConnectorRateLimitedException(Duration.ofSeconds(30), null));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("일시적으로 제한");
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void rateLimitAtDownloadStopsFollowingItems() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("limited", 1L, "Network", "lab.zip"),
+                new LmsExportSelectionItem("later", 1L, "Network", "later.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(connector.resolveDownload(COOKIES, "limited")).thenReturn(Optional.of(
+                new ContentDownloadInfo("limited", "Lab", "https://url/limited")));
+        org.mockito.Mockito.doThrow(
+                        new ConnectorRateLimitedException(Duration.ofSeconds(30), null))
+                .when(connector)
+                .download(eq(COOKIES), eq("https://url/limited"), any(OutputStream.class));
+
+        worker.poll();
+
+        assertThat(job.getStatus()).isEqualTo(LmsExportStatus.FAILED);
+        assertThat(job.getFailureReason()).contains("일시적으로 제한");
+        verify(connector, never()).resolveDownload(COOKIES, "later");
+    }
+
+    @Test
+    void staleCompletionDoesNotEmitCommittedOutcomeMetrics() throws Exception {
+        SelectionPayload payload = new SelectionPayload(List.of(
+                new LmsExportSelectionItem("good", 1L, "Network", "week-1.pdf")
+        ), 0L);
+        LmsExportJob job = queuedBuildingJob(payload);
+        when(claimer.claimNextJob()).thenReturn(Optional.of(job));
+        when(claimer.saveJob(job)).thenReturn(false);
+        when(connector.resolveDownload(COOKIES, "good")).thenReturn(Optional.of(
+                new ContentDownloadInfo("good", "Week 1", "https://url/good")));
+
+        worker.poll();
+
+        assertThat(meterRegistry.find("lms.export.jobs").counter()).isNull();
+        assertThat(meterRegistry.find("lms.export.files").counter()).isNull();
+    }
+
+    @Test
     void sweepDeletesManagedZipWithoutJobRow() throws Exception {
         String jobId = UUID.randomUUID().toString();
         Path orphanZip = writeManagedZip(jobId);
@@ -325,5 +638,29 @@ class LmsExportBuildWorkerTests {
         Path path = tempDir.toPath().resolve(jobId + ".zip");
         Files.writeString(path, "zip", StandardCharsets.UTF_8);
         return path;
+    }
+
+    private LmsExportJob queuedBuildingJob(SelectionPayload payload) throws Exception {
+        LmsExportJob job = LmsExportJob.createQueued(
+                STUDENT_ID,
+                "hash",
+                objectMapper.writeValueAsString(payload),
+                Instant.now(),
+                Instant.now().plusSeconds(600));
+        job.markBuilding();
+        when(repository.findAllById(any())).thenReturn(List.of(job));
+        return job;
+    }
+
+    private Map<String, String> readTextEntries(Path zip) throws IOException {
+        Map<String, String> entries = new java.util.LinkedHashMap<>();
+        try (ZipInputStream input = new ZipInputStream(Files.newInputStream(zip))) {
+            ZipEntry entry;
+            while ((entry = input.getNextEntry()) != null) {
+                entries.put(entry.getName(), new String(input.readAllBytes(), StandardCharsets.UTF_8));
+                input.closeEntry();
+            }
+        }
+        return entries;
     }
 }

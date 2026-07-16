@@ -6,10 +6,13 @@ import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -24,8 +27,8 @@ import java.util.zip.ZipOutputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,6 +45,13 @@ import com.ssuai.domain.lms.connector.LmsMaterialsConnector;
 import com.ssuai.domain.lms.dto.ContentDownloadInfo;
 import com.ssuai.domain.lms.dto.LmsExportSelectionItem;
 import com.ssuai.domain.lms.dto.SelectionPayload;
+import com.ssuai.global.exception.ConnectorException;
+import com.ssuai.global.exception.ConnectorParseException;
+import com.ssuai.global.exception.ConnectorRateLimitedException;
+import com.ssuai.global.exception.ConnectorTimeoutException;
+import com.ssuai.global.exception.ConnectorUnavailableException;
+import com.ssuai.global.exception.LmsApiException;
+import com.ssuai.global.exception.LmsSessionExpiredException;
 
 @Component
 public class LmsExportBuildWorker {
@@ -57,13 +67,15 @@ public class LmsExportBuildWorker {
     private final ObjectMapper objectMapper;
     private final LmsExportJobClaimer claimer;
     private final McpAuthService mcpAuthService;
+    private final LmsExportMetrics metrics;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     @Autowired
     public LmsExportBuildWorker(LmsExportJobRepository repository, LmsMaterialsConnector connector,
                                 LmsSessionStore sessionStore, LmsExportProperties properties,
                                 ObjectMapper objectMapper, LmsExportJobClaimer claimer,
-                                McpAuthService mcpAuthService) {
+                                McpAuthService mcpAuthService,
+                                LmsExportMetrics metrics) {
         this.repository = repository;
         this.connector = connector;
         this.sessionStore = sessionStore;
@@ -71,6 +83,7 @@ public class LmsExportBuildWorker {
         this.objectMapper = objectMapper;
         this.claimer = claimer;
         this.mcpAuthService = mcpAuthService;
+        this.metrics = metrics;
     }
 
     LmsExportBuildWorker(
@@ -81,6 +94,25 @@ public class LmsExportBuildWorker {
             ObjectMapper objectMapper,
             LmsExportJobClaimer claimer) {
         this(repository, connector, sessionStore, properties, objectMapper, claimer, null);
+    }
+
+    LmsExportBuildWorker(
+            LmsExportJobRepository repository,
+            LmsMaterialsConnector connector,
+            LmsSessionStore sessionStore,
+            LmsExportProperties properties,
+            ObjectMapper objectMapper,
+            LmsExportJobClaimer claimer,
+            McpAuthService mcpAuthService) {
+        this(
+                repository,
+                connector,
+                sessionStore,
+                properties,
+                objectMapper,
+                claimer,
+                mcpAuthService,
+                LmsExportMetrics.noop());
     }
 
     @Scheduled(fixedDelayString = "#{@lmsExportProperties.pollInterval.toMillis()}")
@@ -125,7 +157,9 @@ public class LmsExportBuildWorker {
             LmsCookies cookies = sessionStore.cookies(job.getStudentId()).orElse(null);
             if (cookies == null) {
                 job.markFailed("LMS 세션이 만료되어 내보내기를 완료할 수 없습니다.", Instant.now());
-                claimer.saveJob(job);
+                if (claimer.saveJob(job)) {
+                    metrics.countJob("failed", "auth_required");
+                }
                 return;
             }
 
@@ -134,7 +168,9 @@ public class LmsExportBuildWorker {
                 payload = objectMapper.readValue(job.getPayload(), SelectionPayload.class);
             } catch (Exception e) {
                 job.markFailed("내보내기 대상 파일 목록을 파싱하는 데 실패했습니다.", Instant.now());
-                claimer.saveJob(job);
+                if (claimer.saveJob(job)) {
+                    metrics.countJob("failed", "payload_invalid");
+                }
                 return;
             }
 
@@ -147,21 +183,34 @@ public class LmsExportBuildWorker {
             int actualFileCount = 0;
             long actualBytes = 0;
             Set<String> addedPaths = new HashSet<>();
+            List<SkippedExportItem> skippedItems = new ArrayList<>();
 
             try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(zipFile))) {
                 for (LmsExportSelectionItem selection : payload.selections()) {
                     if (!hasCurrentOwner(job)) {
                         throw new RevokedExportException();
                     }
-                    Optional<ContentDownloadInfo> downloadOpt = connector.resolveDownload(cookies, selection.contentId());
+                    Optional<ContentDownloadInfo> downloadOpt;
+                    try {
+                        downloadOpt = connector.resolveDownload(cookies, selection.contentId());
+                    } catch (LmsSessionExpiredException | ConnectorRateLimitedException terminal) {
+                        throw terminal;
+                    } catch (ConnectorParseException malformedItem) {
+                        skipItem(skippedItems, selection, SkipReason.METADATA_UNAVAILABLE);
+                        continue;
+                    } catch (LmsApiException protocol) {
+                        if (isMissingItem(protocol)) {
+                            skipItem(skippedItems, selection, SkipReason.METADATA_UNAVAILABLE);
+                            continue;
+                        }
+                        throw protocol;
+                    }
                     if (downloadOpt.isEmpty()) {
-                        log.warn("Excluding LMS export item because the upstream download capability is missing");
+                        skipItem(skippedItems, selection, SkipReason.CAPABILITY_MISSING);
                         continue;
                     }
 
                     ContentDownloadInfo downloadInfo = downloadOpt.get();
-                    String uniquePath = getUniqueZipPath(addedPaths, selection.courseName(), selection.fileName());
-                    addedPaths.add(uniquePath.toLowerCase());
 
                     // Per-file cap enforced ahead of the total to keep file-count headroom in the message.
                     if (actualFileCount + 1 > properties.getMaxFilesPerExport()) {
@@ -177,16 +226,33 @@ public class LmsExportBuildWorker {
                         // the whole file had already landed). The remaining total cap stays below.
                         long remainingTotal = properties.getMaxBytesPerExport() - actualBytes;
                         long perFileCap = Math.min(properties.getMaxBytesPerFile(), Math.max(remainingTotal, 0));
-                        try (FileOutputStream fileOut = new FileOutputStream(singleTemp);
-                             BoundedOutputStream boundedOut = new BoundedOutputStream(fileOut, perFileCap)) {
-                            connector.download(cookies, downloadInfo.absoluteDownloadUrl(), boundedOut);
+                        try {
+                            downloadWithRetry(
+                                    cookies,
+                                    downloadInfo.absoluteDownloadUrl(),
+                                    singleTemp,
+                                    perFileCap);
                         } catch (ExportLimitExceededException limit) {
                             log.error("Export byte limit blown mid-stream: jobId={} cap={}", job.getId(), perFileCap);
                             throw limit;
+                        } catch (LmsSessionExpiredException | ConnectorRateLimitedException terminal) {
+                            throw terminal;
+                        } catch (ConnectorParseException malformedItem) {
+                            skipItem(skippedItems, selection, SkipReason.DOWNLOAD_UNAVAILABLE);
+                            continue;
+                        } catch (LmsApiException protocol) {
+                            if (isMissingItem(protocol)) {
+                                skipItem(skippedItems, selection, SkipReason.DOWNLOAD_UNAVAILABLE);
+                                continue;
+                            }
+                            throw protocol;
                         }
 
                         long currentFileBytes = singleTemp.length();
 
+                        String uniquePath = getUniqueZipPath(
+                                addedPaths, selection.courseName(), selection.fileName());
+                        addedPaths.add(uniquePath.toLowerCase());
                         ZipEntry entry = new ZipEntry(uniquePath);
                         zipOut.putNextEntry(entry);
                         try (FileInputStream fileIn = new FileInputStream(singleTemp)) {
@@ -199,33 +265,164 @@ public class LmsExportBuildWorker {
                         singleTemp.delete();
                     }
                 }
+                if (actualFileCount == 0) {
+                    throw new AllExportItemsFailedException();
+                }
+                if (!skippedItems.isEmpty()) {
+                    writeSkippedItemsReport(zipOut, skippedItems);
+                }
             }
 
             if (!hasCurrentOwner(job)) {
                 throw new RevokedExportException();
             }
             job.markReady(zipFile.getAbsolutePath(), actualFileCount, actualBytes, Instant.now());
-            claimer.saveJob(job);
-            log.info("LMS material export job completed successfully: jobId={} files={} bytes={}", job.getId(), actualFileCount, actualBytes);
+            if (claimer.saveJob(job)) {
+                String outcome = skippedItems.isEmpty() ? "success" : "partial";
+                metrics.countJob(outcome, skippedItems.isEmpty() ? "none" : "items_skipped");
+                metrics.countFiles("included", "none", actualFileCount);
+                skipReasonCounts(skippedItems).forEach((reason, count) ->
+                        metrics.countFiles("skipped", reason.metricReason(), count));
+                log.info(
+                        "LMS material export job completed: jobId={} files={} bytes={} skipped={} skipReasons={}",
+                        job.getId(),
+                        actualFileCount,
+                        actualBytes,
+                        skippedItems.size(),
+                        skipReasonCounts(skippedItems));
+            }
 
         } catch (RevokedExportException revoked) {
+            metrics.countJob("cancelled", "owner_revoked");
             deletePartialFile(zipFile, job.getId());
         } catch (ExportLimitExceededException limit) {
             // Controlled, user-safe message — no internal detail to hide.
             log.warn("LMS material export job hit a configured limit: jobId={}", job.getId());
             job.markFailed(limit.getMessage(), Instant.now());
-            claimer.saveJob(job);
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "limit_exceeded");
+            }
+            deletePartialFile(zipFile, job.getId());
+        } catch (LmsSessionExpiredException expired) {
+            log.warn("LMS material export lost provider authentication: jobId={}", job.getId());
+            job.markFailed("LMS 세션이 만료되어 내보내기를 완료할 수 없습니다.", Instant.now());
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "auth_required");
+            }
+            deletePartialFile(zipFile, job.getId());
+        } catch (ConnectorRateLimitedException limited) {
+            log.warn("LMS material export was rate limited: jobId={}", job.getId());
+            job.markFailed("LMS 요청이 일시적으로 제한되었습니다. 잠시 후 다시 시도해 주세요.", Instant.now());
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "rate_limited");
+            }
+            deletePartialFile(zipFile, job.getId());
+        } catch (ConnectorUnavailableException | ConnectorTimeoutException unavailable) {
+            log.warn("LMS material export upstream was unavailable: jobId={}", job.getId());
+            job.markFailed("LMS 자료 서버 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.", Instant.now());
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "upstream_unavailable");
+            }
+            deletePartialFile(zipFile, job.getId());
+        } catch (LmsApiException | ConnectorException protocol) {
+            log.warn("LMS material export upstream protocol failed: jobId={}", job.getId());
+            job.markFailed("LMS 자료 응답을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.", Instant.now());
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "upstream_protocol");
+            }
+            deletePartialFile(zipFile, job.getId());
+        } catch (AllExportItemsFailedException allFailed) {
+            log.warn("LMS material export could not resolve or download any selected item: jobId={}", job.getId());
+            job.markFailed("선택한 자료를 LMS에서 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.", Instant.now());
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "all_items_failed");
+            }
             deletePartialFile(zipFile, job.getId());
         } catch (Exception e) {
             // Unexpected failure: log the real exception server-side, but NEVER surface
             // e.getMessage() to the user — it can leak upstream URLs, stack/IO detail, etc.
             log.error("LMS material export job failed: jobId={}", job.getId(), e);
             job.markFailed("내보내기 생성 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", Instant.now());
-            claimer.saveJob(job);
+            if (claimer.saveJob(job)) {
+                metrics.countJob("failed", "internal");
+            }
             // A failed job never gets a filePath set, so sweepExpiredJobs cannot reclaim it.
             // Delete the half-written ZIP here to avoid leaking partial files on the export disk.
             deletePartialFile(zipFile, job.getId());
         }
+    }
+
+    private void downloadWithRetry(
+            LmsCookies cookies,
+            String downloadUrl,
+            File target,
+            long maxBytes) throws IOException {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try (FileOutputStream fileOut = new FileOutputStream(target);
+                 BoundedOutputStream boundedOut = new BoundedOutputStream(fileOut, maxBytes)) {
+                connector.download(cookies, downloadUrl, boundedOut);
+                return;
+            } catch (ConnectorUnavailableException unavailable) {
+                if (attempt == 2) {
+                    throw unavailable;
+                }
+            } catch (LmsApiException protocol) {
+                if (attempt == 2 || protocol.getStatusCode() < 500) {
+                    throw protocol;
+                }
+            }
+        }
+    }
+
+    private void skipItem(
+            List<SkippedExportItem> skippedItems,
+            LmsExportSelectionItem selection,
+            SkipReason reason) {
+        skippedItems.add(new SkippedExportItem(
+                selection.courseName(), selection.fileName(), reason));
+    }
+
+    private boolean isMissingItem(LmsApiException protocol) {
+        return protocol.getStatusCode() == 404 || protocol.getStatusCode() == 410;
+    }
+
+    private void writeSkippedItemsReport(
+            ZipOutputStream zipOut,
+            List<SkippedExportItem> skippedItems) throws IOException {
+        StringBuilder report = new StringBuilder()
+                .append("ssuAI LMS 강의자료 내보내기 결과\n\n")
+                .append("요청한 자료 중 ")
+                .append(skippedItems.size())
+                .append("개를 LMS에서 내려받지 못했습니다. 나머지 자료는 이 ZIP에 포함되어 있습니다.\n")
+                .append("로그인 정보, 내부 URL, 콘텐츠 ID는 이 보고서에 기록하지 않습니다.\n\n");
+        for (SkippedExportItem item : skippedItems) {
+            report.append("- [")
+                    .append(reportValue(item.courseName()))
+                    .append("] ")
+                    .append(reportValue(item.fileName()))
+                    .append(": ")
+                    .append(item.reason().userMessage())
+                    .append('\n');
+        }
+        ZipEntry reportEntry = new ZipEntry("_ssuAI_export_report.txt");
+        zipOut.putNextEntry(reportEntry);
+        zipOut.write(report.toString().getBytes(StandardCharsets.UTF_8));
+        zipOut.closeEntry();
+    }
+
+    private String reportValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "이름 없음";
+        }
+        return value.replaceAll("[\\r\\n\\t\\x00-\\x1F\\x7F]", " ").trim();
+    }
+
+    private Map<SkipReason, Integer> skipReasonCounts(List<SkippedExportItem> skippedItems) {
+        Map<SkipReason, Integer> counts = new EnumMap<>(SkipReason.class);
+        for (SkippedExportItem item : skippedItems) {
+            counts.merge(item.reason(), 1, Integer::sum);
+        }
+        return counts;
     }
 
     private void deletePartialFile(File zipFile, String jobId) {
@@ -390,6 +587,31 @@ public class LmsExportBuildWorker {
     }
 }
 
+enum SkipReason {
+    CAPABILITY_MISSING("capability_missing", "다운로드 링크가 제공되지 않음"),
+    METADATA_UNAVAILABLE("metadata_unavailable", "다운로드 정보 응답 오류"),
+    DOWNLOAD_UNAVAILABLE("download_unavailable", "파일 다운로드 응답 오류");
+
+    private final String metricReason;
+    private final String userMessage;
+
+    SkipReason(String metricReason, String userMessage) {
+        this.metricReason = metricReason;
+        this.userMessage = userMessage;
+    }
+
+    String metricReason() {
+        return metricReason;
+    }
+
+    String userMessage() {
+        return userMessage;
+    }
+}
+
+record SkippedExportItem(String courseName, String fileName, SkipReason reason) {
+}
+
 /**
  * Signals that a configured export limit (per-file bytes, total bytes, or file count) was hit.
  * Its message is intentionally user-safe and carries NO internal detail, so the worker can store
@@ -403,6 +625,10 @@ class ExportLimitExceededException extends RuntimeException {
 
 /** Internal control signal: logout made the job's owner generation invalid. */
 class RevokedExportException extends RuntimeException {
+}
+
+/** The archive would contain no requested source material. */
+class AllExportItemsFailedException extends RuntimeException {
 }
 
 /**
@@ -475,12 +701,13 @@ class LmsExportJobClaimer {
     }
 
     @Transactional
-    public void saveJob(LmsExportJob job) {
+    public boolean saveJob(LmsExportJob job) {
         Optional<LmsExportJob> current = repository.findByIdForUpdate(job.getId());
         if (current.isEmpty() || !ownerId.equals(current.get().getClaimedBy())) {
             log.warn("Ignoring stale LMS export completion: jobId={} owner={}", job.getId(), ownerId);
-            return;
+            return false;
         }
         repository.save(job);
+        return true;
     }
 }
