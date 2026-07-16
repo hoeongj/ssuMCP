@@ -307,3 +307,16 @@
   - 목록은 fail-soft인데 실제 다운로드는 fail-closed여야 하는 이유는?
   - `RuntimeException` 전체가 아니라 외부 connector 예외 계층만 잡은 이유는?
   - 기능 복구를 위해 쿠키 scope를 약화시키지 않은 이유는?
+
+---
+
+## 20. 로그인은 되어 있는데 학사·LMS 에이전트가 계속 재로그인을 요구했다
+
+- **증상 / 배경**: ssuAI 상단에는 provider가 연결된 것으로 보였지만 학사와 LMS 에이전트는 각각 미연결 안내를 반복했고, 실제 `/api/mcp/auth/web-session` 요청에서는 HTTP 500도 관찰됐다.
+- **실제 원인**: 영속 SAINT/LMS credential 복사는 같은 bean의 트랜잭션 메서드를 self-invocation했다. Spring proxy를 우회한 상태에서 JPA 잠금 쿼리가 실행돼 canonical credential이 있으면 500이 발생했다. 반대로 credential이 없으면 provider가 없는 세션을 201로 반환했는데, 응답에 실제 grant가 없어 프론트엔드가 JWT 존재를 연결 성공으로 오인했다.
+- **해결**: `copyForSession()` 전체에 트랜잭션 경계를 두고, 각 credential을 새 opaque owner key로 재암호화한 뒤 실제 복사에 성공한 provider만 `linkedProviders`로 반환한다. persistent Spring 통합 테스트로 호출자 트랜잭션 없이 복사가 성공하는지 검증한다. 상세 기록은 [MCP 웹 세션 credential 복사 트랜잭션 회귀](troubleshooting/mcp-web-session-credential-copy.md)에 남겼다.
+- **포인트**: 웹 신원, 외부 provider credential, MCP 세션 grant는 서로 다른 상태다. 하나의 로그인 표시로 세 상태를 추론하면 만료·배포·부분 장애에서 거짓 연결 상태가 된다.
+- **예상 면접 질문**:
+  - `@Transactional` self-invocation이 JPA 잠금 쿼리에 어떤 문제를 만드는가?
+  - 부분 provider 연결 상태를 API 계약으로 노출해야 하는 이유는?
+  - 기존 credential namespace를 직접 공유하지 않고 복사하는 이유는?

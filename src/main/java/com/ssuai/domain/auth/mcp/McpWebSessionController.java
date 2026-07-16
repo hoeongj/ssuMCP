@@ -1,5 +1,7 @@
 package com.ssuai.domain.auth.mcp;
 
+import java.util.EnumSet;
+
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,9 +25,9 @@ import com.ssuai.global.response.ApiResponse;
  * SAINT JWT or an active library cookie session.
  *
  * <p>POST /api/mcp/auth/web-session
- *   - Links SAINT + LMS when a JWT student ID is present.
- *   - Links LIBRARY if an active library session exists in the HTTP session.
- *   - Returns {mcpSessionId, expiresAt}.
+ *   - Copies and links each currently valid SAINT/LMS credential when a JWT identity is present.
+ *   - Copies and links LIBRARY if an active library session exists in the HTTP session.
+ *   - Returns {mcpSessionId, expiresAt, linkedProviders}.
  *
  * <p>The library is an independent auth provider backed by its own cookie
  *   session. ssuAI chat must keep working for library-only users, including
@@ -74,37 +76,53 @@ public class McpWebSessionController {
 
         McpAuthSession session = mcpAuthService.createSession();
         McpAuthSessionId sessionId = session.id();
-        if (studentId != null
-                && !mcpAuthService.bindOrVerifyOauthSubject(sessionId, studentId)) {
-            mcpAuthService.invalidateSession(sessionId);
-            throw new UnauthorizedException();
+        EnumSet<McpProviderType> linkedProviders = EnumSet.noneOf(McpProviderType.class);
+        String saintOwnerKey = null;
+        String lmsOwnerKey = null;
+        String libraryOwnerKey = null;
+        try {
+            if (studentId != null
+                    && !mcpAuthService.bindOrVerifyOauthSubject(sessionId, studentId)) {
+                throw new UnauthorizedException();
+            }
+
+            // A JWT identifies the web user, but the credential copy is isolated under
+            // this newly issued MCP session. No MCP session links directly to studentId.
+            if (studentId != null) {
+                saintOwnerKey = McpCredentialNamespace.generate();
+                if (saintSessionStore.copyForSession(studentId, saintOwnerKey)) {
+                    mcpAuthService.linkProvider(sessionId, McpProviderType.SAINT, saintOwnerKey);
+                    linkedProviders.add(McpProviderType.SAINT);
+                }
+                lmsOwnerKey = McpCredentialNamespace.generate();
+                if (lmsSessionStore.copyForSession(studentId, lmsOwnerKey)) {
+                    mcpAuthService.linkProvider(sessionId, McpProviderType.LMS, lmsOwnerKey);
+                    linkedProviders.add(McpProviderType.LMS);
+                }
+            }
+
+            // LIBRARY: link only if an active HTTP session with a stored library token exists
+            if (librarySessionKey != null) {
+                libraryOwnerKey = McpCredentialNamespace.generate();
+                if (librarySessionStore.copy(librarySessionKey, libraryOwnerKey)) {
+                    mcpAuthService.linkProvider(
+                            sessionId, McpProviderType.LIBRARY, libraryOwnerKey);
+                    linkedProviders.add(McpProviderType.LIBRARY);
+                    log.debug("web-session: library linked");
+                }
+            }
+        } catch (RuntimeException failure) {
+            cleanupFailedIssuance(
+                    sessionId, saintOwnerKey, lmsOwnerKey, libraryOwnerKey, failure);
+            throw failure;
         }
 
-        // A JWT identifies the web user, but the credential copy is isolated under
-        // this newly issued MCP session. No MCP session links directly to studentId.
-        if (studentId != null) {
-            String saintOwnerKey = McpCredentialNamespace.generate();
-            if (saintSessionStore.copyForSession(studentId, saintOwnerKey)) {
-                mcpAuthService.linkProvider(sessionId, McpProviderType.SAINT, saintOwnerKey);
-            }
-            String lmsOwnerKey = McpCredentialNamespace.generate();
-            if (lmsSessionStore.copyForSession(studentId, lmsOwnerKey)) {
-                mcpAuthService.linkProvider(sessionId, McpProviderType.LMS, lmsOwnerKey);
-            }
-        }
-
-        // LIBRARY: link only if an active HTTP session with a stored library token exists
-        if (librarySessionKey != null) {
-            String libraryOwnerKey = McpCredentialNamespace.generate();
-            if (librarySessionStore.copy(librarySessionKey, libraryOwnerKey)) {
-                mcpAuthService.linkProvider(
-                        sessionId, McpProviderType.LIBRARY, libraryOwnerKey);
-                log.debug("web-session: library linked");
-            }
-        }
-
-        log.debug("web-session: created session={}", sessionId.fingerprint());
-        return ApiResponse.success(new McpWebSessionResponse(sessionId.value(), session.expiresAt()));
+        log.debug(
+                "web-session: created session={} linkedProviders={}",
+                sessionId.fingerprint(),
+                linkedProviders);
+        return ApiResponse.success(new McpWebSessionResponse(
+                sessionId.value(), session.expiresAt(), linkedProviders));
     }
 
     private String activeLibrarySessionKey(HttpServletRequest request) {
@@ -113,5 +131,31 @@ public class McpWebSessionController {
         return librarySessionKeyResolver.resolve(request)
                 .filter(librarySessionStore::has)
                 .orElse(null);
+    }
+
+    private void cleanupFailedIssuance(
+            McpAuthSessionId sessionId,
+            String saintOwnerKey,
+            String lmsOwnerKey,
+            String libraryOwnerKey,
+            RuntimeException failure) {
+        cleanup(() -> mcpAuthService.invalidateSession(sessionId), failure);
+        if (saintOwnerKey != null) {
+            cleanup(() -> saintSessionStore.invalidate(saintOwnerKey), failure);
+        }
+        if (lmsOwnerKey != null) {
+            cleanup(() -> lmsSessionStore.invalidate(lmsOwnerKey), failure);
+        }
+        if (libraryOwnerKey != null) {
+            cleanup(() -> librarySessionStore.invalidate(libraryOwnerKey), failure);
+        }
+    }
+
+    private void cleanup(Runnable action, RuntimeException failure) {
+        try {
+            action.run();
+        } catch (RuntimeException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
     }
 }

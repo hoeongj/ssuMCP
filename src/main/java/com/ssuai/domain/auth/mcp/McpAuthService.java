@@ -92,7 +92,7 @@ public interface McpAuthService {
     /**
      * Links a provider session to the MCP auth session identified by {@code sessionId}.
      * {@code principalKey} is the key used to look up credentials in the provider store
-     * (studentId for SAINT/LMS, library session key for LIBRARY).
+     * (normally an opaque credential-owner namespace; never infer it from web identity).
      */
     void linkProvider(McpAuthSessionId sessionId, McpProviderType provider, String principalKey);
 

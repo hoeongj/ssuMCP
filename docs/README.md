@@ -14,6 +14,7 @@
 | [runbooks/node-capacity.md](runbooks/node-capacity.md) | Node disk emergency cleanup and boot volume expansion (49G→150G) operator runbook |
 | [troubleshooting-highlights.md](troubleshooting-highlights.md) | Incident and design-correction log, including the 2026-06-06 academic policy RAG refresh decision |
 | [troubleshooting/lms-material-metadata-regression.md](troubleshooting/lms-material-metadata-regression.md) | Fixture-reproduced LMS listing/export regression in optional Commons metadata parsing; production cause pending verification |
+| [troubleshooting/mcp-web-session-credential-copy.md](troubleshooting/mcp-web-session-credential-copy.md) | Production web-session 500 and false provider-link state caused by a missing persistent-copy transaction boundary |
 | [audits/2026-07-14-live-tool-hardening.md](audits/2026-07-14-live-tool-hardening.md) | 52-tool live-audit remediation record: scope, fixed contracts, regression evidence, limits, and safe smoke checklist |
 
 ## Historical Records

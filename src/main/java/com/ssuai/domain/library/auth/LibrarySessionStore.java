@@ -128,11 +128,32 @@ public class LibrarySessionStore {
      */
     @Transactional
     public boolean copy(String sourceKey, String targetKey) {
-        Optional<String> source = token(sourceKey);
-        if (source.isEmpty()) {
+        if (sourceKey == null || sourceKey.isBlank()) {
             return false;
         }
-        put(targetKey, source.get());
+        if (targetKey == null || targetKey.isBlank()) {
+            throw new IllegalArgumentException("targetKey is required");
+        }
+        LibrarySessionEntity sourceEntity = repository.findById(sourceKey).orElse(null);
+        if (sourceEntity == null) {
+            return false;
+        }
+        if (sourceEntity.getExpiresAt().isBefore(clock.instant())) {
+            repository.delete(sourceEntity);
+            return false;
+        }
+        Entry source = new Entry(
+                Base64.getDecoder().decode(sourceEntity.getIvB64()),
+                Base64.getDecoder().decode(sourceEntity.getCipherB64()),
+                sourceEntity.getCapturedAt(),
+                sourceEntity.getExpiresAt());
+        Entry copied = encrypt(decrypt(source), source.capturedAt(), source.expiresAt());
+        repository.save(new LibrarySessionEntity(
+                targetKey,
+                Base64.getEncoder().encodeToString(copied.iv()),
+                Base64.getEncoder().encodeToString(copied.ciphertext()),
+                copied.capturedAt(),
+                copied.expiresAt()));
         return true;
     }
 
@@ -168,10 +189,14 @@ public class LibrarySessionStore {
     }
 
     private Entry encrypt(String token, Instant capturedAt) {
+        return encrypt(token, capturedAt, capturedAt.plus(properties.getTtl()));
+    }
+
+    private Entry encrypt(String token, Instant capturedAt, Instant expiresAt) {
         byte[] iv = new byte[GCM_IV_BYTES];
         secureRandom.nextBytes(iv);
         byte[] ciphertext = runCipher(Cipher.ENCRYPT_MODE, aesKey, iv, token.getBytes(StandardCharsets.UTF_8));
-        return new Entry(iv, ciphertext, capturedAt, capturedAt.plus(properties.getTtl()));
+        return new Entry(iv, ciphertext, capturedAt, expiresAt);
     }
 
     private String decrypt(Entry entry) {

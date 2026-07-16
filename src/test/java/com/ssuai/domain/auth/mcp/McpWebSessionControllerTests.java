@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -74,7 +75,8 @@ class McpWebSessionControllerTests {
                         .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"))
+                .andExpect(jsonPath("$.data.linkedProviders", containsInAnyOrder("SAINT", "LMS")));
 
         verify(mcpAuthService).createSession();
         verify(mcpAuthService).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), anyString());
@@ -97,7 +99,10 @@ class McpWebSessionControllerTests {
                         .session(mockSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"))
+                .andExpect(jsonPath(
+                        "$.data.linkedProviders",
+                        containsInAnyOrder("SAINT", "LMS", "LIBRARY")));
 
         verify(mcpAuthService).createSession();
         verify(mcpAuthService).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), anyString());
@@ -119,7 +124,8 @@ class McpWebSessionControllerTests {
                         .session(mockSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"))
+                .andExpect(jsonPath("$.data.linkedProviders[0]").value("LIBRARY"));
 
         verify(mcpAuthService).createSession();
         verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), any());
@@ -140,7 +146,8 @@ class McpWebSessionControllerTests {
                         .cookie(new Cookie("ssuai_library_session", "cookie-session-key")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"));
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"))
+                .andExpect(jsonPath("$.data.linkedProviders[0]").value("LIBRARY"));
 
         verify(mcpAuthService).createSession();
         verify(mcpAuthService, never()).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), any());
@@ -155,6 +162,94 @@ class McpWebSessionControllerTests {
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
 
         verifyNoInteractions(mcpAuthService);
+    }
+
+    @Test
+    void create_reportsActualProviderCopiesInsteadOfInferringThemFromJwt() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(saintSessionStore.copyForSession(anyString(), anyString())).thenReturn(false);
+        when(lmsSessionStore.copyForSession(anyString(), anyString())).thenReturn(true);
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.linkedProviders.length()").value(1))
+                .andExpect(jsonPath("$.data.linkedProviders[0]").value("LMS"));
+
+        verify(mcpAuthService, never()).linkProvider(
+                eq(sessionId), eq(McpProviderType.SAINT), anyString());
+        verify(mcpAuthService).linkProvider(
+                eq(sessionId), eq(McpProviderType.LMS), anyString());
+    }
+
+    @Test
+    void create_withJwtButNoCanonicalCredentials_reportsEmptyProviderSet() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(saintSessionStore.copyForSession(anyString(), anyString())).thenReturn(false);
+        when(lmsSessionStore.copyForSession(anyString(), anyString())).thenReturn(false);
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.linkedProviders").isEmpty());
+
+        verify(mcpAuthService, never()).linkProvider(
+                eq(sessionId), eq(McpProviderType.SAINT), anyString());
+        verify(mcpAuthService, never()).linkProvider(
+                eq(sessionId), eq(McpProviderType.LMS), anyString());
+    }
+
+    @Test
+    void create_whenLaterCredentialCopyFails_compensatesSessionAndCopies() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(lmsSessionStore.copyForSession(anyString(), anyString()))
+                .thenThrow(new IllegalStateException("persistent copy failed"));
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isInternalServerError());
+
+        verify(mcpAuthService).invalidateSession(sessionId);
+        verify(saintSessionStore).invalidate(anyString());
+        verify(lmsSessionStore).invalidate(anyString());
+        verify(librarySessionStore, never()).invalidate(anyString());
+    }
+
+    @Test
+    void create_whenOauthSubjectBindingIsRejected_compensatesCreatedSession() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(mcpAuthService.bindOrVerifyOauthSubject(sessionId, "20241234")).thenReturn(false);
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isUnauthorized());
+
+        verify(mcpAuthService).invalidateSession(sessionId);
+        verifyNoInteractions(saintSessionStore, lmsSessionStore);
+    }
+
+    @Test
+    void create_whenOauthSubjectBindingFails_compensatesCreatedSession() throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        when(mcpAuthService.bindOrVerifyOauthSubject(sessionId, "20241234"))
+                .thenThrow(new IllegalStateException("subject store unavailable"));
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isInternalServerError());
+
+        verify(mcpAuthService).invalidateSession(sessionId);
+        verifyNoInteractions(saintSessionStore, lmsSessionStore);
     }
 
     private McpAuthSession session(String id) {

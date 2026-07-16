@@ -22,6 +22,7 @@ import com.ssuai.domain.auth.mcp.McpProviderHealth;
 class SaintPersistentSessionStoreIntegrationTests {
 
     @Autowired private SaintSessionRepository repository;
+    @Autowired private SaintSessionStore persistentStore;
     @Autowired private PlatformTransactionManager transactionManager;
 
     private TransactionTemplate transactions;
@@ -59,6 +60,49 @@ class SaintPersistentSessionStoreIntegrationTests {
         java.util.Optional<SaintSessionStore.SaintProviderSession> afterLogout =
                 transactions.execute(ignored -> toolPod.session("credential-a"));
         assertThat(afterLogout).isEmpty();
+    }
+
+    @Test
+    void webSessionCredentialCopyOwnsItsPersistentTransaction() {
+        persistentStore.putForSession(
+                "web-owner", "upstream-user", new PortalCookies("rusaint-state-json"));
+        persistentStore.withSession("web-owner", session -> null);
+
+        assertThat(persistentStore.copyForSession("web-owner", "mcp-owner")).isTrue();
+
+        SaintSessionStore.SaintProviderSession copied =
+                persistentStore.session("mcp-owner").orElseThrow();
+        assertThat(copied.studentId()).isEqualTo("upstream-user");
+        assertThat(copied.cookies().sessionJson()).isEqualTo("rusaint-state-json");
+
+        SaintSessionEntity source = repository.findById("web-owner").orElseThrow();
+        SaintSessionEntity target = repository.findById("mcp-owner").orElseThrow();
+        assertThat(target.getCapturedAt()).isEqualTo(source.getCapturedAt());
+        assertThat(target.getExpiresAt()).isEqualTo(source.getExpiresAt());
+        assertThat(target.getHealth()).isEqualTo(source.getHealth());
+        assertThat(target.getHealth()).isEqualTo(McpProviderHealth.VALID.name());
+    }
+
+    @Test
+    void expiredProviderHealthIsNotCopiedIntoNewWebSession() {
+        persistentStore.putForSession(
+                "web-owner", "upstream-user", new PortalCookies("rusaint-state-json"));
+        SaintSessionEntity source = repository.findById("web-owner").orElseThrow();
+        source.updateCredential(
+                source.getCookieIvB64(),
+                source.getCookieCipherB64(),
+                source.getCapturedAt(),
+                source.getExpiresAt(),
+                source.getCredentialVersion(),
+                McpProviderHealth.EXPIRED.name(),
+                source.getLastValidatedAt(),
+                source.getLastSuccessfulCallAt(),
+                source.getLastFailureAt(),
+                "UPSTREAM_SESSION_EXPIRED");
+        repository.save(source);
+
+        assertThat(persistentStore.copyForSession("web-owner", "mcp-owner")).isFalse();
+        assertThat(repository.findById("mcp-owner")).isEmpty();
     }
 
     private static SaintSessionProperties properties() {

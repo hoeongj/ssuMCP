@@ -182,17 +182,69 @@ public class SaintSessionStore {
      * Creates an independently encrypted credential namespace for a newly issued MCP
      * session. The plaintext exists only inside this method and neither key is logged.
      */
+    @Transactional
     public boolean copyForSession(String sourceKey, String targetSessionKey) {
         if (targetSessionKey == null || targetSessionKey.isBlank()) {
             throw new IllegalArgumentException("targetSessionKey is required");
         }
-        Optional<SaintProviderSession> source = session(sourceKey);
-        if (source.isEmpty()) {
-            return false;
+        if (repository != null) {
+            SaintSessionEntity sourceEntity = repository.findById(sourceKey).orElse(null);
+            if (sourceEntity == null) {
+                return false;
+            }
+            SaintSessionEntry source = toEntry(sourceEntity);
+            if (!copyable(source)) {
+                if (source.expiresAt().isBefore(clock.instant())) {
+                    repository.delete(sourceEntity);
+                }
+                return false;
+            }
+            SaintSessionEntry copied = reencrypt(source);
+            EncryptedValue principal = encryptValue(source.studentId());
+            SaintSessionEntity target = repository.findForUpdate(targetSessionKey).orElse(null);
+            if (target == null) {
+                target = new SaintSessionEntity(
+                        targetSessionKey,
+                        encode(principal.iv()),
+                        encode(principal.ciphertext()),
+                        encode(copied.iv()),
+                        encode(copied.ciphertext()),
+                        copied.capturedAt(),
+                        copied.expiresAt(),
+                        copied.credentialVersion(),
+                        copied.health().health().name(),
+                        copied.health().lastValidatedAt(),
+                        copied.health().lastSuccessfulCallAt(),
+                        copied.health().lastFailureAt(),
+                        copied.health().failureCode());
+            } else {
+                target.updatePrincipal(encode(principal.iv()), encode(principal.ciphertext()));
+                target.updateCredential(
+                        encode(copied.iv()),
+                        encode(copied.ciphertext()),
+                        copied.capturedAt(),
+                        copied.expiresAt(),
+                        copied.credentialVersion(),
+                        copied.health().health().name(),
+                        copied.health().lastValidatedAt(),
+                        copied.health().lastSuccessfulCallAt(),
+                        copied.health().lastFailureAt(),
+                        copied.health().failureCode());
+            }
+            repository.save(target);
+            return true;
         }
-        SaintProviderSession credential = source.get();
-        putForSession(targetSessionKey, credential.studentId(), credential.cookies());
-        return true;
+        synchronized (entries) {
+            SaintSessionEntry source = entries.get(sourceKey);
+            if (source == null || !copyable(source)) {
+                if (source != null && source.expiresAt().isBefore(clock.instant())) {
+                    entries.remove(sourceKey);
+                }
+                return false;
+            }
+            entries.put(targetSessionKey, reencrypt(source));
+            return true;
+        }
     }
 
     @Transactional
@@ -438,6 +490,28 @@ public class SaintSessionStore {
         return new SaintSessionEntry(
                 iv, ciphertext, studentId, capturedAt, capturedAt.plus(properties.getTtl()),
                 credentialVersion, McpProviderHealthSnapshot.unknown(credentialVersion));
+    }
+
+    private SaintSessionEntry reencrypt(SaintSessionEntry source) {
+        byte[] iv = new byte[GCM_IV_BYTES];
+        secureRandom.nextBytes(iv);
+        byte[] ciphertext = runCipher(
+                Cipher.ENCRYPT_MODE,
+                iv,
+                decrypt(source).getBytes(StandardCharsets.UTF_8));
+        return new SaintSessionEntry(
+                iv,
+                ciphertext,
+                source.studentId(),
+                source.capturedAt(),
+                source.expiresAt(),
+                source.credentialVersion(),
+                source.health());
+    }
+
+    private boolean copyable(SaintSessionEntry source) {
+        return !source.expiresAt().isBefore(clock.instant())
+                && source.health().health() != McpProviderHealth.EXPIRED;
     }
 
     private String decrypt(SaintSessionEntry entry) {
