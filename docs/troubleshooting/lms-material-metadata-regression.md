@@ -5,7 +5,7 @@
 | 관찰일 | 2026-07-16 |
 | 영향 기능 | `get_my_lms_courses`, `get_my_lms_materials`, `export_all_lms_materials` 준비 단계 |
 | 사용자 증상 | LMS 재로그인은 성공하지만 `외부 서비스 응답 파싱 오류`로 자료 목록과 ZIP 생성을 시작하지 못함 |
-| 상태 | fixture로 재현한 회귀 수정 및 로컬 검증 완료, 운영 원인·배포 검증 대기 |
+| 상태 | fixture로 재현한 회귀 수정·운영 배포 완료, 실제 계정 종단 재검증 대기 |
 | 관련 결정 | [ADR 0044](../adr/0044-lms-file-size-head-correction.md) |
 
 ## 기대 동작과 실제 동작
@@ -82,14 +82,26 @@ Commons `<content>` XML이 문법상 유효하지만 다운로드 URI가 없는 
   `<content>` XML의 capability 부재만 개별 항목 제외로 처리한다.
 - 실제 학교 endpoint를 테스트에서 호출하지 않고 MockWebServer fixture로 실패를 고정한다.
 
+### 전달과 운영 배포
+
+수정은 PR #220의 `11551e0`으로 main에 fast-forward했다. PR의 Gradle·JaCoCo와 gitleaks가
+성공했고, main CI `29474271476`도 backend gate 뒤 AMD64/ARM64 이미지를 발행했다. Image
+Updater가 `a6a7215`에서 chart를 `sha-11551e0...`으로 갱신했다. 이어서 배포된 PR #221의
+`sha-479fa53...` 이미지도 이 LMS 커밋을 포함하며, 공개 health·readiness와 새 MCP server card,
+비로그인 층별 좌석 MCP 호출이 운영 Pod에서 HTTP 200인 것을 확인했다.
+
+개인 LMS 계정의 term 46 course list → export prepare → ZIP READY는 이 검증에 포함하지 않았다.
+따라서 코드 fixture의 회귀 수정과 운영 전달은 완료됐지만, 사용자가 처음 본 오류의 정확한 live
+단계와 종단 복구는 같은 계정 흐름을 다시 실행한 뒤 확정한다.
+
 ## 남은 위험
 
 Commons 자체가 실제 다운로드 시점에도 인증 HTML을 반환하면 ZIP worker는 예외로 실패한다.
 반면 metadata가 유효하지만 capability가 없는 개별 항목은 제외된 부분 ZIP이 만들어질 수 있다.
 HEAD provider가 광범위하게 실패하면 파일별 `null`로 계속 진행하므로 metadata GET + HEAD
 fan-out은 남는다.
-이번 수정은 자료 목록과 export 준비를 보조 크기 조회 때문에 잃는 회귀만 닫는다. 운영 배포 후
-실제 계정으로 목록 조회, export job 생성, ZIP 완료까지 확인해야 한다.
+이번 수정은 자료 목록과 export 준비를 보조 크기 조회 때문에 잃는 회귀만 닫는다. 배포된
+운영 코드에서 실제 계정으로 목록 조회, export job 생성, ZIP 완료까지 확인해야 한다.
 
 ## 예상 면접 질문
 
