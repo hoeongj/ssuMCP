@@ -60,6 +60,18 @@ public class McpProviderCredentialService {
         };
     }
 
+    /** True only while the linked credential record still exists and is usable. */
+    public boolean isAvailable(McpProviderLink link) {
+        if (link == null || health(link).health() == McpProviderHealth.EXPIRED) {
+            return false;
+        }
+        return switch (link.provider()) {
+            case SAINT -> saintSessions.session(link.principalKey()).isPresent();
+            case LMS -> lmsSessions.session(link.principalKey()).isPresent();
+            case LIBRARY -> librarySessions.has(link.principalKey());
+        };
+    }
+
     private static McpProviderHealthSnapshot expired(String failureCode) {
         return new McpProviderHealthSnapshot(
                 McpProviderHealth.EXPIRED, null, null, null, failureCode, 0);

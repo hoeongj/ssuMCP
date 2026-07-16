@@ -138,6 +138,39 @@ class LibrarySessionStoreTests {
     }
 
     @Test
+    void copyPreservesSourceCaptureAndExpiryInsteadOfRenewingTtl() {
+        LibrarySessionProperties props = properties(Duration.ofMinutes(30));
+        props.setEncryptionKey("0123456789abcdef0123456789abcde!");
+        LibrarySessionStore sourceStore = new LibrarySessionStore(
+                repository, props, Clock.fixed(T0, ZoneOffset.UTC));
+        sourceStore.put("session-a", "ssotoken-aaaaaa");
+        LibrarySessionStore copyStore = new LibrarySessionStore(
+                repository, props, Clock.fixed(T0.plus(Duration.ofMinutes(20)), ZoneOffset.UTC));
+
+        assertThat(copyStore.copy("session-a", "mcp-owner")).isTrue();
+
+        LibrarySessionEntity source = repository.findById("session-a").orElseThrow();
+        LibrarySessionEntity target = repository.findById("mcp-owner").orElseThrow();
+        assertThat(target.getCapturedAt()).isEqualTo(source.getCapturedAt());
+        assertThat(target.getExpiresAt()).isEqualTo(source.getExpiresAt());
+        assertThat(copyStore.token("mcp-owner")).hasValue("ssotoken-aaaaaa");
+    }
+
+    @Test
+    void copyRejectsExpiredSource() {
+        LibrarySessionProperties props = properties(Duration.ofMinutes(30));
+        props.setEncryptionKey("0123456789abcdef0123456789abcde!");
+        new LibrarySessionStore(repository, props, Clock.fixed(T0, ZoneOffset.UTC))
+                .put("session-a", "ssotoken-aaaaaa");
+        LibrarySessionStore expiredStore = new LibrarySessionStore(
+                repository, props, Clock.fixed(T0.plus(Duration.ofMinutes(31)), ZoneOffset.UTC));
+
+        assertThat(expiredStore.copy("session-a", "mcp-owner")).isFalse();
+        assertThat(repository.findById("session-a")).isEmpty();
+        assertThat(repository.findById("mcp-owner")).isEmpty();
+    }
+
+    @Test
     void cleanupExpiredSessionsDeletesExpiredRows() {
         MutableClock clock = new MutableClock(T0);
         LibrarySessionStore store = new LibrarySessionStore(repository, properties(Duration.ofMinutes(30)), clock);

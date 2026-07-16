@@ -170,17 +170,73 @@ public class LmsSessionStore {
     }
 
     /** Creates an independently encrypted credential namespace owned by a new MCP session. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean copyForSession(String sourceKey, String targetSessionKey) {
         if (targetSessionKey == null || targetSessionKey.isBlank()) {
             throw new IllegalArgumentException("targetSessionKey is required");
         }
-        Optional<LmsProviderSession> source = session(sourceKey);
-        if (source.isEmpty()) {
-            return false;
+        if (repository != null) {
+            LmsSessionEntity sourceEntity = repository.findById(sourceKey).orElse(null);
+            if (sourceEntity == null) {
+                return false;
+            }
+            LmsSessionEntry source;
+            try {
+                source = toEntry(sourceEntity);
+                LmsCookieJar.fromSerialized(decrypt(source));
+            } catch (IllegalArgumentException exception) {
+                repository.delete(sourceEntity);
+                return false;
+            }
+            if (!copyable(source)) {
+                if (source.expiresAt().isBefore(clock.instant())) {
+                    repository.delete(sourceEntity);
+                }
+                return false;
+            }
+            LmsSessionEntry copied = reencrypt(source);
+            EncryptedValue principal = encryptValue(source.studentId());
+            LmsSessionEntity target = repository.findForUpdate(targetSessionKey).orElse(null);
+            if (target == null) {
+                target = new LmsSessionEntity(
+                        targetSessionKey,
+                        encode(principal.iv()),
+                        encode(principal.ciphertext()),
+                        encode(copied.iv()),
+                        encode(copied.ciphertext()),
+                        copied.capturedAt(),
+                        copied.expiresAt(),
+                        copied.credentialVersion(),
+                        serializeCookieVersions(copied.cookieVersions()),
+                        copied.health().health().name(),
+                        copied.health().lastValidatedAt(),
+                        copied.health().lastSuccessfulCallAt(),
+                        copied.health().lastFailureAt(),
+                        copied.health().failureCode());
+            } else {
+                target.updatePrincipal(encode(principal.iv()), encode(principal.ciphertext()));
+                updatePersistent(target, copied);
+            }
+            repository.save(target);
+            return true;
         }
-        LmsProviderSession credential = source.get();
-        putForSession(targetSessionKey, credential.studentId(), credential.cookies());
-        return true;
+        synchronized (entries) {
+            LmsSessionEntry source = entries.get(sourceKey);
+            if (source == null || !copyable(source)) {
+                if (source != null && source.expiresAt().isBefore(clock.instant())) {
+                    entries.remove(sourceKey);
+                }
+                return false;
+            }
+            try {
+                LmsCookieJar.fromSerialized(decrypt(source));
+            } catch (IllegalArgumentException exception) {
+                entries.remove(sourceKey);
+                return false;
+            }
+            entries.put(targetSessionKey, reencrypt(source));
+            return true;
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -500,6 +556,29 @@ public class LmsSessionStore {
                 iv, ciphertext, studentId, capturedAt, capturedAt.plus(properties.getTtl()),
                 credentialVersion, cookieVersions,
                 McpProviderHealthSnapshot.unknown(credentialVersion));
+    }
+
+    private LmsSessionEntry reencrypt(LmsSessionEntry source) {
+        byte[] iv = new byte[GCM_IV_BYTES];
+        secureRandom.nextBytes(iv);
+        byte[] ciphertext = runCipher(
+                Cipher.ENCRYPT_MODE,
+                iv,
+                decrypt(source).getBytes(StandardCharsets.UTF_8));
+        return new LmsSessionEntry(
+                iv,
+                ciphertext,
+                source.studentId(),
+                source.capturedAt(),
+                source.expiresAt(),
+                source.credentialVersion(),
+                source.cookieVersions(),
+                source.health());
+    }
+
+    private boolean copyable(LmsSessionEntry source) {
+        return !source.expiresAt().isBefore(clock.instant())
+                && source.health().health() != McpProviderHealth.EXPIRED;
     }
 
     private String decrypt(LmsSessionEntry entry) {

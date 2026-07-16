@@ -20,6 +20,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.ssuai.domain.auth.mcp.McpProviderHealth;
+
 @SpringBootTest
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -105,6 +107,50 @@ class LmsPersistentSessionStoreIntegrationTests {
 
         assertThat(persistentStore.cookies("credential-a").orElseThrow().rawCookieHeader())
                 .contains("route=rotated");
+    }
+
+    @Test
+    void webSessionCredentialCopyOwnsItsPersistentTransaction() {
+        persistentStore.putForSession(
+                "web-owner", "upstream-user", new LmsCookies("xn_api_token=one; route=a"));
+        persistentStore.withSession("web-owner", session -> null);
+
+        assertThat(persistentStore.copyForSession("web-owner", "mcp-owner")).isTrue();
+
+        LmsSessionStore.LmsProviderSession copied =
+                persistentStore.session("mcp-owner").orElseThrow();
+        assertThat(copied.studentId()).isEqualTo("upstream-user");
+        assertThat(copied.cookies().rawCookieHeader()).contains("xn_api_token=one", "route=a");
+
+        LmsSessionEntity source = repository.findById("web-owner").orElseThrow();
+        LmsSessionEntity target = repository.findById("mcp-owner").orElseThrow();
+        assertThat(target.getCapturedAt()).isEqualTo(source.getCapturedAt());
+        assertThat(target.getExpiresAt()).isEqualTo(source.getExpiresAt());
+        assertThat(target.getHealth()).isEqualTo(source.getHealth());
+        assertThat(target.getHealth()).isEqualTo(McpProviderHealth.VALID.name());
+    }
+
+    @Test
+    void expiredProviderHealthIsNotCopiedIntoNewWebSession() {
+        persistentStore.putForSession(
+                "web-owner", "upstream-user", new LmsCookies("xn_api_token=one; route=a"));
+        LmsSessionEntity source = repository.findById("web-owner").orElseThrow();
+        source.updateCredential(
+                source.getCookieIvB64(),
+                source.getCookieCipherB64(),
+                source.getCapturedAt(),
+                source.getExpiresAt(),
+                source.getCredentialVersion(),
+                source.getCookieVersions(),
+                McpProviderHealth.EXPIRED.name(),
+                source.getLastValidatedAt(),
+                source.getLastSuccessfulCallAt(),
+                source.getLastFailureAt(),
+                "UPSTREAM_SESSION_EXPIRED");
+        repository.save(source);
+
+        assertThat(persistentStore.copyForSession("web-owner", "mcp-owner")).isFalse();
+        assertThat(repository.findById("mcp-owner")).isEmpty();
     }
 
     private static void await(CountDownLatch latch) {
