@@ -24,7 +24,10 @@ Connect it to Claude Desktop and requests like *"What's on the cafeteria menu to
 
 ## ChatGPT + ssuMCP in Action
 
-In a real ChatGPT session connected to ssuMCP, the client retrieved personal academic data and completed a library-seat reservation that required confirmation. These screenshots document successful integration cases without repeating personal values or session details in the surrounding prose.
+In real ChatGPT sessions connected to ssuMCP, the client retrieved personal academic data, completed a
+library-seat reservation that required confirmation, and exported supported LMS course materials. These
+screenshots document successful integration cases without repeating personal values or session details in
+the surrounding prose.
 
 **u-SAINT graduation evaluation — summarizing the remaining requirements**
 
@@ -34,7 +37,19 @@ In a real ChatGPT session connected to ssuMCP, the client retrieved personal aca
 
 ![ChatGPT uses ssuMCP tools to find an available corner seat and return the completed library reservation in Korean](docs/assets/chatgpt-library-seat-reservation.png)
 
-The OAuth session boundary and ChatGPT MCP connection are recorded in [ADR 0038](docs/adr/0038-chatgpt-mcp-oauth-auth0-dcr.md); the two-step confirmation contract for write tools is recorded in [ADR 0086](docs/adr/0086-confirm-action-async-and-scoped-supersede.md).
+**LMS course-material export — collecting supported files across all courses into a ZIP download**
+
+![ChatGPT uses ssuMCP to prepare a ZIP of supported non-video materials across the user's LMS courses and return a download link in Korean](docs/assets/chatgpt-lms-export-ready.png)
+
+![The browser download page for the LMS course-material ZIP prepared by ssuMCP](docs/assets/chatgpt-lms-download.png)
+
+The OAuth session boundary and ChatGPT MCP connection are recorded in
+[ADR 0038](docs/adr/0038-chatgpt-mcp-oauth-auth0-dcr.md); the two-step confirmation contract for write tools
+is recorded in [ADR 0086](docs/adr/0086-confirm-action-async-and-scoped-supersede.md). The LMS export bundles
+supported files while excluding video and audio. Its asynchronous ZIP build and download authorization follow
+[ADR 0033](docs/adr/0033-lms-material-zip-export.md), all-course collection follows
+[ADR 0035](docs/adr/0035-lms-export-all-materials.md), and the download token is consumed once as defined in
+[ADR 0067](docs/adr/0067-lms-single-use-download-token.md).
 
 ---
 
