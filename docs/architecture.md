@@ -1,7 +1,7 @@
 # ssuMCP 아키텍처
 
 > 패키지명은 `com.ssuai` 로 유지 (ssuAI 모노레포에서 분리됨, 리네임 예정 없음).
-> 현재 아키텍처 스냅샷 기준일: 2026-06-21 (ssuAgent + Redis/EPIC 4·5 출시 반영). 과거 설계 결정은 `docs/adr/`에 보존됨.
+> 현재 아키텍처 스냅샷 기준일: 2026-07-17 (2–3 pod HA, Kafka event backbone, GitOps 운영 반영). 과거 설계 결정은 `docs/adr/`에 보존됨.
 
 ## 이 문서의 목적
 
@@ -10,6 +10,14 @@ ssuMCP가 어떻게 구성되어 있는지 한눈에 파악할 수 있는 단일
 ## 비목표
 
 이 문서는 출시된 서버 경계와 action 레이어를 설명한다. 상세한 도구 인자는 `docs/mcp-tools.md`에, 보안 규칙은 `docs/security.md`에, 배포 운영은 `deploy/README.md`에 있다.
+
+---
+
+## 전체 구성
+
+![ssuMCP 서비스·운영 아키텍처](assets/architecture.svg)
+
+[PNG 버전](assets/architecture.png)
 
 ---
 
@@ -53,6 +61,7 @@ flowchart TD
         subgraph Storage["저장소"]
             PG[(Postgres + Flyway)]
             REDIS[(Redis · EPIC 4/5)]
+            KAFKA[(Kafka · durable events)]
         end
     end
 
@@ -82,6 +91,7 @@ flowchart TD
     SVC --> CONN
     SVC --> PG
     SVC -->|EPIC 4/5| REDIS
+    SVC -->|tool + intent events| KAFKA
     CONN --> Resilience
     Resilience --> PYXIS
     CONN --> SAINT
@@ -116,7 +126,8 @@ flowchart LR
 
     subgraph LocalState["상태 저장소"]
         DB[(Postgres + Flyway)]
-        MEM[(인프로세스 캐시·세션)]
+        REDIS[(Redis · cache/locks/limits)]
+        KAFKA[(Kafka · durable events)]
     end
 
     subgraph School["숭실대 시스템"]
@@ -134,7 +145,8 @@ flowchart LR
     SVC --> REPO
     SVC --> CONN
     REPO --> DB
-    SVC --> MEM
+    SVC --> REDIS
+    SVC --> KAFKA
     CONN --> MEAL
     CONN --> LIB
     CONN --> LMS
@@ -152,16 +164,16 @@ flowchart LR
 
 ## 2. 런타임 토폴로지
 
-배포된 백엔드는 **하나의 Spring Boot 프로세스**다. 다음 두 가지를 노출한다:
+각 ssuMCP pod는 **하나의 Spring Boot 프로세스**로 다음 두 표면을 함께 노출한다. 프로덕션은 기본 2개 replica로 실행하고 CPU HPA가 최대 3개까지 확장한다(ADR 0088).
 
 - 웹 대시보드와 챗봇 UI를 위한 REST API.
 - 외부 클라이언트를 위한 MCP 서버 (Spring AI Streamable HTTP `/mcp`).
 
-두 표면은 **동일한 Service 레이어**, 동일한 커넥터, 동일한 인프로세스 캐시·세션 스토어와 JPA 설정을 공유한다. REST와 MCP 사이에 중복된 커넥터 로직이 없다.
+두 표면은 **동일한 Service 레이어**, 커넥터, repository, cache·session 정책을 공유한다. REST와 MCP 사이에 중복된 비즈니스 로직이 없다. PostgreSQL은 durable source of truth이고 Redis는 cache·lock·rate-limit·rollback pub/sub, Kafka는 영속 event fan-out을 담당한다.
 
 ```
 ┌────────────────────────────────────────────┐
-│  ssuMCP Spring Boot 애플리케이션 (단일 JVM)  │
+│  ssuMCP pod (Spring Boot, pod당 단일 JVM)     │
 │                                            │
 │   ┌───────────┐         ┌──────────────┐   │
 │   │ REST API  │         │  MCP 서버    │   │
@@ -175,11 +187,11 @@ flowchart LR
 │  저장소                       커넥터         │
 └───────┬──────────────────────────┬─────────┘
         ▼                          ▼
-   JPA/H2 기본값             외부 학교 시스템
-   + 인프로세스 상태
+ JPA/PostgreSQL              외부 학교 시스템
+ Redis · Kafka
 ```
 
-**지금 단일 프로세스인 이유:** 단일 배포 단위, 단일 설정 표면, 중복 없는 비즈니스 로직, Spring AI MCP 서버 지원을 바로 활용 가능. 부하나 독립 릴리즈 주기가 필요해지면 MCP 서버를 별도 프로세스로 분리할 수 있다 — 단, 실제 이유가 생긴 이후에만.
+**pod 안에서 단일 프로세스인 이유:** REST와 MCP가 같은 도메인 규칙과 transaction을 사용하므로 하나의 배포 단위와 설정 표면이 중복을 줄인다. scale-out은 이 프로세스를 복제하고 PostgreSQL·Redis·Kafka가 pod 간 상태와 이벤트를 조정한다. 두 adapter를 별도 서비스로 분리하는 것은 독립 부하나 릴리즈 주기가 실제로 생길 때 검토한다.
 
 ---
 

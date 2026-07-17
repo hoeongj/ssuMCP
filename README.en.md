@@ -195,29 +195,13 @@ Authentication flow:
 
 The system consists of three services:
 
-```
-User's browser
-    │ HTTPS
-    ▼
-ssuAI (Next.js · Vercel)               Claude Desktop / Cursor / IDE
-    │ SSE stream (chatbot)                     │ MCP protocol
-    │ REST /api/* (dashboard)                  │
-    ▼                                          ▼
-ssuAgent (Python · LangGraph · k3s)      ssuMCP (Spring Boot 4 · k3s)
-    │ NL intent detection, tool choice     MCP server /mcp
-    │ HITL interrupt management            REST API /api/*
-    └──────── MCP tools/call ──────────►  Service Layer
-                                          Connectors (fault-tolerant)
-                                              │
-                                  ┌───────────┼───────────┐
-                                  ▼           ▼           ▼
-                               Pyxis        LMS        u-SAINT
-                             (library)   (learningx)  (rusaint FFI)
-```
+![ssuMCP service and production architecture showing the shared service layer, state stores, university connectors, GitOps, and observability](docs/assets/architecture.svg)
 
 `ssuMCP` is the MCP tool server — atomic domain tools, direct integration with the university's systems, fault tolerance, and action auditing. `ssuAgent` is the LangGraph orchestrator — natural-language intent detection, tool composition, and HITL interrupts. The two services communicate only through the MCP protocol, so each deploys independently.
 
 The REST and MCP paths share the same Service layer; MCP tools carry no business logic of their own.
+
+See the [detailed architecture document](docs/architecture.md) for runtime, data, and delivery boundaries. A [PNG version](docs/assets/architecture.png) is also available.
 
 Questions about academic regulations, graduation, and scholarships are handled by **hybrid search** with official-source traceability — keyword lexical scores and embedding cosine similarity fused via **RRF (Reciprocal Rank Fusion)**. Embeddings are persisted (base64 float32) in the `academic_embeddings` table keyed by `(chunk_hash, model)`, so pod restarts and periodic refreshes never re-consume the free-tier daily embedding quota (only not-yet-embedded chunks get embedded). If embeddings are disabled or fail, search automatically degrades to lexical-only, surfaced through the `embeddingUsed` (rrf/lexical) response field (ADR 0020). After server startup and on periodic refresh,
 the source documents are fetched from `rule.ssu.ac.kr` and `ssu.ac.kr` to update the corpus, and tool responses include

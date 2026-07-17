@@ -205,29 +205,13 @@ npx ssumcp
 
 전체 시스템은 3개의 서비스로 구성된다:
 
-```
-사용자 브라우저
-    │ HTTPS
-    ▼
-ssuAI (Next.js · Vercel)               Claude Desktop / Cursor / IDE
-    │ SSE 스트림 (챗봇)                        │ MCP 프로토콜
-    │ REST /api/* (대시보드)                    │
-    ▼                                          ▼
-ssuAgent (Python · LangGraph · k3s)      ssuMCP (Spring Boot 4 · k3s)
-    │ 자연어 파악, 도구 선택                MCP 서버 /mcp
-    │ HITL 인터럽트 관리                    REST API /api/*
-    └──────── MCP tools/call ──────────►  Service Layer
-                                          Connectors (fault-tolerant)
-                                              │
-                                  ┌───────────┼───────────┐
-                                  ▼           ▼           ▼
-                               Pyxis        LMS        u-SAINT
-                             (도서관)    (learningx)  (rusaint FFI)
-```
+![ssuMCP 서비스·운영 아키텍처 — 공유 Service 계층, 상태 저장소, 학교 커넥터, GitOps와 관측성](docs/assets/architecture.svg)
 
 `ssuMCP`는 MCP tool server다 — 원자적 도메인 도구, 학교 시스템 직접 연동, fault tolerance, action 감사를 담당한다. `ssuAgent`는 LangGraph orchestrator로 자연어 의도 파악, 도구 조합, HITL 인터럽트를 담당한다. 두 서비스는 MCP 프로토콜로만 연결되어 독립 배포가 가능하다.
 
 REST와 MCP 두 경로는 동일한 Service 레이어를 공유한다. MCP 도구가 별도 비즈니스 로직을 갖지 않는다.
+
+런타임·데이터·배포 경계는 [상세 아키텍처 문서](docs/architecture.md)에 정리했다. 이미지의 [PNG 버전](docs/assets/architecture.png)도 함께 제공한다.
 
 학칙·졸업·장학 질문은 공식 출처 추적형 **하이브리드 검색**으로 처리한다 — 키워드 lexical 스코어와 임베딩 코사인 유사도를 **RRF(Reciprocal Rank Fusion)**로 융합한다. 임베딩은 `(chunk_hash, model)` 키로 `academic_embeddings` 테이블에 영속화(base64 float32)되어, pod 재시작·주기 갱신이 무료 티어 일일 임베딩 쿼터를 재소진하지 않는다(미임베딩 청크만 새로 임베딩). 임베딩이 비활성/실패하면 lexical 전용으로 자동 강등하며, 응답의 `embeddingUsed`(rrf/lexical) 필드로 노출한다(ADR 0020). 서버 시작 후와 주기 갱신 시
 `rule.ssu.ac.kr` 및 `ssu.ac.kr` 원문을 가져와 corpus를 갱신하고, 도구 응답에는
