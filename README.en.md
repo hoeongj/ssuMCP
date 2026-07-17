@@ -25,9 +25,8 @@ Connect it to Claude Desktop and requests like *"What's on the cafeteria menu to
 ## ChatGPT + ssuMCP in Action
 
 In real ChatGPT sessions connected to ssuMCP, the client retrieved personal academic data, completed a
-library-seat reservation that required confirmation, and exported supported LMS course materials. These
-screenshots document successful integration cases without repeating personal values or session details in
-the surrounding prose.
+library-seat reservation that required confirmation, and exported supported LMS course materials. Only
+personal value strings—such as academic values, active seat identifiers, and usage times—are strongly pixelated.
 
 **u-SAINT graduation evaluation — summarizing the remaining requirements**
 
