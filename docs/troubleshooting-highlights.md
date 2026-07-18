@@ -324,3 +324,7 @@
   - `@Transactional` self-invocation이 JPA 잠금 쿼리에 어떤 문제를 만드는가?
   - 부분 provider 연결 상태를 API 계약으로 노출해야 하는 이유는?
   - 기존 credential namespace를 직접 공유하지 않고 복사하는 이유는?
+
+### 2026-07-18 provider health 의미 불일치 후속
+
+credential 복사는 정상화됐지만 `ERROR` health도 `linkedProviders`에 남아 브라우저는 `3/3 연결됨`, 에이전트는 `UNAVAILABLE`로 판단하는 두 번째 불일치가 확인됐다. 기존 grant 계약은 유지하고 `availableProviders`와 `providerHealth`를 추가했으며, 프론트의 stale 상태와 에이전트의 tool error도 결정적으로 처리했다. 핵심은 identity, credential grant, 현재 availability, 마지막 operational health를 같은 boolean으로 축약하지 않는 것이다. 상세 재현·대안·검증은 [MCP 웹 세션 credential 복사 트랜잭션 회귀](troubleshooting/mcp-web-session-credential-copy.md#2026-07-18-후속-33-연결-표시와-실제-provider-장애가-어긋남)에 이어 기록했다.

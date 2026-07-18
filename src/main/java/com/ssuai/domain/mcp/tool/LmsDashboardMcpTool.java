@@ -42,9 +42,8 @@ public class LmsDashboardMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(
-                                principal.sessionId(), McpProviderType.LMS.name(),
-                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

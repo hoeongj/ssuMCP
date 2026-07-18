@@ -2,8 +2,6 @@ package com.ssuai.domain.mcp.tool;
 
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -20,8 +18,6 @@ import com.ssuai.global.exception.LmsSessionExpiredException;
 
 @Component
 public class LmsMaterialExportMcpTool {
-
-    private static final Logger log = LoggerFactory.getLogger(LmsMaterialExportMcpTool.class);
 
     private final LmsMaterialExportService exportService;
     private final McpAuthHelper authHelper;
@@ -57,9 +53,8 @@ public class LmsMaterialExportMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(
-                                principal.sessionId(), McpProviderType.LMS.name(),
-                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
@@ -91,9 +86,8 @@ public class LmsMaterialExportMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(
-                                principal.sessionId(), McpProviderType.LMS.name(),
-                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
@@ -122,10 +116,8 @@ public class LmsMaterialExportMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>outcome(
-                                "UPSTREAM_UNAVAILABLE", principal.sessionId(), McpProviderType.LMS.name(), null,
-                                "LMS 서버에 일시적인 문제가 있어요. 잠시 후 다시 시도해 주세요.",
-                                "UPSTREAM_UNAVAILABLE. LMS export confirmation failed: " + e.getClass().getSimpleName(), true);
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     } catch (NoPendingActionException e) {
                         return McpPrivateToolResponse.<Object>outcome(
                                 "NO_PENDING_ACTION", principal.sessionId(), McpProviderType.LMS.name(), null,

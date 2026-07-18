@@ -21,6 +21,7 @@ import com.ssuai.domain.lms.dto.LmsCourseMaterials;
 import com.ssuai.domain.lms.dto.LmsMaterialsResponse;
 import com.ssuai.domain.lms.dto.LmsTermType;
 import com.ssuai.domain.lms.service.LmsMaterialsService;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 class LmsMaterialsMcpToolTests {
@@ -94,6 +95,40 @@ class LmsMaterialsMcpToolTests {
 
         assertThat(resp.status()).isEqualTo("OK");
         assertThat(resp.data()).isEqualTo(result);
+    }
+
+    @Test
+    void coursesMapsRetryableUpstreamFailureWithoutExposingExceptionDetails() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(materialsService.listMaterialsWithSelection("20221528", null, null))
+                .thenThrow(new LmsApiException("private upstream response", 503));
+
+        McpPrivateToolResponse<Object> response = tool.getMyLmsCourses(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_UNAVAILABLE");
+        assertThat(response.retryable()).isTrue();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("private upstream response");
+    }
+
+    @Test
+    void materialsMapsProtocolFailureAsNonRetryableStructuredOutcome() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(materialsService.listMaterialsWithSelection(
+                "20221528", List.of(1L), null))
+                .thenThrow(new LmsApiException("unexpected schema", 400));
+
+        McpPrivateToolResponse<Object> response =
+                tool.getMyLmsMaterials(SESSION_ID, List.of(1L), null);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_PROTOCOL_CHANGED");
+        assertThat(response.retryable()).isFalse();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("unexpected schema");
     }
 
     @Test

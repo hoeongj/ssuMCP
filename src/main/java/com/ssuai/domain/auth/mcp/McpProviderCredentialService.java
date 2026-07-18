@@ -60,16 +60,31 @@ public class McpProviderCredentialService {
         };
     }
 
-    /** True only while the linked credential record still exists and is usable. */
-    public boolean isAvailable(McpProviderLink link) {
-        if (link == null || health(link).health() == McpProviderHealth.EXPIRED) {
-            return false;
+    /**
+     * Reads health once and derives grant/availability from that same snapshot.
+     * UNKNOWN remains available so a freshly captured credential can make its first call;
+     * ERROR keeps the grant but is not advertised as operational.
+     */
+    public McpProviderCredentialStatus status(McpProviderLink link) {
+        McpProviderHealthSnapshot snapshot = health(link);
+        if (link == null) {
+            return new McpProviderCredentialStatus(snapshot, false, false);
         }
-        return switch (link.provider()) {
+        if (snapshot.health() == McpProviderHealth.EXPIRED) {
+            return new McpProviderCredentialStatus(snapshot, false, false);
+        }
+        boolean credentialExists = switch (link.provider()) {
             case SAINT -> saintSessions.session(link.principalKey()).isPresent();
             case LMS -> lmsSessions.session(link.principalKey()).isPresent();
-            case LIBRARY -> librarySessions.has(link.principalKey());
+            case LIBRARY -> true;
         };
+        boolean linked = credentialExists;
+        boolean available = linked && snapshot.health() != McpProviderHealth.ERROR;
+        return new McpProviderCredentialStatus(snapshot, linked, available);
+    }
+
+    public boolean isAvailable(McpProviderLink link) {
+        return status(link).available();
     }
 
     private static McpProviderHealthSnapshot expired(String failureCode) {

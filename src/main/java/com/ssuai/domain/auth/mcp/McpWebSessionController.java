@@ -1,6 +1,8 @@
 package com.ssuai.domain.auth.mcp;
 
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -30,7 +32,7 @@ import com.ssuai.global.response.ApiResponse;
  * <p>POST /api/mcp/auth/web-session
  *   - Copies and links each currently valid SAINT/LMS credential when a JWT identity is present.
  *   - Copies and links LIBRARY if an active library session exists in the HTTP session.
- *   - Returns {mcpSessionId, expiresAt, linkedProviders}.
+ *   - Returns {mcpSessionId, expiresAt, linkedProviders, availableProviders, providerHealth}.
  *
  * <p>The library is an independent auth provider backed by its own cookie
  *   session. ssuAI chat must keep working for library-only users, including
@@ -83,6 +85,9 @@ public class McpWebSessionController {
         McpAuthSession session = mcpAuthService.createSession();
         McpAuthSessionId sessionId = session.id();
         EnumSet<McpProviderType> linkedProviders = EnumSet.noneOf(McpProviderType.class);
+        EnumSet<McpProviderType> availableProviders = EnumSet.noneOf(McpProviderType.class);
+        EnumMap<McpProviderType, McpProviderHealth> providerHealth =
+                new EnumMap<>(McpProviderType.class);
         String saintOwnerKey = null;
         String lmsOwnerKey = null;
         String libraryOwnerKey = null;
@@ -98,12 +103,16 @@ public class McpWebSessionController {
                 saintOwnerKey = McpCredentialNamespace.generate();
                 if (saintSessionStore.copyForSession(studentId, saintOwnerKey)) {
                     mcpAuthService.linkProvider(sessionId, McpProviderType.SAINT, saintOwnerKey);
-                    linkedProviders.add(McpProviderType.SAINT);
+                    recordProviderStatus(
+                            session, McpProviderType.SAINT, saintOwnerKey,
+                            linkedProviders, availableProviders, providerHealth);
                 }
                 lmsOwnerKey = McpCredentialNamespace.generate();
                 if (lmsSessionStore.copyForSession(studentId, lmsOwnerKey)) {
                     mcpAuthService.linkProvider(sessionId, McpProviderType.LMS, lmsOwnerKey);
-                    linkedProviders.add(McpProviderType.LMS);
+                    recordProviderStatus(
+                            session, McpProviderType.LMS, lmsOwnerKey,
+                            linkedProviders, availableProviders, providerHealth);
                 }
             }
 
@@ -113,7 +122,9 @@ public class McpWebSessionController {
                 if (librarySessionStore.copy(librarySessionKey, libraryOwnerKey)) {
                     mcpAuthService.linkProvider(
                             sessionId, McpProviderType.LIBRARY, libraryOwnerKey);
-                    linkedProviders.add(McpProviderType.LIBRARY);
+                    recordProviderStatus(
+                            session, McpProviderType.LIBRARY, libraryOwnerKey,
+                            linkedProviders, availableProviders, providerHealth);
                     log.debug("web-session: library linked");
                 }
             }
@@ -124,11 +135,14 @@ public class McpWebSessionController {
         }
 
         log.debug(
-                "web-session: created session={} linkedProviders={}",
+                "web-session: created session={} linkedProviders={} availableProviders={} providerHealth={}",
                 sessionId.fingerprint(),
-                linkedProviders);
+                linkedProviders,
+                availableProviders,
+                providerHealth);
         return ApiResponse.success(new McpWebSessionResponse(
-                sessionId.value(), session.expiresAt(), linkedProviders));
+                sessionId.value(), session.expiresAt(), linkedProviders,
+                availableProviders, providerHealth));
     }
 
     /**
@@ -153,17 +167,46 @@ public class McpWebSessionController {
         }
 
         EnumSet<McpProviderType> linkedProviders = EnumSet.noneOf(McpProviderType.class);
+        EnumSet<McpProviderType> availableProviders = EnumSet.noneOf(McpProviderType.class);
+        EnumMap<McpProviderType, McpProviderHealth> providerHealth =
+                new EnumMap<>(McpProviderType.class);
         session.providers().forEach((provider, link) -> {
-            if (credentialService.isAvailable(link)) {
+            McpProviderCredentialStatus status = credentialService.status(link);
+            providerHealth.put(provider, status.health().health());
+            if (status.linked()) {
                 linkedProviders.add(provider);
+            }
+            if (status.available()) {
+                availableProviders.add(provider);
             }
         });
         log.debug(
-                "web-session: refreshed session={} linkedProviders={}",
+                "web-session: refreshed session={} linkedProviders={} availableProviders={} providerHealth={}",
                 session.id().fingerprint(),
-                linkedProviders);
+                linkedProviders,
+                availableProviders,
+                providerHealth);
         return ApiResponse.success(new McpWebSessionResponse(
-                session.id().value(), session.expiresAt(), linkedProviders));
+                session.id().value(), session.expiresAt(), linkedProviders,
+                availableProviders, providerHealth));
+    }
+
+    private void recordProviderStatus(
+            McpAuthSession session,
+            McpProviderType provider,
+            String ownerKey,
+            EnumSet<McpProviderType> linkedProviders,
+            EnumSet<McpProviderType> availableProviders,
+            Map<McpProviderType, McpProviderHealth> providerHealth) {
+        McpProviderLink link = new McpProviderLink(provider, ownerKey, session.createdAt());
+        McpProviderCredentialStatus status = credentialService.status(link);
+        providerHealth.put(provider, status.health().health());
+        if (status.linked()) {
+            linkedProviders.add(provider);
+        }
+        if (status.available()) {
+            availableProviders.add(provider);
+        }
     }
 
     private String activeLibrarySessionKey(HttpServletRequest request) {

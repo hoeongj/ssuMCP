@@ -67,3 +67,15 @@
 - 부분 연결은 허용한다. 예를 들어 도서관 credential만 유효하면 도서관 채팅을 계속 사용할 수 있고, SAINT/LMS는 `linkedProviders` 부재를 근거로 재인증을 안내한다.
 
 추가 검증은 실제 Spring proxy와 영속 저장소를 사용해 외부 트랜잭션 없이 `copyForSession()`을 호출하는 통합 테스트, 만료·health 보존, 빈/부분 grant 응답, 예외 보상 정리, live-status subject 검증과 만료 credential 제외 테스트로 구성한다. 상세 장애 기록은 [MCP 웹 세션 credential 복사 트랜잭션 회귀](../troubleshooting/mcp-web-session-credential-copy.md)에 남겼다.
+
+## 후속 결정 (2026-07-18) - grant와 실제 사용 가능 상태를 분리한다
+
+- provider link와 credential 레코드가 존재해도 마지막 upstream 호출이 `ERROR`일 수 있다. 기존 `linkedProviders`는 grant 의미를 유지하고, 새 `availableProviders`는 `ERROR`와 `EXPIRED`를 제외한 현재 operational set을 반환한다. 첫 실호출 전 상태인 `UNKNOWN`은 available에 포함한다.
+- 응답에 하위 호환 필드 `availableProviders`와 `providerHealth`를 추가한다. health 값은 provider별 `VALID`, `UNKNOWN`, `ERROR`, `EXPIRED`이며 credential이나 사용자 식별자는 포함하지 않는다. 기존 클라이언트는 `linkedProviders`만 계속 읽을 수 있고, 새 클라이언트는 연결, 미검증, 일시 오류, 재인증 필요를 구분한다.
+- `ERROR` link를 즉시 삭제하는 대안은 기각했다. 외부 포털의 네트워크·파싱 장애와 인증 만료는 복구 방식이 다르고, 전자는 credential 소유권을 없애지 않는다. 대신 UI는 이를 연결 성공으로 표시하지 않고 에이전트는 일시 장애로 fail-closed한다.
+- 브라우저가 live-status 갱신에 실패한 경우 마지막 성공 스냅샷을 복구용으로 보존할 수는 있지만, 그 스냅샷을 현재 확인된 연결 상태처럼 표시하지 않는다.
+- LMS tool은 `LmsApiException`을 `status=OK` 문자열 payload로 감싸지 않는다. `UPSTREAM_UNAVAILABLE` 또는 `UPSTREAM_PROTOCOL_CHANGED` outcome으로 반환하고 예외 메시지는 응답에 포함하지 않아, agent가 모델 합성 전에 operational failure를 결정적으로 차단할 수 있게 한다.
+
+health와 availability는 한 `McpProviderCredentialStatus` snapshot에서 계산한다. 같은 응답을 만들면서 health를 두 번 읽으면 동시 tool call 사이에 `providerHealth=ERROR`와 available 포함이 함께 나오는 모순이 재발할 수 있기 때문이다.
+
+이 결정은 웹 로그인, MCP grant, provider availability, 마지막 health를 별도 상태로 유지한다. 회귀 검증은 `McpProviderCredentialServiceTests`, `McpWebSessionControllerTests`와 ssuAI의 부분 연결·degraded·stale 상태 테스트가 소유한다.

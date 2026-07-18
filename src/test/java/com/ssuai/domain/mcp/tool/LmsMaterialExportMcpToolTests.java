@@ -21,6 +21,7 @@ import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.lms.dto.LmsExportConfirmResponse;
 import com.ssuai.domain.lms.dto.LmsExportPrepareResponse;
 import com.ssuai.domain.lms.service.LmsMaterialExportService;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 class LmsMaterialExportMcpToolTests {
@@ -65,6 +66,23 @@ class LmsMaterialExportMcpToolTests {
     }
 
     @Test
+    void prepare_returnsStructuredOutcomeWhenLmsIsUnavailable() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(exportService.prepareForMcp(SESSION_ID, "20221528", null, List.of("c1")))
+                .thenThrow(new LmsApiException("private upstream response", 503));
+
+        McpPrivateToolResponse<Object> response =
+                tool.prepareLmsMaterialExport(SESSION_ID, List.of("c1"), null);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_UNAVAILABLE");
+        assertThat(response.retryable()).isTrue();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("private upstream response");
+    }
+
+    @Test
     void confirm_returnsAuthRequiredWhenNoSession() {
         McpPrivateToolResponse<Object> stub =
                 McpPrivateToolResponse.authRequired(null, "LMS", "https://login.url", EXPIRES);
@@ -102,6 +120,22 @@ class LmsMaterialExportMcpToolTests {
     }
 
     @Test
+    void confirm_returnsStructuredOutcomeWhenLmsIsUnavailable() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(exportService.confirmForMcp(SESSION_ID, "20221528", null))
+                .thenThrow(new LmsApiException("private upstream response", 503));
+
+        McpPrivateToolResponse<Object> response = tool.confirmLmsMaterialExport(SESSION_ID);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_UNAVAILABLE");
+        assertThat(response.retryable()).isTrue();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("private upstream response");
+    }
+
+    @Test
     void confirm_returnsOkWhenSuccessful() {
         LmsExportConfirmResponse stub = new LmsExportConfirmResponse("job1", 1, 100L, "expiry", "url", "");
         when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS)).thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal("20221528", SESSION_ID)));
@@ -136,6 +170,23 @@ class LmsMaterialExportMcpToolTests {
 
         assertThat(resp.status()).isEqualTo("OK");
         assertThat(resp.data()).isEqualTo(stub);
+    }
+
+    @Test
+    void exportAll_returnsStructuredOutcomeWhenLmsProtocolChanges() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(exportService.exportAllForMcp(SESSION_ID, "20221528", null))
+                .thenThrow(new LmsApiException("unexpected schema", 400));
+
+        McpPrivateToolResponse<Object> response =
+                tool.exportAllLmsMaterials(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_PROTOCOL_CHANGED");
+        assertThat(response.retryable()).isFalse();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("unexpected schema");
     }
 
     @Test

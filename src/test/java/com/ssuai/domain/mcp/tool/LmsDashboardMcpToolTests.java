@@ -18,6 +18,7 @@ import com.ssuai.domain.auth.mcp.McpProviderType;
 import com.ssuai.domain.auth.mcp.dto.McpPrivateToolResponse;
 import com.ssuai.domain.lms.dto.LmsDashboardResponse;
 import com.ssuai.domain.lms.service.LmsDashboardService;
+import com.ssuai.global.exception.LmsApiException;
 import com.ssuai.global.exception.LmsSessionExpiredException;
 
 class LmsDashboardMcpToolTests {
@@ -92,6 +93,22 @@ class LmsDashboardMcpToolTests {
 
         assertThat(resp.status()).isEqualTo("AUTH_REQUIRED");
         verify(dashboardService).getDashboard("20221528", null);
+    }
+
+    @Test
+    void mapsLmsApiFailureToStructuredUpstreamOutcome() {
+        when(authHelper.resolvePrincipal(SESSION_ID, McpProviderType.LMS))
+                .thenReturn(Optional.of(new McpAuthHelper.ResolvedPrincipal(
+                        "20221528", SESSION_ID)));
+        when(dashboardService.getDashboard("20221528", null))
+                .thenThrow(new LmsApiException("private upstream response", 502));
+
+        McpPrivateToolResponse<Object> response = tool.getLmsDashboard(SESSION_ID, null);
+
+        assertThat(response.status()).isEqualTo("UPSTREAM_UNAVAILABLE");
+        assertThat(response.retryable()).isTrue();
+        assertThat(response.data()).isNull();
+        assertThat(response.toString()).doesNotContain("private upstream response");
     }
 
     @Test

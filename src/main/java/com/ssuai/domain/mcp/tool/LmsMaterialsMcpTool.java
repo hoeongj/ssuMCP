@@ -2,8 +2,6 @@ package com.ssuai.domain.mcp.tool;
 
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -17,8 +15,6 @@ import com.ssuai.global.exception.LmsSessionExpiredException;
 
 @Component
 public class LmsMaterialsMcpTool {
-
-    private static final Logger log = LoggerFactory.getLogger(LmsMaterialsMcpTool.class);
 
     private final LmsMaterialsService materialsService;
     private final McpAuthHelper authHelper;
@@ -56,9 +52,8 @@ public class LmsMaterialsMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(
-                                principal.sessionId(), McpProviderType.LMS.name(),
-                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));
@@ -89,9 +84,8 @@ public class LmsMaterialsMcpTool {
                     } catch (LmsSessionExpiredException e) {
                         return authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS);
                     } catch (LmsApiException e) {
-                        return McpPrivateToolResponse.<Object>ok(
-                                principal.sessionId(), McpProviderType.LMS.name(),
-                                "LMS API 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (" + e.getMessage() + ")");
+                        return LmsMcpToolResponse.<Object>upstreamFailure(
+                                principal.sessionId(), e);
                     }
                 })
                 .orElseGet(() -> authHelper.<Object>buildAuthRequired(mcp_session_id, McpProviderType.LMS));

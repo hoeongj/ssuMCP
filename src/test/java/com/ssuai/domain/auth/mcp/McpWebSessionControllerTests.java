@@ -2,6 +2,7 @@ package com.ssuai.domain.auth.mcp;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -67,6 +68,8 @@ class McpWebSessionControllerTests {
         when(saintSessionStore.copyForSession(anyString(), anyString())).thenReturn(true);
         when(lmsSessionStore.copyForSession(anyString(), anyString())).thenReturn(true);
         when(librarySessionStore.copy(anyString(), anyString())).thenReturn(true);
+        when(credentialService.status(any(McpProviderLink.class)))
+                .thenReturn(availableUnknown());
     }
 
     @Test
@@ -80,7 +83,10 @@ class McpWebSessionControllerTests {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
                 .andExpect(jsonPath("$.data.expiresAt").value("2026-06-14T12:00:00Z"))
-                .andExpect(jsonPath("$.data.linkedProviders", containsInAnyOrder("SAINT", "LMS")));
+                .andExpect(jsonPath("$.data.linkedProviders", containsInAnyOrder("SAINT", "LMS")))
+                .andExpect(jsonPath("$.data.availableProviders", containsInAnyOrder("SAINT", "LMS")))
+                .andExpect(jsonPath("$.data.providerHealth.SAINT").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.providerHealth.LMS").value("UNKNOWN"));
 
         verify(mcpAuthService).createSession();
         verify(mcpAuthService).linkProvider(eq(sessionId), eq(McpProviderType.SAINT), anyString());
@@ -189,6 +195,38 @@ class McpWebSessionControllerTests {
     }
 
     @Test
+    void create_withDegradedCredential_linksGrantButDoesNotAdvertiseItAsConnected()
+            throws Exception {
+        McpAuthSession session = session("test-session-id");
+        McpAuthSessionId sessionId = session.id();
+        when(mcpAuthService.createSession()).thenReturn(session);
+        McpProviderHealthSnapshot error = new McpProviderHealthSnapshot(
+                McpProviderHealth.ERROR,
+                Instant.parse("2026-07-18T01:00:00Z"),
+                null,
+                Instant.parse("2026-07-18T01:00:00Z"),
+                "UPSTREAM_UNAVAILABLE",
+                1);
+        when(credentialService.status(argThat(
+                link -> link != null && link.provider() == McpProviderType.LMS)))
+                .thenReturn(new McpProviderCredentialStatus(error, true, false));
+
+        mockMvc.perform(post("/api/mcp/auth/web-session")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath(
+                        "$.data.linkedProviders",
+                        containsInAnyOrder("SAINT", "LMS")))
+                .andExpect(jsonPath("$.data.availableProviders.length()").value(1))
+                .andExpect(jsonPath("$.data.availableProviders[0]").value("SAINT"))
+                .andExpect(jsonPath("$.data.providerHealth.SAINT").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.providerHealth.LMS").value("ERROR"));
+
+        verify(mcpAuthService).linkProvider(
+                eq(sessionId), eq(McpProviderType.LMS), anyString());
+    }
+
+    @Test
     void create_withJwtButNoCanonicalCredentials_reportsEmptyProviderSet() throws Exception {
         McpAuthSession session = session("test-session-id");
         McpAuthSessionId sessionId = session.id();
@@ -199,7 +237,9 @@ class McpWebSessionControllerTests {
         mockMvc.perform(post("/api/mcp/auth/web-session")
                         .requestAttr(AuthAttributes.STUDENT_ID, "20241234"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.linkedProviders").isEmpty());
+                .andExpect(jsonPath("$.data.linkedProviders").isEmpty())
+                .andExpect(jsonPath("$.data.availableProviders").isEmpty())
+                .andExpect(jsonPath("$.data.providerHealth").isEmpty());
 
         verify(mcpAuthService, never()).linkProvider(
                 eq(sessionId), eq(McpProviderType.SAINT), anyString());
@@ -257,15 +297,22 @@ class McpWebSessionControllerTests {
     }
 
     @Test
-    void status_withJwtReportsOnlyCurrentlyAvailableProviderLinks() throws Exception {
+    void status_withJwtSeparatesCredentialGrantsFromCurrentAvailability() throws Exception {
         McpAuthSession session = sessionWithProviders(
                 "test-session-id", McpProviderType.SAINT, McpProviderType.LMS);
         when(mcpAuthService.find("test-session-id")).thenReturn(java.util.Optional.of(session));
         when(mcpAuthService.verifyOauthSubject(session.id(), "20241234")).thenReturn(true);
-        when(credentialService.isAvailable(session.provider(McpProviderType.SAINT).orElseThrow()))
-                .thenReturn(true);
-        when(credentialService.isAvailable(session.provider(McpProviderType.LMS).orElseThrow()))
-                .thenReturn(false);
+        when(credentialService.status(session.provider(McpProviderType.SAINT).orElseThrow()))
+                .thenReturn(availableUnknown());
+        McpProviderHealthSnapshot lmsError = new McpProviderHealthSnapshot(
+                        McpProviderHealth.ERROR,
+                        Instant.parse("2026-07-18T01:00:00Z"),
+                        null,
+                        Instant.parse("2026-07-18T01:00:00Z"),
+                        "UPSTREAM_UNAVAILABLE",
+                        1);
+        when(credentialService.status(session.provider(McpProviderType.LMS).orElseThrow()))
+                .thenReturn(new McpProviderCredentialStatus(lmsError, true, false));
 
         mockMvc.perform(post("/api/mcp/auth/web-session/status")
                         .requestAttr(AuthAttributes.STUDENT_ID, "20241234")
@@ -273,7 +320,38 @@ class McpWebSessionControllerTests {
                         .content("{\"mcpSessionId\":\"test-session-id\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.mcpSessionId").value("test-session-id"))
-                .andExpect(jsonPath("$.data.linkedProviders[0]").value("SAINT"));
+                .andExpect(jsonPath(
+                        "$.data.linkedProviders",
+                        containsInAnyOrder("SAINT", "LMS")))
+                .andExpect(jsonPath("$.data.availableProviders[0]").value("SAINT"))
+                .andExpect(jsonPath("$.data.providerHealth.SAINT").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.providerHealth.LMS").value("ERROR"));
+    }
+
+    @Test
+    void status_withExpiredCredentialReportsHealthWithoutAdvertisingAGrant() throws Exception {
+        McpAuthSession session = sessionWithProviders(
+                "test-session-id", McpProviderType.SAINT);
+        McpProviderHealthSnapshot expired = new McpProviderHealthSnapshot(
+                McpProviderHealth.EXPIRED,
+                Instant.parse("2026-07-18T01:00:00Z"),
+                null,
+                null,
+                "AUTH_REQUIRED",
+                1);
+        when(mcpAuthService.find("test-session-id")).thenReturn(java.util.Optional.of(session));
+        when(mcpAuthService.verifyOauthSubject(session.id(), "20241234")).thenReturn(true);
+        when(credentialService.status(session.provider(McpProviderType.SAINT).orElseThrow()))
+                .thenReturn(new McpProviderCredentialStatus(expired, false, false));
+
+        mockMvc.perform(post("/api/mcp/auth/web-session/status")
+                        .requestAttr(AuthAttributes.STUDENT_ID, "20241234")
+                        .contentType("application/json")
+                        .content("{\"mcpSessionId\":\"test-session-id\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.linkedProviders").isEmpty())
+                .andExpect(jsonPath("$.data.availableProviders").isEmpty())
+                .andExpect(jsonPath("$.data.providerHealth.SAINT").value("EXPIRED"));
     }
 
     @Test
@@ -297,15 +375,17 @@ class McpWebSessionControllerTests {
                 "test-session-id", McpProviderType.LIBRARY);
         when(librarySessionStore.has("cookie-session-key")).thenReturn(true);
         when(mcpAuthService.find("test-session-id")).thenReturn(java.util.Optional.of(session));
-        when(credentialService.isAvailable(session.provider(McpProviderType.LIBRARY).orElseThrow()))
-                .thenReturn(true);
+        when(credentialService.status(session.provider(McpProviderType.LIBRARY).orElseThrow()))
+                .thenReturn(availableUnknown());
 
         mockMvc.perform(post("/api/mcp/auth/web-session/status")
                         .cookie(new Cookie("ssuai_library_session", "cookie-session-key"))
                         .contentType("application/json")
                         .content("{\"mcpSessionId\":\"test-session-id\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.linkedProviders[0]").value("LIBRARY"));
+                .andExpect(jsonPath("$.data.linkedProviders[0]").value("LIBRARY"))
+                .andExpect(jsonPath("$.data.availableProviders[0]").value("LIBRARY"))
+                .andExpect(jsonPath("$.data.providerHealth.LIBRARY").value("UNKNOWN"));
 
         verify(mcpAuthService, never()).verifyOauthSubject(any(), anyString());
     }
@@ -324,6 +404,11 @@ class McpWebSessionControllerTests {
         McpAuthSessionId sessionId = new McpAuthSessionId(id);
         Instant expiresAt = Instant.parse("2026-06-14T12:00:00Z");
         return new McpAuthSession(sessionId, Instant.now(), expiresAt, Map.of());
+    }
+
+    private static McpProviderCredentialStatus availableUnknown() {
+        return new McpProviderCredentialStatus(
+                McpProviderHealthSnapshot.unknown(1), true, true);
     }
 
     private McpAuthSession sessionWithProviders(

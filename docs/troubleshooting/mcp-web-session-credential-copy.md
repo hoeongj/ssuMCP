@@ -58,3 +58,50 @@
 - 메서드에 `@Transactional`이 있는데도 `TransactionRequiredException`이 발생한 이유는 무엇인가?
 - 사용자 신원과 외부 provider credential grant를 분리해야 하는 이유는 무엇인가?
 - 부분 연결을 허용하면서 세션 격리와 fail-closed 동작을 어떻게 유지했는가?
+
+## 2026-07-18 후속: 3/3 연결 표시와 실제 provider 장애가 어긋남
+
+### 기대 동작과 영향
+
+연결 패널이 `3/3`을 표시하면 학사와 LMS 도구가 현재 사용할 수 있어야 한다. 실제 운영에서는 세 provider가 모두 연결된 것으로 보였지만 졸업요건 조회는 일반적인 시스템 오류 안내로 끝났고, LMS 자료 요청은 연결 상태를 확인하지 못했다는 안내를 반환했다. 사용자는 성공한 웹 로그인과 `3/3` 표시 때문에 인증이 정상이라고 판단할 수밖에 없었다.
+
+### 재현과 증거
+
+1. ssuAI의 채팅 배지는 `linkedProviders`가 하나만 있어도 `MCP 연결됨`을 표시했고, 연결 패널도 같은 배열만으로 provider별 상태를 계산했다.
+2. `McpProviderCredentialService.isAvailable()`은 `EXPIRED`만 제외하고 `ERROR` credential은 계속 사용 가능하다고 반환했다.
+3. 반면 ssuAgent의 auth guard는 같은 `ERROR` health를 `UNAVAILABLE`로 처리했다. 브라우저와 에이전트가 같은 credential을 서로 다른 의미로 해석했다.
+4. 학사 스트림의 `get_auth_status`와 `check_graduation_requirements` 시작 이벤트는 provider preflight 이후 실제 도구 호출까지 진행됐음을 보여줬다. 이후 예외는 에이전트 루프에서 일반 tool error로 마스킹돼 LLM이 근거 없는 일반 졸업요건 안내를 생성했다.
+5. 조사 시점 운영 health/readiness는 정상이었지만 Prometheus 프로세스 누적치에는 `/api/saint/graduation`의 502와 `/api/lms/assignments`의 500이 각각 존재했다. 전역 서비스 다운이 아니라 credential health 또는 upstream 호출 단계의 실패라는 증거다.
+
+### 검토한 가설과 원인
+
+- 전체 MCP 장애: deep health와 `/mcp` 성공 지표가 정상이라 기각했다.
+- 단순 미로그인: 웹 세션 발급·상태 요청은 성공했고 provider link도 존재해 기각했다.
+- LMS 라우팅 오류: 요청은 LMS 에이전트와 auth preflight로 정확히 진입해 기각했다.
+- 확인된 계약 결함은 credential grant와 operational health의 의미를 한 `linkedProviders` 배열로 축약한 점, retryable 상태 갱신 실패에서 오래된 스냅샷을 현재 상태처럼 표시한 프론트 캐시, 도구 예외를 LLM 입력으로 되돌린 에이전트 오류 처리의 결합이다. 다만 요청 trace나 사용자별 운영 로그가 없어 최초 upstream 5xx의 정확한 원인이 credential, 네트워크, 포털 응답 변경 중 무엇이었는지는 확정하지 않는다.
+
+### 해결과 대안
+
+- web-session create/status 응답에 개인정보가 없는 `availableProviders`와 `providerHealth`를 추가한다. `linkedProviders`의 grant 의미는 보존하고, operational set에서는 `ERROR`와 `EXPIRED`를 제외한다. `UNKNOWN`은 새 credential의 첫 호출을 허용한다.
+- 한 provider의 grant, availability, health는 단일 `McpProviderCredentialStatus` snapshot으로 계산해 동시 tool call과 status refresh가 겹쳐도 한 응답 안에서 모순되지 않게 한다.
+- ssuAI는 provider 수와 degraded/stale 상태를 분리해 표시한다. 갱신 실패 시 session id는 복구를 위해 유지하지만 이전 `3/3`을 새로 확인된 상태처럼 보여주지 않는다.
+- ssuAgent는 upstream tool failure를 결정적 서비스 오류로 반환해 LLM이 일반 정보로 메우지 못하게 한다.
+- LMS 목록·대시보드·내보내기 도구가 `LmsApiException`을 `status=OK` 문자열로 숨기던 경로를 공통 privacy-safe outcome으로 바꾼다. retryable 전송·5xx는 `UPSTREAM_UNAVAILABLE`, 비재시도 protocol 실패는 `UPSTREAM_PROTOCOL_CHANGED`이며 원래 예외 메시지는 응답에 넣지 않는다.
+- `ERROR` 발생 즉시 link를 삭제하는 방식은 일시적 네트워크 장애와 인증 만료를 구분하지 못하므로 기각했다. 에이전트는 명시적인 다음 사용자 요청에서 bounded tool invocation을 허용해 성공 시 저장 health가 `VALID`로 회복된다. 기존 transport wrapper의 단일 retry는 유지하지만 최종 실패 뒤 모델 주도 재호출은 막는다. health를 숨기고 재로그인만 반복시키는 방식도 운영 원인을 가려 기각했다.
+
+### 검증과 회귀 방지
+
+- 백엔드 focused 검증: `McpProviderCredentialServiceTests`, `McpWebSessionControllerTests` 20개 통과.
+- 백엔드 전체 `test`, JaCoCo coverage verification과 `build` 통과.
+- LMS 목록·대시보드·내보내기의 structured upstream outcome과 예외 상세 비노출 테스트 통과.
+- 프론트는 3/3, 부분 연결, `ERROR`, live-status 갱신 실패를 각각 고정 fixture로 검증한다.
+- 에이전트는 academic preflight 통과 후 MCP 도구 예외가 결정적 오류 안내로 끝나고 임의의 졸업요건 텍스트를 만들지 않는지 검증한다.
+- PR CI, 배포 및 실계정 후속 검증 결과는 전달 단계에서 추가한다.
+
+### 남은 위험과 예상 면접 질문
+
+운영 upstream을 매 상태 조회마다 probe하지 않으므로 `UNKNOWN`과 마지막 성공 이후의 짧은 stale window는 남는다. 상태 조회는 credential을 노출하지 않는 저장 health 스냅샷을 사용하고, 실제 도구 호출이 성공·실패 시 이를 갱신한다. 최초 upstream 오류의 정확한 유형은 배포 뒤 request/trace 상관 근거로 별도 확정해야 한다.
+
+- identity, grant, health를 하나의 boolean으로 합치면 어떤 장애가 생기는가?
+- `ERROR` link를 삭제하지 않으면서도 UI를 fail-closed하게 만든 이유는 무엇인가?
+- LLM 에이전트에서 tool exception을 모델에게 다시 맡기면 왜 허위 fallback이 생기는가?
